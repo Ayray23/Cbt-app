@@ -2,16 +2,20 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
+    function currentUserPath() {
+      return /databases/$(database)/documents/users/$(request.auth.uid);
+    }
+
     function isSignedIn() {
       return request.auth != null;
     }
 
-    function userDoc() {
-      return get(/databases/$(database)/documents/users/$(request.auth.uid));
+    function userExists() {
+      return isSignedIn() && exists(currentUserPath());
     }
 
     function role() {
-      return isSignedIn() && userDoc().exists() ? userDoc().data.role : null;
+      return userExists() ? get(currentUserPath()).data.role : null;
     }
 
     function isAdmin() {
