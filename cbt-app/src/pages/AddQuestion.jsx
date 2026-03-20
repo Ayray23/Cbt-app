@@ -61,16 +61,13 @@ function buildBlocksFromLines(lines) {
   for (const rawLine of lines) {
     const line = normalizeLine(rawLine);
     if (!line) {
-      if (current.length > 0) {
-        blocks.push(current);
-        current = [];
-      }
       continue;
     }
 
     if (current.length > 0 && isQuestionStart(line)) {
       const hasOptions = current.some((entry) => /^[A-D][).:-\s]/i.test(entry));
-      if (hasOptions) {
+      const hasAnswer = current.some((entry) => /^answer/i.test(entry));
+      if (hasOptions || hasAnswer) {
         blocks.push(current);
         current = [];
       }
@@ -89,15 +86,7 @@ function buildBlocksFromLines(lines) {
 function buildBlocksFromText(text) {
   const normalizedText = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
   const baseLines = normalizedText.split("\n").map(normalizeLine);
-  const splitByQuestions = normalizedText
-    .split(/\n(?=(?:\d+[).\s]|Question\s+\d+))/i)
-    .map((chunk) => chunk.split("\n").map(normalizeLine).filter(Boolean))
-    .filter(Boolean);
-  const blockLines = buildBlocksFromLines(baseLines);
-
-  return (blockLines.length >= splitByQuestions.length ? blockLines : splitByQuestions).filter(
-    (block) => block.length > 0
-  );
+  return buildBlocksFromLines(baseLines).filter((block) => block.length > 0);
 }
 
 export default function AddQuestion() {
