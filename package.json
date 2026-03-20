@@ -1,0 +1,6 @@
+{
+  "dependencies": {
+    "mammoth": "^1.11.0",
+    "react-feather": "^2.0.10"
+  }
+}
