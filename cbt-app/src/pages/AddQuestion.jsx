@@ -4,17 +4,100 @@ import { collection, onSnapshot, query, where } from "firebase/firestore";
 import { db } from "/firebase";
 import { addQuestion } from "../services/cbtService";
 
+function normalizeLine(line) {
+  return line.replace(/\u00a0/g, " ").trim();
+}
+
+function isQuestionStart(line) {
+  return /^\d+[).\s]/.test(line) || /^question\s+\d+/i.test(line);
+}
+
+function cleanQuestionLine(line) {
+  return normalizeLine(line)
+    .replace(/^\d+[).\s]+/, "")
+    .replace(/^question\s+\d+[\s:.-]*/i, "")
+    .trim();
+}
+
 function extractOption(lines, letter) {
   const optionLine = lines.find((line) => {
-    const regex = new RegExp(`^${letter}[.).:\\s]`, "i");
-    return regex.test(line.trim());
+    const regex = new RegExp(`^${letter}[).:-\\s]`, "i");
+    return regex.test(normalizeLine(line));
   });
 
   if (!optionLine) {
     return "";
   }
 
-  return optionLine.replace(new RegExp(`^${letter}[.).:\\s]+`, "i"), "").trim();
+  return normalizeLine(optionLine)
+    .replace(new RegExp(`^${letter}[).:-\\s]+`, "i"), "")
+    .trim();
+}
+
+function extractAnswer(lines) {
+  const answerLine = lines.find((line) => /answer/i.test(line));
+  if (!answerLine) {
+    return "";
+  }
+
+  const match = normalizeLine(answerLine).match(/answer\s*[:=-]?\s*([A-D])/i);
+  return match ? match[1].toUpperCase() : "";
+}
+
+function extractMarks(lines) {
+  const marksLine = lines.find((line) => /marks?/i.test(line));
+  if (!marksLine) {
+    return 1;
+  }
+
+  const match = normalizeLine(marksLine).match(/marks?\s*[:=-]?\s*(\d+)/i);
+  return match ? Number(match[1]) : 1;
+}
+
+function buildBlocksFromLines(lines) {
+  const blocks = [];
+  let current = [];
+
+  for (const rawLine of lines) {
+    const line = normalizeLine(rawLine);
+    if (!line) {
+      if (current.length > 0) {
+        blocks.push(current);
+        current = [];
+      }
+      continue;
+    }
+
+    if (current.length > 0 && isQuestionStart(line)) {
+      const hasOptions = current.some((entry) => /^[A-D][).:-\s]/i.test(entry));
+      if (hasOptions) {
+        blocks.push(current);
+        current = [];
+      }
+    }
+
+    current.push(line);
+  }
+
+  if (current.length > 0) {
+    blocks.push(current);
+  }
+
+  return blocks;
+}
+
+function buildBlocksFromText(text) {
+  const normalizedText = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+  const baseLines = normalizedText.split("\n").map(normalizeLine);
+  const splitByQuestions = normalizedText
+    .split(/\n(?=(?:\d+[).\s]|Question\s+\d+))/i)
+    .map((chunk) => chunk.split("\n").map(normalizeLine).filter(Boolean))
+    .filter(Boolean);
+  const blockLines = buildBlocksFromLines(baseLines);
+
+  return (blockLines.length >= splitByQuestions.length ? blockLines : splitByQuestions).filter(
+    (block) => block.length > 0
+  );
 }
 
 export default function AddQuestion() {
@@ -104,45 +187,36 @@ export default function AddQuestion() {
     try {
       const arrayBuffer = await wordFile.arrayBuffer();
       const result = await mammoth.extractRawText({ arrayBuffer });
-      const blocks = result.value
-        .replace(/\r\n/g, "\n")
-        .split(/\n\s*\n/)
-        .map((block) => block.trim())
-        .filter(Boolean);
+      const blocks = buildBlocksFromText(result.value);
 
       let saved = 0;
+      let skipped = 0;
 
       for (const block of blocks) {
-        const lines = block
-          .split("\n")
-          .map((line) => line.trim())
-          .filter(Boolean);
+        const lines = block.map(normalizeLine).filter(Boolean);
+        const firstNonMetaLine =
+          lines.find(
+            (line) =>
+              !/^[A-D][).:-\s]/i.test(line) &&
+              !/^answer/i.test(line) &&
+              !/^marks?/i.test(line)
+          ) ?? "";
 
         const payload = {
           examId,
-          question: lines[0] ?? "",
+          question: cleanQuestionLine(firstNonMetaLine),
           options: {
             A: extractOption(lines, "A"),
             B: extractOption(lines, "B"),
             C: extractOption(lines, "C"),
             D: extractOption(lines, "D"),
           },
-          correctAnswer:
-            lines
-              .find((line) => line.toUpperCase().startsWith("ANSWER"))
-              ?.split(":")[1]
-              ?.trim()
-              ?.toUpperCase() ?? "",
-          marks:
-            Number(
-              lines
-                .find((line) => line.toUpperCase().startsWith("MARK"))
-                ?.split(":")[1]
-                ?.trim()
-            ) || 1,
+          correctAnswer: extractAnswer(lines),
+          marks: extractMarks(lines),
         };
 
         if (validate(payload)) {
+          skipped += 1;
           continue;
         }
 
@@ -150,7 +224,9 @@ export default function AddQuestion() {
         saved += 1;
       }
 
-      alert(`${saved} question(s) uploaded.`);
+      alert(
+        `${saved} question(s) uploaded.${skipped ? ` ${skipped} block(s) were skipped.` : ""}`
+      );
       setWordFile(null);
     } catch (error) {
       console.error(error);
@@ -248,7 +324,7 @@ export default function AddQuestion() {
       <section className="rounded-2xl bg-white p-6 shadow-sm">
         <h3 className="text-lg font-semibold text-slate-900">Word import</h3>
         <p className="mt-2 text-sm text-slate-500">
-          Format each block as question, options A-D, `ANSWER: X`, then `MARKS: N`.
+          Accepts `1. Question`, `Question 1`, `A.` or `A)`, with or without blank lines.
         </p>
 
         <div className="mt-4 flex flex-col gap-4 md:flex-row md:items-center">
