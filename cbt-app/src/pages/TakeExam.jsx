@@ -1,8 +1,12 @@
-import { useEffect, useEffectEvent, useMemo, useState } from "react";
+import { useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { doc, getDoc, getDocs, collection, query, where } from "firebase/firestore";
 import { db } from "/firebase";
-import { startExamSession, submitExamSession } from "../services/sessionService";
+import {
+  saveExamProgress,
+  startExamSession,
+  submitExamSession,
+} from "../services/sessionService";
 
 function formatTime(totalSeconds) {
   const minutes = Math.floor(totalSeconds / 60);
@@ -19,8 +23,11 @@ export default function TakeExam() {
   const [session, setSession] = useState(null);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [timeLeft, setTimeLeft] = useState(null);
+  const hydratedAnswersRef = useRef(false);
+  const autosaveTimeoutRef = useRef(null);
 
   const handleSubmit = useEffectEvent(async () => {
     if (submitting || session?.status === "submitted") {
@@ -80,11 +87,12 @@ export default function TakeExam() {
         setQuestions(sortedQuestions);
         setSession(startedSession);
         setAnswers(startedSession.answers ?? {});
+        hydratedAnswersRef.current = true;
 
         if (startedSession.status !== "submitted") {
-          const startedAt = startedSession.startedAtMs ?? Date.now();
-          const durationSeconds = (examData.duration ?? 0) * 60;
-          const expiresAt = startedAt + durationSeconds * 1000;
+          const expiresAt =
+            startedSession.expiresAtMs ??
+            (startedSession.startedAtMs ?? Date.now()) + (examData.duration ?? 0) * 60 * 1000;
           setTimeLeft(Math.max(0, Math.floor((expiresAt - Date.now()) / 1000)));
         }
       } catch (loadError) {
@@ -120,6 +128,37 @@ export default function TakeExam() {
 
     return () => window.clearInterval(intervalId);
   }, [handleSubmit, timeLeft, session?.status]);
+
+  useEffect(() => {
+    if (!hydratedAnswersRef.current || !session || session.status === "submitted" || submitting) {
+      return undefined;
+    }
+
+    if (autosaveTimeoutRef.current) {
+      window.clearTimeout(autosaveTimeoutRef.current);
+    }
+
+    autosaveTimeoutRef.current = window.setTimeout(async () => {
+      try {
+        setSaving(true);
+        const updatedSession = await saveExamProgress(examId, answers);
+        setSession((current) => ({
+          ...current,
+          ...updatedSession,
+        }));
+      } catch (saveError) {
+        console.error(saveError);
+      } finally {
+        setSaving(false);
+      }
+    }, 800);
+
+    return () => {
+      if (autosaveTimeoutRef.current) {
+        window.clearTimeout(autosaveTimeoutRef.current);
+      }
+    };
+  }, [answers, examId, session, submitting]);
 
   const totalMarks = useMemo(
     () => questions.reduce((sum, question) => sum + Number(question.marks ?? 1), 0),
@@ -177,6 +216,9 @@ export default function TakeExam() {
                 <p className="mt-1 text-lg">{formatTime(timeLeft ?? exam.duration * 60)}</p>
                 <p className="mt-1 text-xs text-slate-500">
                   Timer continues to run. You cannot pause this exam.
+                </p>
+                <p className="mt-1 text-xs text-slate-500">
+                  {saving ? "Saving your answers..." : "Answers autosave while you work."}
                 </p>
               </div>
             )}

@@ -44,6 +44,10 @@ function shuffleArray(items) {
   return next;
 }
 
+function toMillis(timestamp, fallback = Date.now()) {
+  return timestamp && typeof timestamp.toMillis === "function" ? timestamp.toMillis() : fallback;
+}
+
 export async function startExamSession(examId) {
   const currentUser = requireUser();
   const examRef = doc(db, "exams", examId);
@@ -75,10 +79,12 @@ export async function startExamSession(examId) {
     return {
       id: sessionSnapshot.id,
       ...existing,
-      startedAtMs:
-        existing.startedAt && typeof existing.startedAt.toMillis === "function"
-          ? existing.startedAt.toMillis()
-          : Date.now(),
+      startedAtMs: existing.startedAtMs || toMillis(existing.startedAt),
+      expiresAtMs:
+        existing.expiresAtMs ||
+        (existing.startedAtMs
+          ? existing.startedAtMs + (Number(exam.duration || 0) * 60 * 1000)
+          : toMillis(existing.startedAt) + (Number(exam.duration || 0) * 60 * 1000)),
     };
   }
 
@@ -88,6 +94,8 @@ export async function startExamSession(examId) {
 
   const questionOrder = shuffleArray(questionsSnapshot.docs.map((questionDoc) => questionDoc.id));
   const profile = userSnapshot.exists() ? userSnapshot.data() : {};
+  const startedAtMs = Date.now();
+  const expiresAtMs = startedAtMs + (Number(exam.duration || 0) * 60 * 1000);
   const sessionData = {
     examId,
     examTitle: exam.title || "",
@@ -97,6 +105,8 @@ export async function startExamSession(examId) {
     status: "started",
     answers: {},
     questionOrder,
+    startedAtMs,
+    expiresAtMs,
     totalAutoScore: 0,
     finalScore: 0,
     startedAt: serverTimestamp(),
@@ -113,11 +123,41 @@ export async function startExamSession(examId) {
   if (result.startedAt && typeof result.startedAt.toMillis === "function") {
     return {
       ...result,
-      startedAtMs: result.startedAt.toMillis(),
+      startedAtMs: result.startedAtMs || result.startedAt.toMillis(),
     };
   }
 
   return result;
+}
+
+export async function saveExamProgress(examId, answers) {
+  const currentUser = requireUser();
+  const sessionRef = doc(db, "examSessions", `${examId}_${currentUser.uid}`);
+  const sessionSnapshot = await getDoc(sessionRef);
+
+  if (!sessionSnapshot.exists()) {
+    throw new Error("Exam session not found.");
+  }
+
+  const session = sessionSnapshot.data();
+  if (session.status === "submitted") {
+    return {
+      id: sessionSnapshot.id,
+      ...session,
+    };
+  }
+
+  await updateDoc(sessionRef, {
+    answers: normalizeAnswers(answers),
+    lastSavedAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  });
+
+  const updatedSnapshot = await getDoc(sessionRef);
+  return {
+    id: updatedSnapshot.id,
+    ...updatedSnapshot.data(),
+  };
 }
 
 export async function submitExamSession(examId, answers) {
@@ -160,6 +200,7 @@ export async function submitExamSession(examId, answers) {
   }, 0);
 
   const profile = userSnapshot.exists() ? userSnapshot.data() : {};
+  const existingSession = existingSessionSnapshot.exists() ? existingSessionSnapshot.data() : {};
   const sessionData = {
     examId,
     examTitle: exam.title || "",
@@ -167,6 +208,9 @@ export async function submitExamSession(examId, answers) {
     studentEmail: currentUser.email || profile.email || "",
     studentName: profile.displayName || currentUser.email || "Candidate",
     answers: normalizedAnswers,
+    questionOrder: existingSession.questionOrder || [],
+    startedAtMs: existingSession.startedAtMs || Date.now(),
+    expiresAtMs: existingSession.expiresAtMs || Date.now(),
     totalAutoScore: total,
     finalScore: total,
     status: "submitted",
