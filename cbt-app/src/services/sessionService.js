@@ -1,21 +1,184 @@
-import { httpsCallable } from "firebase/functions";
-import { functions } from "/firebase";
+import {
+  collection,
+  doc,
+  getDoc,
+  getDocs,
+  limit,
+  query,
+  runTransaction,
+  serverTimestamp,
+  setDoc,
+  updateDoc,
+  where,
+} from "firebase/firestore";
+import { auth, db } from "/firebase";
 
-const startExamSessionCallable = httpsCallable(functions, "startExamSession");
-const submitExamSessionCallable = httpsCallable(functions, "submitExamSession");
-const setUserRoleCallable = httpsCallable(functions, "setUserRole");
+function requireUser() {
+  const currentUser = auth.currentUser;
+
+  if (!currentUser) {
+    throw new Error("Please sign in to continue.");
+  }
+
+  return currentUser;
+}
+
+function normalizeAnswers(answers) {
+  if (!answers || typeof answers !== "object") {
+    return {};
+  }
+
+  return Object.entries(answers).reduce((acc, [questionId, answer]) => {
+    acc[questionId] = String(answer || "").trim().toUpperCase();
+    return acc;
+  }, {});
+}
 
 export async function startExamSession(examId) {
-  const response = await startExamSessionCallable({ examId });
-  return response.data;
+  const currentUser = requireUser();
+  const examRef = doc(db, "exams", examId);
+  const sessionRef = doc(db, "examSessions", `${examId}_${currentUser.uid}`);
+  const userRef = doc(db, "users", currentUser.uid);
+
+  const result = await runTransaction(db, async (transaction) => {
+    const [examSnapshot, sessionSnapshot, userSnapshot] = await Promise.all([
+      transaction.get(examRef),
+      transaction.get(sessionRef),
+      transaction.get(userRef),
+    ]);
+
+    if (!examSnapshot.exists()) {
+      throw new Error("Exam not found.");
+    }
+
+    const exam = examSnapshot.data();
+    if (exam.status !== "published") {
+      throw new Error("This exam is not available right now.");
+    }
+
+    if (sessionSnapshot.exists()) {
+      return {
+        id: sessionSnapshot.id,
+        ...sessionSnapshot.data(),
+      };
+    }
+
+    const profile = userSnapshot.exists() ? userSnapshot.data() : {};
+    const sessionData = {
+      examId,
+      examTitle: exam.title || "",
+      studentUid: currentUser.uid,
+      studentEmail: currentUser.email || profile.email || "",
+      studentName: profile.displayName || currentUser.email || "Candidate",
+      status: "started",
+      answers: {},
+      totalAutoScore: 0,
+      finalScore: 0,
+      startedAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    };
+
+    transaction.set(sessionRef, sessionData);
+    return {
+      id: sessionRef.id,
+      ...sessionData,
+      startedAtMs: Date.now(),
+    };
+  });
+
+  if (result.startedAt && typeof result.startedAt.toMillis === "function") {
+    return {
+      ...result,
+      startedAtMs: result.startedAt.toMillis(),
+    };
+  }
+
+  return result;
 }
 
 export async function submitExamSession(examId, answers) {
-  const response = await submitExamSessionCallable({ examId, answers });
-  return response.data;
+  const currentUser = requireUser();
+  const normalizedAnswers = normalizeAnswers(answers);
+  const examRef = doc(db, "exams", examId);
+  const sessionRef = doc(db, "examSessions", `${examId}_${currentUser.uid}`);
+  const userRef = doc(db, "users", currentUser.uid);
+
+  const [examSnapshot, questionsSnapshot, userSnapshot] = await Promise.all([
+    getDoc(examRef),
+    getDocs(query(collection(db, "questions"), where("examId", "==", examId))),
+    getDoc(userRef),
+  ]);
+
+  if (!examSnapshot.exists()) {
+    throw new Error("Exam not found.");
+  }
+
+  const exam = examSnapshot.data();
+  if (exam.status !== "published") {
+    throw new Error("This exam is not available right now.");
+  }
+
+  if (questionsSnapshot.empty) {
+    throw new Error("This exam has no questions yet.");
+  }
+
+  const total = questionsSnapshot.docs.reduce((sum, questionDoc) => {
+    const question = questionDoc.data();
+    const studentAnswer = normalizedAnswers[questionDoc.id] || "";
+    const correctAnswer = String(question.correctAnswer || "").trim().toUpperCase();
+    const marks = Number(question.marks || 1);
+    return sum + (studentAnswer === correctAnswer ? marks : 0);
+  }, 0);
+
+  const profile = userSnapshot.exists() ? userSnapshot.data() : {};
+  const sessionData = {
+    examId,
+    examTitle: exam.title || "",
+    studentUid: currentUser.uid,
+    studentEmail: currentUser.email || profile.email || "",
+    studentName: profile.displayName || currentUser.email || "Candidate",
+    answers: normalizedAnswers,
+    totalAutoScore: total,
+    finalScore: total,
+    status: "submitted",
+    submittedAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  };
+
+  await setDoc(sessionRef, sessionData, { merge: true });
+  const sessionSnapshot = await getDoc(sessionRef);
+
+  return {
+    id: sessionSnapshot.id,
+    ...sessionSnapshot.data(),
+  };
 }
 
 export async function setUserRole(email, role) {
-  const response = await setUserRoleCallable({ email, role });
-  return response.data;
+  const normalizedEmail = String(email || "").trim().toLowerCase();
+  const normalizedRole = String(role || "").trim().toLowerCase();
+
+  if (!normalizedEmail || !normalizedRole) {
+    throw new Error("Email and role are required.");
+  }
+
+  const snapshot = await getDocs(
+    query(collection(db, "users"), where("email", "==", normalizedEmail), limit(1))
+  );
+
+  if (snapshot.empty) {
+    throw new Error("User profile not found. Ask the user to sign in first.");
+  }
+
+  await updateDoc(snapshot.docs[0].ref, {
+    role: normalizedRole,
+    updatedAt: serverTimestamp(),
+  });
+
+  return {
+    ok: true,
+    uid: snapshot.docs[0].id,
+    email: normalizedEmail,
+    role: normalizedRole,
+  };
 }
