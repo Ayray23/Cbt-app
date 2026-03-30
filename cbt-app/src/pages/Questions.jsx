@@ -8,10 +8,14 @@ import {
   query,
 } from "firebase/firestore";
 import { db } from "/firebase";
+import ConfirmDialog from "../components/ConfirmDialog";
+import StatusBanner from "../components/StatusBanner";
 
 export default function Questions() {
   const [questions, setQuestions] = useState([]);
   const [examsById, setExamsById] = useState({});
+  const [banner, setBanner] = useState(null);
+  const [questionToDelete, setQuestionToDelete] = useState(null);
 
   useEffect(() => {
     const unsubscribeQuestions = onSnapshot(
@@ -35,21 +39,29 @@ export default function Questions() {
     };
   }, []);
 
-  async function handleDelete(questionId) {
-    if (!window.confirm("Delete this question?")) {
+  async function handleDelete() {
+    if (!questionToDelete) {
       return;
     }
-
     try {
-      await deleteDoc(doc(db, "questions", questionId));
+      await deleteDoc(doc(db, "questions", questionToDelete.id));
+      setBanner({ tone: "success", message: "Question deleted." });
     } catch (error) {
       console.error(error);
-      alert("Delete failed.");
+      setBanner({ tone: "error", message: "Delete failed." });
+    } finally {
+      setQuestionToDelete(null);
     }
   }
 
   return (
     <div className="space-y-6">
+      <StatusBanner
+        tone={banner?.tone}
+        message={banner?.message}
+        onClose={() => setBanner(null)}
+      />
+
       <section className="rounded-2xl bg-white p-6 shadow-sm">
         <h2 className="text-2xl font-semibold text-slate-900">Question bank</h2>
         <p className="mt-2 text-sm text-slate-500">
@@ -82,7 +94,7 @@ export default function Questions() {
                   <td className="px-4 py-4 text-slate-500">{question.marks ?? 1}</td>
                   <td className="px-4 py-4">
                     <button
-                      onClick={() => handleDelete(question.id)}
+                      onClick={() => setQuestionToDelete(question)}
                       className="rounded-lg bg-red-600 px-3 py-2 text-xs font-medium text-white"
                     >
                       Delete
@@ -98,6 +110,15 @@ export default function Questions() {
           <div className="p-8 text-sm text-slate-500">No questions added yet.</div>
         )}
       </section>
+
+      <ConfirmDialog
+        open={Boolean(questionToDelete)}
+        title="Delete question?"
+        message="This question will be removed from the bank immediately."
+        confirmLabel="Delete question"
+        onConfirm={handleDelete}
+        onCancel={() => setQuestionToDelete(null)}
+      />
     </div>
   );
 }

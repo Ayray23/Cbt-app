@@ -1,12 +1,14 @@
 import { useEffect, useState } from "react";
 import { collection, onSnapshot, query, where } from "firebase/firestore";
 import { db } from "/firebase";
+import StatusBanner from "../components/StatusBanner";
 import { setUserRole } from "../services/sessionService";
 
 export default function Admins() {
   const [admins, setAdmins] = useState([]);
   const [email, setEmail] = useState("");
   const [loading, setLoading] = useState(false);
+  const [banner, setBanner] = useState(null);
 
   useEffect(() => {
     const usersQuery = query(
@@ -21,7 +23,7 @@ export default function Admins() {
 
   async function updateRole(nextRole) {
     if (!email.trim()) {
-      alert("Enter the user's email address.");
+      setBanner({ tone: "error", message: "Enter the user's email address." });
       return;
     }
 
@@ -30,9 +32,13 @@ export default function Admins() {
     try {
       await setUserRole(email.trim(), nextRole);
       setEmail("");
+      setBanner({
+        tone: "success",
+        message: nextRole === "admin" ? "User promoted to admin." : "Admin access revoked.",
+      });
     } catch (error) {
       console.error(error);
-      alert(error.message ?? "Could not update role.");
+      setBanner({ tone: "error", message: error.message ?? "Could not update role." });
     } finally {
       setLoading(false);
     }
@@ -40,11 +46,17 @@ export default function Admins() {
 
   return (
     <div className="space-y-6">
+      <StatusBanner
+        tone={banner?.tone}
+        message={banner?.message}
+        onClose={() => setBanner(null)}
+      />
+
       <section className="rounded-2xl bg-white p-6 shadow-sm">
         <h2 className="text-2xl font-semibold text-slate-900">Admin access control</h2>
         <p className="mt-2 text-sm text-slate-500">
-          Promote only users who have already created an account. Role changes are handled by the
-          backend callable function, not by direct client writes.
+          Promote only users who have already created an account. Role changes are handled directly
+          through secured Firestore writes in this free-plan setup.
         </p>
       </section>
 

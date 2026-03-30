@@ -7,6 +7,8 @@ import {
   startExamSession,
   submitExamSession,
 } from "../services/sessionService";
+import ConfirmDialog from "../components/ConfirmDialog";
+import StatusBanner from "../components/StatusBanner";
 
 function formatTime(totalSeconds) {
   const minutes = Math.floor(totalSeconds / 60);
@@ -39,6 +41,7 @@ export default function TakeExam() {
   const [error, setError] = useState("");
   const [timeLeft, setTimeLeft] = useState(null);
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
+  const [showSubmitConfirm, setShowSubmitConfirm] = useState(false);
   const hydratedAnswersRef = useRef(false);
   const autosaveTimeoutRef = useRef(null);
 
@@ -191,7 +194,11 @@ export default function TakeExam() {
   }
 
   if (error) {
-    return <div className="rounded-2xl bg-red-50 p-6 text-sm text-red-700">{error}</div>;
+    return (
+      <div className="space-y-6">
+        <StatusBanner tone="error" message={error} />
+      </div>
+    );
   }
 
   if (!exam || questions.length === 0) {
@@ -203,15 +210,7 @@ export default function TakeExam() {
   const options = currentQuestion.options ?? {};
 
   async function confirmAndSubmit() {
-    const isConfirmed = window.confirm(
-      "Are you sure you want to submit? After you press OK, you cannot go back to this exam."
-    );
-
-    if (!isConfirmed) {
-      return;
-    }
-
-    await handleSubmit();
+    setShowSubmitConfirm(true);
   }
 
   function moveToNextQuestion() {
@@ -224,6 +223,11 @@ export default function TakeExam() {
 
   return (
     <div className="space-y-6">
+      <StatusBanner
+        tone={saving ? "info" : null}
+        message={saving ? "Saving your answers..." : ""}
+      />
+
       <section className="rounded-3xl bg-white p-6 shadow-sm">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div>
@@ -352,6 +356,20 @@ export default function TakeExam() {
           </div>
         </section>
       </section>
+
+      <ConfirmDialog
+        open={showSubmitConfirm}
+        title="Submit exam?"
+        message="After you submit, you cannot return to this exam again."
+        confirmLabel="Yes, submit"
+        cancelLabel="No, go back"
+        tone="success"
+        onConfirm={async () => {
+          setShowSubmitConfirm(false);
+          await handleSubmit();
+        }}
+        onCancel={() => setShowSubmitConfirm(false)}
+      />
     </div>
   );
 }

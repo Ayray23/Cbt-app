@@ -6,6 +6,8 @@ import {
   query,
 } from "firebase/firestore";
 import { db } from "/firebase";
+import ConfirmDialog from "../components/ConfirmDialog";
+import StatusBanner from "../components/StatusBanner";
 import { createExam, deleteExam, updateExamStatus } from "../services/cbtService";
 
 export default function CreateExam() {
@@ -13,6 +15,8 @@ export default function CreateExam() {
   const [duration, setDuration] = useState("");
   const [loading, setLoading] = useState(false);
   const [exams, setExams] = useState([]);
+  const [banner, setBanner] = useState(null);
+  const [examToDelete, setExamToDelete] = useState(null);
 
   useEffect(() => {
     const examsQuery = query(collection(db, "exams"), orderBy("createdAt", "desc"));
@@ -26,7 +30,7 @@ export default function CreateExam() {
     event.preventDefault();
 
     if (!title.trim() || !duration) {
-      alert("Enter an exam title and duration.");
+      setBanner({ tone: "error", message: "Enter an exam title and duration." });
       return;
     }
 
@@ -36,9 +40,10 @@ export default function CreateExam() {
       await createExam({ title, duration });
       setTitle("");
       setDuration("");
+      setBanner({ tone: "success", message: "Exam created successfully." });
     } catch (error) {
       console.error(error);
-      alert("Could not create exam.");
+      setBanner({ tone: "error", message: "Could not create exam." });
     } finally {
       setLoading(false);
     }
@@ -47,27 +52,39 @@ export default function CreateExam() {
   async function handleStatusChange(examId, status) {
     try {
       await updateExamStatus(examId, status);
+      setBanner({
+        tone: "success",
+        message: status === "published" ? "Exam published." : "Exam moved back to draft.",
+      });
     } catch (error) {
       console.error(error);
-      alert(error.message ?? "Could not update exam status.");
+      setBanner({ tone: "error", message: error.message ?? "Could not update exam status." });
     }
   }
 
-  async function handleDelete(examId) {
-    if (!window.confirm("Delete this exam and all of its questions?")) {
+  async function handleDelete() {
+    if (!examToDelete) {
       return;
     }
-
     try {
-      await deleteExam(examId);
+      await deleteExam(examToDelete.id);
+      setBanner({ tone: "success", message: "Exam deleted." });
     } catch (error) {
       console.error(error);
-      alert("Could not delete exam.");
+      setBanner({ tone: "error", message: "Could not delete exam." });
+    } finally {
+      setExamToDelete(null);
     }
   }
 
   return (
     <div className="space-y-6">
+      <StatusBanner
+        tone={banner?.tone}
+        message={banner?.message}
+        onClose={() => setBanner(null)}
+      />
+
       <section className="rounded-2xl bg-white p-6 shadow-sm">
         <h2 className="text-2xl font-semibold text-slate-900">Create and publish exams</h2>
         <p className="mt-2 text-sm text-slate-500">
@@ -133,7 +150,7 @@ export default function CreateExam() {
                 </button>
 
                 <button
-                  onClick={() => handleDelete(exam.id)}
+                  onClick={() => setExamToDelete(exam)}
                   className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white"
                 >
                   Delete
@@ -149,6 +166,15 @@ export default function CreateExam() {
           </div>
         )}
       </section>
+
+      <ConfirmDialog
+        open={Boolean(examToDelete)}
+        title="Delete exam?"
+        message="This will remove the exam and all its questions. This action cannot be undone."
+        confirmLabel="Delete exam"
+        onConfirm={handleDelete}
+        onCancel={() => setExamToDelete(null)}
+      />
     </div>
   );
 }

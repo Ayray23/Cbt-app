@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import mammoth from "mammoth";
 import { collection, onSnapshot, query, where } from "firebase/firestore";
 import { db } from "/firebase";
+import StatusBanner from "../components/StatusBanner";
 import { addQuestion } from "../services/cbtService";
 
 function normalizeLine(line) {
@@ -98,6 +99,7 @@ export default function AddQuestion() {
   const [marks, setMarks] = useState(1);
   const [wordFile, setWordFile] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [banner, setBanner] = useState(null);
 
   useEffect(() => {
     const examsQuery = query(
@@ -140,7 +142,7 @@ export default function AddQuestion() {
     const validationError = validate(payload);
 
     if (validationError) {
-      alert(validationError);
+      setBanner({ tone: "error", message: validationError });
       return;
     }
 
@@ -152,9 +154,10 @@ export default function AddQuestion() {
       setOptions({ A: "", B: "", C: "", D: "" });
       setCorrectAnswer("");
       setMarks(1);
+      setBanner({ tone: "success", message: "Question saved successfully." });
     } catch (error) {
       console.error(error);
-      alert("Could not save question.");
+      setBanner({ tone: "error", message: "Could not save question." });
     } finally {
       setLoading(false);
     }
@@ -162,12 +165,12 @@ export default function AddQuestion() {
 
   async function handleWordUpload() {
     if (!examId) {
-      alert("Select an exam first.");
+      setBanner({ tone: "error", message: "Select an exam first." });
       return;
     }
 
     if (!wordFile) {
-      alert("Choose a Word document.");
+      setBanner({ tone: "error", message: "Choose a Word document." });
       return;
     }
 
@@ -213,13 +216,14 @@ export default function AddQuestion() {
         saved += 1;
       }
 
-      alert(
-        `${saved} question(s) uploaded.${skipped ? ` ${skipped} block(s) were skipped.` : ""}`
-      );
+      setBanner({
+        tone: "success",
+        message: `${saved} question(s) uploaded.${skipped ? ` ${skipped} block(s) were skipped.` : ""}`,
+      });
       setWordFile(null);
     } catch (error) {
       console.error(error);
-      alert("Word upload failed.");
+      setBanner({ tone: "error", message: "Word upload failed." });
     } finally {
       setLoading(false);
     }
@@ -227,6 +231,12 @@ export default function AddQuestion() {
 
   return (
     <div className="space-y-6">
+      <StatusBanner
+        tone={banner?.tone}
+        message={banner?.message}
+        onClose={() => setBanner(null)}
+      />
+
       <section className="rounded-2xl bg-white p-6 shadow-sm">
         <h2 className="text-2xl font-semibold text-slate-900">Add questions</h2>
         <p className="mt-2 text-sm text-slate-500">
