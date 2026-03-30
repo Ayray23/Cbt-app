@@ -1,5 +1,5 @@
 import { useEffect, useEffectEvent, useMemo, useState } from "react";
-import { useParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import { doc, getDoc, getDocs, collection, query, where } from "firebase/firestore";
 import { db } from "/firebase";
 import { startExamSession, submitExamSession } from "../services/sessionService";
@@ -12,6 +12,7 @@ function formatTime(totalSeconds) {
 
 export default function TakeExam() {
   const { examId } = useParams();
+  const navigate = useNavigate();
   const [exam, setExam] = useState(null);
   const [questions, setQuestions] = useState([]);
   const [answers, setAnswers] = useState({});
@@ -30,10 +31,13 @@ export default function TakeExam() {
     setError("");
 
     try {
-      const submittedSession = await submitExamSession(examId, answers);
-      setSession(submittedSession);
-      setAnswers(submittedSession.answers ?? {});
-      setTimeLeft(0);
+      await submitExamSession(examId, answers);
+      navigate("/portal", {
+        replace: true,
+        state: {
+          message: "Exam submitted successfully. You cannot reopen this exam.",
+        },
+      });
     } catch (submitError) {
       console.error(submitError);
       setError(submitError.message ?? "Submission failed.");
@@ -64,15 +68,16 @@ export default function TakeExam() {
           ...docItem.data(),
         }));
 
-        loadedQuestions.sort((a, b) => {
-          const first = a.createdAt?.seconds ?? 0;
-          const second = b.createdAt?.seconds ?? 0;
-          return first - second;
-        });
-
-        setQuestions(loadedQuestions);
-
         const startedSession = await startExamSession(examId);
+        const order = startedSession.questionOrder ?? [];
+        const sortedQuestions =
+          order.length > 0
+            ? [...loadedQuestions].sort((first, second) => {
+                return order.indexOf(first.id) - order.indexOf(second.id);
+              })
+            : loadedQuestions;
+
+        setQuestions(sortedQuestions);
         setSession(startedSession);
         setAnswers(startedSession.answers ?? {});
 
@@ -135,6 +140,18 @@ export default function TakeExam() {
 
   const submitted = session?.status === "submitted";
 
+  async function confirmAndSubmit() {
+    const isConfirmed = window.confirm(
+      "Are you sure you want to submit? After you press OK, you cannot go back to this exam."
+    );
+
+    if (!isConfirmed) {
+      return;
+    }
+
+    await handleSubmit();
+  }
+
   return (
     <div className="space-y-6">
       <section className="rounded-2xl bg-white p-6 shadow-sm">
@@ -158,6 +175,9 @@ export default function TakeExam() {
               <div>
                 <p className="font-semibold text-slate-900">Time left</p>
                 <p className="mt-1 text-lg">{formatTime(timeLeft ?? exam.duration * 60)}</p>
+                <p className="mt-1 text-xs text-slate-500">
+                  Timer continues to run. You cannot pause this exam.
+                </p>
               </div>
             )}
           </div>
@@ -202,12 +222,6 @@ export default function TakeExam() {
                   </label>
                 ))}
               </div>
-
-              {submitted && (
-                <p className="mt-4 text-sm text-slate-500">
-                  Correct answer: {question.correctAnswer ?? "Not provided"}
-                </p>
-              )}
             </article>
           );
         })}
@@ -216,7 +230,7 @@ export default function TakeExam() {
       {!submitted && (
         <div className="flex justify-end">
           <button
-            onClick={handleSubmit}
+            onClick={confirmAndSubmit}
             disabled={submitting}
             className="rounded-lg bg-emerald-600 px-5 py-3 text-sm font-medium text-white disabled:opacity-60"
           >

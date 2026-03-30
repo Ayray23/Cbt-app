@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import { collection, onSnapshot, orderBy, query, where } from "firebase/firestore";
 import { db } from "/firebase";
 import { useAuth } from "../contexts/AuthContext";
@@ -13,6 +13,7 @@ const INSTRUCTIONS = [
 
 export default function StudentDashboard() {
   const { user } = useAuth();
+  const location = useLocation();
   const [exams, setExams] = useState([]);
   const [sessions, setSessions] = useState([]);
   const [selectedExamId, setSelectedExamId] = useState("");
@@ -57,9 +58,16 @@ export default function StudentDashboard() {
   const selectedExam = exams.find((exam) => exam.id === selectedExamId) ?? null;
   const selectedSession = selectedExam ? sessionsByExam[selectedExam.id] : null;
   const isSubmitted = selectedSession?.status === "submitted";
+  const isStarted = selectedSession?.status === "started";
 
   return (
     <div className="space-y-6">
+      {location.state?.message && (
+        <section className="rounded-3xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-700">
+          {location.state.message}
+        </section>
+      )}
+
       <section className="rounded-3xl bg-white p-6 shadow-sm md:p-8">
         <p className="text-sm font-medium uppercase tracking-[0.3em] text-slate-400">
           Available Exam
@@ -140,14 +148,12 @@ export default function StudentDashboard() {
                   {isSubmitted ? (
                     <>
                       <p className="font-semibold text-slate-900">Submitted</p>
-                      <p className="mt-1">
-                        Score: {selectedSession.finalScore ?? selectedSession.totalAutoScore ?? 0}
-                      </p>
+                      <p className="mt-1">This exam has already been attempted.</p>
                     </>
                   ) : (
                     <>
                       <p className="font-semibold text-slate-900">Attempt policy</p>
-                      <p className="mt-1">One attempt per student</p>
+                      <p className="mt-1">One attempt only. Timer starts immediately.</p>
                     </>
                   )}
                 </div>
@@ -168,12 +174,21 @@ export default function StudentDashboard() {
               </div>
 
               <div className="mt-8">
-                <Link
-                  to={`/exam/${selectedExam.id}`}
-                  className="inline-flex rounded-xl bg-emerald-600 px-5 py-3 text-sm font-medium text-white"
-                >
-                  {isSubmitted ? "Review exam" : "Start exam"}
-                </Link>
+                {!isSubmitted ? (
+                  <Link
+                    to={`/exam/${selectedExam.id}`}
+                    className="inline-flex rounded-xl bg-emerald-600 px-5 py-3 text-sm font-medium text-white"
+                  >
+                    {isStarted ? "Continue exam" : "Start exam"}
+                  </Link>
+                ) : (
+                  <button
+                    disabled
+                    className="inline-flex cursor-not-allowed rounded-xl bg-slate-300 px-5 py-3 text-sm font-medium text-white"
+                  >
+                    Attempted
+                  </button>
+                )}
               </div>
             </>
           )}

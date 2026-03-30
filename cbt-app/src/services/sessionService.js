@@ -5,7 +5,6 @@ import {
   getDocs,
   limit,
   query,
-  runTransaction,
   serverTimestamp,
   setDoc,
   updateDoc,
@@ -34,57 +33,82 @@ function normalizeAnswers(answers) {
   }, {});
 }
 
+function shuffleArray(items) {
+  const next = [...items];
+
+  for (let index = next.length - 1; index > 0; index -= 1) {
+    const swapIndex = Math.floor(Math.random() * (index + 1));
+    [next[index], next[swapIndex]] = [next[swapIndex], next[index]];
+  }
+
+  return next;
+}
+
 export async function startExamSession(examId) {
   const currentUser = requireUser();
   const examRef = doc(db, "exams", examId);
   const sessionRef = doc(db, "examSessions", `${examId}_${currentUser.uid}`);
   const userRef = doc(db, "users", currentUser.uid);
 
-  const result = await runTransaction(db, async (transaction) => {
-    const [examSnapshot, sessionSnapshot, userSnapshot] = await Promise.all([
-      transaction.get(examRef),
-      transaction.get(sessionRef),
-      transaction.get(userRef),
-    ]);
+  const [examSnapshot, sessionSnapshot, userSnapshot, questionsSnapshot] = await Promise.all([
+    getDoc(examRef),
+    getDoc(sessionRef),
+    getDoc(userRef),
+    getDocs(query(collection(db, "questions"), where("examId", "==", examId))),
+  ]);
 
-    if (!examSnapshot.exists()) {
-      throw new Error("Exam not found.");
+  if (!examSnapshot.exists()) {
+    throw new Error("Exam not found.");
+  }
+
+  const exam = examSnapshot.data();
+  if (exam.status !== "published") {
+    throw new Error("This exam is not available right now.");
+  }
+
+  if (sessionSnapshot.exists()) {
+    const existing = sessionSnapshot.data();
+    if (existing.status === "submitted") {
+      throw new Error("This exam has already been submitted.");
     }
 
-    const exam = examSnapshot.data();
-    if (exam.status !== "published") {
-      throw new Error("This exam is not available right now.");
-    }
-
-    if (sessionSnapshot.exists()) {
-      return {
-        id: sessionSnapshot.id,
-        ...sessionSnapshot.data(),
-      };
-    }
-
-    const profile = userSnapshot.exists() ? userSnapshot.data() : {};
-    const sessionData = {
-      examId,
-      examTitle: exam.title || "",
-      studentUid: currentUser.uid,
-      studentEmail: currentUser.email || profile.email || "",
-      studentName: profile.displayName || currentUser.email || "Candidate",
-      status: "started",
-      answers: {},
-      totalAutoScore: 0,
-      finalScore: 0,
-      startedAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
-    };
-
-    transaction.set(sessionRef, sessionData);
     return {
-      id: sessionRef.id,
-      ...sessionData,
-      startedAtMs: Date.now(),
+      id: sessionSnapshot.id,
+      ...existing,
+      startedAtMs:
+        existing.startedAt && typeof existing.startedAt.toMillis === "function"
+          ? existing.startedAt.toMillis()
+          : Date.now(),
     };
-  });
+  }
+
+  if (questionsSnapshot.empty) {
+    throw new Error("This exam has no questions yet.");
+  }
+
+  const questionOrder = shuffleArray(questionsSnapshot.docs.map((questionDoc) => questionDoc.id));
+  const profile = userSnapshot.exists() ? userSnapshot.data() : {};
+  const sessionData = {
+    examId,
+    examTitle: exam.title || "",
+    studentUid: currentUser.uid,
+    studentEmail: currentUser.email || profile.email || "",
+    studentName: profile.displayName || currentUser.email || "Candidate",
+    status: "started",
+    answers: {},
+    questionOrder,
+    totalAutoScore: 0,
+    finalScore: 0,
+    startedAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  };
+
+  await setDoc(sessionRef, sessionData);
+  const createdSnapshot = await getDoc(sessionRef);
+  const result = {
+    id: createdSnapshot.id,
+    ...createdSnapshot.data(),
+  };
 
   if (result.startedAt && typeof result.startedAt.toMillis === "function") {
     return {
@@ -116,6 +140,11 @@ export async function submitExamSession(examId, answers) {
   const exam = examSnapshot.data();
   if (exam.status !== "published") {
     throw new Error("This exam is not available right now.");
+  }
+
+  const existingSessionSnapshot = await getDoc(sessionRef);
+  if (existingSessionSnapshot.exists() && existingSessionSnapshot.data().status === "submitted") {
+    throw new Error("This exam has already been submitted.");
   }
 
   if (questionsSnapshot.empty) {
