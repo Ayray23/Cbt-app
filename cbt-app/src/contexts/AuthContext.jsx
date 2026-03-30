@@ -3,6 +3,7 @@ import { createContext, useContext, useEffect, useState } from "react";
 import {
   doc,
   getDoc,
+  onSnapshot,
   serverTimestamp,
   setDoc,
 } from "firebase/firestore";
@@ -32,7 +33,14 @@ export function AuthProvider({ children }) {
   const [authError, setAuthError] = useState("");
 
   useEffect(() => {
+    let unsubscribeProfile = null;
+
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
+      if (unsubscribeProfile) {
+        unsubscribeProfile();
+        unsubscribeProfile = null;
+      }
+
       if (!currentUser) {
         setUser(null);
         setRole(null);
@@ -70,10 +78,37 @@ export function AuthProvider({ children }) {
             },
             { merge: true }
           );
-
-          setProfile(currentProfile);
-          setRole(currentProfile.role ?? "student");
         }
+
+        unsubscribeProfile = onSnapshot(
+          userRef,
+          (profileSnapshot) => {
+            if (!profileSnapshot.exists()) {
+              setProfile(null);
+              setRole(null);
+              setAuthError(
+                "Your account profile could not be found. Confirm the users document still exists, then sign in again."
+              );
+              setLoading(false);
+              return;
+            }
+
+            const liveProfile = profileSnapshot.data();
+            setProfile(liveProfile);
+            setRole(liveProfile.role ?? "student");
+            setAuthError("");
+            setLoading(false);
+          },
+          (profileError) => {
+            console.error("Failed to subscribe to user profile", profileError);
+            setProfile(null);
+            setRole(null);
+            setAuthError(
+              "We could not keep your account role in sync. Check your Firestore rules and users profile, then sign in again."
+            );
+            setLoading(false);
+          }
+        );
       } catch (error) {
         console.error("Failed to initialize user profile", error);
         setProfile(null);
@@ -81,12 +116,15 @@ export function AuthProvider({ children }) {
         setAuthError(
           "We could not verify your account role or profile right now. Check your Firestore rules and your users profile, then sign in again."
         );
-      } finally {
-        setLoading(false);
       }
     });
 
-    return () => unsubscribe();
+    return () => {
+      unsubscribe();
+      if (unsubscribeProfile) {
+        unsubscribeProfile();
+      }
+    };
   }, []);
 
   const logout = () => signOut(auth);
