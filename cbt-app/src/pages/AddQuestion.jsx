@@ -336,3 +336,5 @@ export default function AddQuestion() {
     </div>
   );
 }
+//To use the word uploader add a question to the manual uploader so as to allow the word uploader to work
+//To add : a cancel button in the word uploader
