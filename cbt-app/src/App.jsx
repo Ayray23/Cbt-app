@@ -14,7 +14,7 @@ import Signup from "./pages/auth/Signup";
 import TakeExam from "./pages/TakeExam";
 
 function LandingRedirect() {
-  const { user, role, loading, isAdmin } = useAuth();
+  const { user, role, loading, isAdmin, authError } = useAuth();
 
   if (loading) {
     return <div className="p-6 flex justify-center">Loading workspace...</div>;
@@ -22,6 +22,10 @@ function LandingRedirect() {
 
   if (!user) {
     return <Navigate to="/login" replace />;
+  }
+
+  if (authError) {
+    return <Navigate to="/account-error" replace />;
   }
 
   if (role === "superadmin" || role === "admin" || isAdmin) {
@@ -32,7 +36,7 @@ function LandingRedirect() {
 }
 
 function RequireAuth() {
-  const { user, loading } = useAuth();
+  const { user, loading, authError } = useAuth();
 
   if (loading) {
     return <div className="p-6 flex justify-center">Checking account...</div>;
@@ -40,6 +44,10 @@ function RequireAuth() {
 
   if (!user) {
     return <Navigate to="/login" replace />;
+  }
+
+  if (authError) {
+    return <Navigate to="/account-error" replace />;
   }
 
   return <Outlet />;
@@ -134,6 +142,37 @@ function AdminShell() {
   );
 }
 
+function AccountErrorScreen() {
+  const { user, authError, logout } = useAuth();
+
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-slate-100 px-4">
+      <div className="w-full max-w-2xl rounded-3xl bg-white p-8 shadow-xl shadow-slate-200/70">
+        <p className="text-xs uppercase tracking-[0.35em] text-slate-400">Account Sync Issue</p>
+        <h1 className="mt-3 text-3xl font-semibold text-slate-900">
+          We could not load your access profile
+        </h1>
+        <p className="mt-4 text-sm text-slate-600">
+          {authError ||
+            "Your account signed in successfully, but the app could not read the role/profile document needed to open the correct workspace."}
+        </p>
+        <div className="mt-6 rounded-2xl bg-slate-50 p-4 text-sm text-slate-600">
+          <p>Email: {user?.email ?? "Unknown user"}</p>
+          <p className="mt-2">Check that your `users/{'{uid}'}` document exists and has the correct `role` field.</p>
+        </div>
+        <div className="mt-8 flex gap-3">
+          <button
+            onClick={logout}
+            className="rounded-xl bg-slate-900 px-5 py-3 text-sm font-medium text-white"
+          >
+            Sign out
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
   return (
     <BrowserRouter>
@@ -141,6 +180,7 @@ export default function App() {
         <Route path="/" element={<LandingRedirect />} />
         <Route path="/login" element={<Login />} />
         <Route path="/signup" element={<Signup />} />
+        <Route path="/account-error" element={<AccountErrorScreen />} />
 
         <Route element={<RequireAuth />}>
           <Route element={<StudentShell />}>

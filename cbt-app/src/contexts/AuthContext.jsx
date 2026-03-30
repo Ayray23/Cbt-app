@@ -29,6 +29,7 @@ export function AuthProvider({ children }) {
   const [role, setRole] = useState(null);
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [authError, setAuthError] = useState("");
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
@@ -36,11 +37,13 @@ export function AuthProvider({ children }) {
         setUser(null);
         setRole(null);
         setProfile(null);
+        setAuthError("");
         setLoading(false);
         return;
       }
 
       setUser(currentUser);
+      setAuthError("");
 
       try {
         const userRef = doc(db, "users", currentUser.uid);
@@ -74,7 +77,10 @@ export function AuthProvider({ children }) {
       } catch (error) {
         console.error("Failed to initialize user profile", error);
         setProfile(null);
-        setRole("student");
+        setRole(null);
+        setAuthError(
+          "We could not verify your account role or profile right now. Check your Firestore rules and your users profile, then sign in again."
+        );
       } finally {
         setLoading(false);
       }
@@ -92,6 +98,7 @@ export function AuthProvider({ children }) {
         role,
         profile,
         loading,
+        authError,
         logout,
         isAdmin: role === "admin" || role === "superadmin",
       }}
