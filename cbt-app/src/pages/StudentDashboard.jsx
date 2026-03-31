@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link, useLocation } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { collection, onSnapshot, orderBy, query, where } from "firebase/firestore";
 import { db } from "/firebase";
+import StatusBanner from "../components/StatusBanner";
 import { useAuth } from "../contexts/AuthContext";
+import { startExamSession } from "../services/sessionService";
 
 const INSTRUCTIONS = [
   "Read each question carefully before you choose an answer.",
@@ -14,9 +16,15 @@ const INSTRUCTIONS = [
 export default function StudentDashboard() {
   const { user } = useAuth();
   const location = useLocation();
+  const navigate = useNavigate();
   const [exams, setExams] = useState([]);
   const [sessions, setSessions] = useState([]);
   const [selectedExamId, setSelectedExamId] = useState("");
+  const [examPassword, setExamPassword] = useState("");
+  const [startingExam, setStartingExam] = useState(false);
+  const [banner, setBanner] = useState(
+    location.state?.message ? { tone: "success", message: location.state.message } : null
+  );
 
   useEffect(() => {
     const examsQuery = query(
@@ -46,6 +54,11 @@ export default function StudentDashboard() {
     };
   }, [selectedExamId, user.uid]);
 
+  useEffect(() => {
+    setExamPassword("");
+    setBanner(location.state?.message ? { tone: "success", message: location.state.message } : null);
+  }, [location.state?.message, selectedExamId]);
+
   const sessionsByExam = useMemo(
     () =>
       sessions.reduce((acc, session) => {
@@ -59,14 +72,34 @@ export default function StudentDashboard() {
   const selectedSession = selectedExam ? sessionsByExam[selectedExam.id] : null;
   const isSubmitted = selectedSession?.status === "submitted";
   const isStarted = selectedSession?.status === "started";
+  const hasPassword = Boolean(selectedExam?.accessCodeHash);
+
+  async function handleStartExam() {
+    if (!selectedExam) {
+      return;
+    }
+
+    setStartingExam(true);
+    setBanner(null);
+
+    try {
+      await startExamSession(selectedExam.id, examPassword);
+      navigate(`/exam/${selectedExam.id}`);
+    } catch (error) {
+      console.error(error);
+      setBanner({ tone: "error", message: error.message ?? "Could not start exam." });
+    } finally {
+      setStartingExam(false);
+    }
+  }
 
   return (
     <div className="space-y-6">
-      {location.state?.message && (
-        <section className="rounded-3xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-700">
-          {location.state.message}
-        </section>
-      )}
+      <StatusBanner
+        tone={banner?.tone}
+        message={banner?.message}
+        onClose={() => setBanner(null)}
+      />
 
       <section className="rounded-3xl bg-white p-6 shadow-sm md:p-8">
         <p className="text-sm font-medium uppercase tracking-[0.3em] text-slate-400">
@@ -173,14 +206,38 @@ export default function StudentDashboard() {
                 </div>
               </div>
 
+              <div className="mt-8 rounded-2xl border border-slate-200 bg-slate-50 p-5">
+                <label className="block text-sm font-medium text-slate-700">Exam password</label>
+                <input
+                  type="text"
+                  value={examPassword}
+                  onChange={(event) => setExamPassword(event.target.value)}
+                  placeholder={
+                    hasPassword
+                      ? "Enter the password given by the invigilator"
+                      : "Exam password has not been generated yet"
+                  }
+                  disabled={isSubmitted || isStarted}
+                  className="mt-3 w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm uppercase tracking-[0.2em] disabled:cursor-not-allowed disabled:bg-slate-100"
+                />
+                <p className="mt-2 text-xs text-slate-500">
+                  {isStarted
+                    ? "Your session is already live. Continue now and the timer will keep running."
+                    : hasPassword
+                      ? "You must enter the correct password before the exam can start."
+                      : "This exam is not open yet because no password has been generated."}
+                </p>
+              </div>
+
               <div className="mt-8">
                 {!isSubmitted ? (
-                  <Link
-                    to={`/exam/${selectedExam.id}`}
-                    className="inline-flex rounded-xl bg-emerald-600 px-5 py-3 text-sm font-medium text-white"
+                  <button
+                    onClick={handleStartExam}
+                    disabled={startingExam || (!isStarted && !hasPassword)}
+                    className="inline-flex rounded-xl bg-emerald-600 px-5 py-3 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-60"
                   >
-                    {isStarted ? "Continue exam" : "Start exam"}
-                  </Link>
+                    {startingExam ? "Verifying..." : isStarted ? "Continue exam" : "Start exam"}
+                  </button>
                 ) : (
                   <button
                     disabled

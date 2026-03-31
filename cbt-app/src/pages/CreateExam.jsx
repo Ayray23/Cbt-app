@@ -1,14 +1,14 @@
 import { useEffect, useState } from "react";
-import {
-  collection,
-  onSnapshot,
-  orderBy,
-  query,
-} from "firebase/firestore";
+import { collection, onSnapshot, orderBy, query } from "firebase/firestore";
 import { db } from "/firebase";
 import ConfirmDialog from "../components/ConfirmDialog";
 import StatusBanner from "../components/StatusBanner";
-import { createExam, deleteExam, updateExamStatus } from "../services/cbtService";
+import {
+  createExam,
+  deleteExam,
+  generateExamAccessCode,
+  updateExamStatus,
+} from "../services/cbtService";
 
 export default function CreateExam() {
   const [title, setTitle] = useState("");
@@ -18,13 +18,31 @@ export default function CreateExam() {
   const [banner, setBanner] = useState(null);
   const [examToDelete, setExamToDelete] = useState(null);
   const [publishingExamId, setPublishingExamId] = useState(null);
+  const [generatingAccessId, setGeneratingAccessId] = useState(null);
+  const [latestGeneratedAccess, setLatestGeneratedAccess] = useState(null);
+  const [accessCodesByExam, setAccessCodesByExam] = useState({});
 
   useEffect(() => {
     const examsQuery = query(collection(db, "exams"), orderBy("createdAt", "desc"));
+    const accessQuery = query(collection(db, "examAccess"));
 
-    return onSnapshot(examsQuery, (snapshot) => {
+    const unsubscribeExams = onSnapshot(examsQuery, (snapshot) => {
       setExams(snapshot.docs.map((docItem) => ({ id: docItem.id, ...docItem.data() })));
     });
+
+    const unsubscribeAccess = onSnapshot(accessQuery, (snapshot) => {
+      setAccessCodesByExam(
+        snapshot.docs.reduce((acc, docItem) => {
+          acc[docItem.id] = docItem.data().code || "";
+          return acc;
+        }, {})
+      );
+    });
+
+    return () => {
+      unsubscribeExams();
+      unsubscribeAccess();
+    };
   }, []);
 
   async function handleSubmit(event) {
@@ -75,6 +93,7 @@ export default function CreateExam() {
     if (!examToDelete) {
       return;
     }
+
     try {
       await deleteExam(examToDelete.id);
       setBanner({ tone: "success", message: "Exam deleted." });
@@ -83,6 +102,24 @@ export default function CreateExam() {
       setBanner({ tone: "error", message: "Could not delete exam." });
     } finally {
       setExamToDelete(null);
+    }
+  }
+
+  async function handleGenerateAccessCode(examId, examTitle) {
+    setGeneratingAccessId(examId);
+
+    try {
+      const accessCode = await generateExamAccessCode(examId);
+      setLatestGeneratedAccess({ examId, examTitle, accessCode });
+      setBanner({
+        tone: "success",
+        message: "Exam password generated. Share it only when you are ready for students to start.",
+      });
+    } catch (error) {
+      console.error(error);
+      setBanner({ tone: "error", message: error.message ?? "Could not generate exam password." });
+    } finally {
+      setGeneratingAccessId(null);
     }
   }
 
@@ -132,18 +169,55 @@ export default function CreateExam() {
       </section>
 
       <section className="grid gap-4">
+        {latestGeneratedAccess && (
+          <article className="rounded-2xl border border-amber-200 bg-amber-50 p-6 shadow-sm">
+            <p className="text-sm font-medium uppercase tracking-[0.25em] text-amber-700">
+              Current exam password
+            </p>
+            <h3 className="mt-2 text-xl font-semibold text-slate-900">
+              {latestGeneratedAccess.examTitle}
+            </h3>
+            <p className="mt-3 text-sm text-slate-600">
+              Copy this now. Students will need it before they can begin the exam.
+            </p>
+            <div className="mt-4 inline-flex rounded-2xl bg-slate-900 px-5 py-4 text-2xl font-semibold tracking-[0.35em] text-white">
+              {latestGeneratedAccess.accessCode}
+            </div>
+          </article>
+        )}
+
         {exams.map((exam) => (
           <article key={exam.id} className="rounded-2xl bg-white p-6 shadow-sm">
             <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
               <div>
                 <h3 className="text-xl font-semibold text-slate-900">{exam.title}</h3>
                 <p className="mt-1 text-sm text-slate-500">
-                  {exam.duration} minutes • {exam.questionCount ?? 0} question(s)
+                  {exam.duration} minutes | {exam.questionCount ?? 0} question(s)
                 </p>
                 <p className="mt-1 text-sm text-slate-500">Status: {exam.status ?? "draft"}</p>
+                <p className="mt-1 text-sm text-slate-500">
+                  Password: {exam.accessCodeHash ? "Generated" : "Not generated"}
+                </p>
+                {accessCodesByExam[exam.id] && (
+                  <p className="mt-1 text-sm font-medium tracking-[0.2em] text-slate-700">
+                    Current code: {accessCodesByExam[exam.id]}
+                  </p>
+                )}
               </div>
 
               <div className="flex flex-wrap gap-3">
+                <button
+                  onClick={() => handleGenerateAccessCode(exam.id, exam.title)}
+                  disabled={generatingAccessId === exam.id}
+                  className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-2 text-sm font-medium text-amber-800 disabled:opacity-60"
+                >
+                  {generatingAccessId === exam.id
+                    ? "Generating..."
+                    : exam.accessCodeHash
+                      ? "Regenerate password"
+                      : "Generate password"}
+                </button>
+
                 <button
                   onClick={() => handleStatusChange(exam.id, "draft")}
                   className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700"
