@@ -44,6 +44,8 @@ export default function TakeExam() {
   const [showSubmitConfirm, setShowSubmitConfirm] = useState(false);
   const hydratedAnswersRef = useRef(false);
   const autosaveTimeoutRef = useRef(null);
+  const lastSavedAnswersRef = useRef("");
+  const sessionStatus = session?.status ?? null;
 
   const handleSubmit = useEffectEvent(async () => {
     if (submitting || session?.status === "submitted") {
@@ -102,6 +104,7 @@ export default function TakeExam() {
         setSession(startedSession);
         setAnswers(startedSession.answers ?? {});
         hydratedAnswersRef.current = true;
+        lastSavedAnswersRef.current = JSON.stringify(startedSession.answers ?? {});
 
         const firstUnansweredIndex = sortedQuestions.findIndex(
           (question) => !(startedSession.answers ?? {})[question.id]
@@ -149,7 +152,12 @@ export default function TakeExam() {
   }, [handleSubmit, timeLeft, session?.status]);
 
   useEffect(() => {
-    if (!hydratedAnswersRef.current || !session || session.status === "submitted" || submitting) {
+    if (!hydratedAnswersRef.current || !sessionStatus || sessionStatus === "submitted" || submitting) {
+      return undefined;
+    }
+
+    const serializedAnswers = JSON.stringify(answers);
+    if (serializedAnswers === lastSavedAnswersRef.current) {
       return undefined;
     }
 
@@ -161,6 +169,7 @@ export default function TakeExam() {
       try {
         setSaving(true);
         const updatedSession = await saveExamProgress(examId, answers);
+        lastSavedAnswersRef.current = serializedAnswers;
         setSession((current) => ({
           ...current,
           ...updatedSession,
@@ -177,7 +186,7 @@ export default function TakeExam() {
         window.clearTimeout(autosaveTimeoutRef.current);
       }
     };
-  }, [answers, examId, session, submitting]);
+  }, [answers, examId, sessionStatus, submitting]);
 
   const totalMarks = useMemo(
     () => questions.reduce((sum, question) => sum + Number(question.marks ?? 1), 0),
