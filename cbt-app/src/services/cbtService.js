@@ -13,7 +13,7 @@ import {
   where,
 } from "firebase/firestore";
 import { db } from "/firebase";
-import { generateAccessCode, hashAccessCode } from "../utils/accessCode";
+import { hashAccessCode, normalizeAccessCode } from "../utils/accessCode";
 
 export async function createExam({ title, duration }) {
   const ref = await addDoc(collection(db, "exams"), {
@@ -92,7 +92,7 @@ export async function addQuestion({
   });
 }
 
-export async function generateExamAccessCode(examId) {
+export async function setExamAccessCode(examId, accessCode) {
   const examRef = doc(db, "exams", examId);
   const examSnapshot = await getDoc(examRef);
 
@@ -100,13 +100,22 @@ export async function generateExamAccessCode(examId) {
     throw new Error("Exam not found.");
   }
 
-  const accessCode = generateAccessCode();
-  const accessCodeHash = await hashAccessCode(accessCode);
+  const normalizedAccessCode = normalizeAccessCode(accessCode);
+
+  if (!normalizedAccessCode) {
+    throw new Error("Enter an exam password before publishing.");
+  }
+
+  if (normalizedAccessCode.length < 4) {
+    throw new Error("Use at least 4 characters for the exam password.");
+  }
+
+  const accessCodeHash = await hashAccessCode(normalizedAccessCode);
 
   await Promise.all([
     setDoc(doc(db, "examAccess", examId), {
       examId,
-      code: accessCode,
+      code: normalizedAccessCode,
       updatedAt: serverTimestamp(),
     }),
     updateDoc(examRef, {
@@ -116,5 +125,5 @@ export async function generateExamAccessCode(examId) {
     }),
   ]);
 
-  return accessCode;
+  return normalizedAccessCode;
 }

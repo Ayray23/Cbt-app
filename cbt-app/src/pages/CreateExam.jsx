@@ -6,7 +6,7 @@ import StatusBanner from "../components/StatusBanner";
 import {
   createExam,
   deleteExam,
-  generateExamAccessCode,
+  setExamAccessCode,
   updateExamStatus,
 } from "../services/cbtService";
 
@@ -18,9 +18,10 @@ export default function CreateExam() {
   const [banner, setBanner] = useState(null);
   const [examToDelete, setExamToDelete] = useState(null);
   const [publishingExamId, setPublishingExamId] = useState(null);
-  const [generatingAccessId, setGeneratingAccessId] = useState(null);
-  const [latestGeneratedAccess, setLatestGeneratedAccess] = useState(null);
   const [accessCodesByExam, setAccessCodesByExam] = useState({});
+  const [publishExam, setPublishExam] = useState(null);
+  const [publishPassword, setPublishPassword] = useState("");
+  const [publishPasswordConfirm, setPublishPasswordConfirm] = useState("");
 
   useEffect(() => {
     const examsQuery = query(collection(db, "exams"), orderBy("createdAt", "desc"));
@@ -105,21 +106,35 @@ export default function CreateExam() {
     }
   }
 
-  async function handleGenerateAccessCode(examId, examTitle) {
-    setGeneratingAccessId(examId);
+  async function handlePublishExam() {
+    if (!publishExam) {
+      return;
+    }
 
     try {
-      const accessCode = await generateExamAccessCode(examId);
-      setLatestGeneratedAccess({ examId, examTitle, accessCode });
+      if (!publishPassword.trim() || !publishPasswordConfirm.trim()) {
+        throw new Error("Enter and confirm the exam password before publishing.");
+      }
+
+      if (publishPassword.trim().toUpperCase() !== publishPasswordConfirm.trim().toUpperCase()) {
+        throw new Error("The exam passwords do not match.");
+      }
+
+      setPublishingExamId(publishExam.id);
+      const savedPassword = await setExamAccessCode(publishExam.id, publishPassword);
+      await updateExamStatus(publishExam.id, "published");
       setBanner({
         tone: "success",
-        message: "Exam password generated. Share it only when you are ready for students to start.",
+        message: `Exam published. Password saved as ${savedPassword}.`,
       });
+      setPublishExam(null);
+      setPublishPassword("");
+      setPublishPasswordConfirm("");
     } catch (error) {
       console.error(error);
-      setBanner({ tone: "error", message: error.message ?? "Could not generate exam password." });
+      setBanner({ tone: "error", message: error.message ?? "Could not publish exam." });
     } finally {
-      setGeneratingAccessId(null);
+      setPublishingExamId(null);
     }
   }
 
@@ -169,23 +184,6 @@ export default function CreateExam() {
       </section>
 
       <section className="grid gap-4">
-        {latestGeneratedAccess && (
-          <article className="rounded-2xl border border-amber-200 bg-amber-50 p-6 shadow-sm">
-            <p className="text-sm font-medium uppercase tracking-[0.25em] text-amber-700">
-              Current exam password
-            </p>
-            <h3 className="mt-2 text-xl font-semibold text-slate-900">
-              {latestGeneratedAccess.examTitle}
-            </h3>
-            <p className="mt-3 text-sm text-slate-600">
-              Copy this now. Students will need it before they can begin the exam.
-            </p>
-            <div className="mt-4 inline-flex rounded-2xl bg-slate-900 px-5 py-4 text-2xl font-semibold tracking-[0.35em] text-white">
-              {latestGeneratedAccess.accessCode}
-            </div>
-          </article>
-        )}
-
         {exams.map((exam) => (
           <article key={exam.id} className="rounded-2xl bg-white p-6 shadow-sm">
             <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
@@ -207,18 +205,6 @@ export default function CreateExam() {
 
               <div className="flex flex-wrap gap-3">
                 <button
-                  onClick={() => handleGenerateAccessCode(exam.id, exam.title)}
-                  disabled={generatingAccessId === exam.id}
-                  className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-2 text-sm font-medium text-amber-800 disabled:opacity-60"
-                >
-                  {generatingAccessId === exam.id
-                    ? "Generating..."
-                    : exam.accessCodeHash
-                      ? "Regenerate password"
-                      : "Generate password"}
-                </button>
-
-                <button
                   onClick={() => handleStatusChange(exam.id, "draft")}
                   className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700"
                 >
@@ -227,7 +213,11 @@ export default function CreateExam() {
 
                 {exam.status !== "published" && (
                   <button
-                    onClick={() => handleStatusChange(exam.id, "published")}
+                    onClick={() => {
+                      setPublishExam(exam);
+                      setPublishPassword(accessCodesByExam[exam.id] ?? "");
+                      setPublishPasswordConfirm(accessCodesByExam[exam.id] ?? "");
+                    }}
                     disabled={publishingExamId === exam.id}
                     className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-60"
                   >
@@ -261,6 +251,64 @@ export default function CreateExam() {
         onConfirm={handleDelete}
         onCancel={() => setExamToDelete(null)}
       />
+
+      {publishExam && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 px-4">
+          <div className="w-full max-w-lg rounded-3xl bg-white p-6 shadow-2xl">
+            <h3 className="text-xl font-semibold text-slate-900">Publish {publishExam.title}</h3>
+            <p className="mt-3 text-sm text-slate-600">
+              Enter the exam password for this subject. Students will need this exact password
+              before they can start the exam.
+            </p>
+
+            <div className="mt-5 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-700">Exam password</label>
+                <input
+                  type="text"
+                  value={publishPassword}
+                  onChange={(event) => setPublishPassword(event.target.value)}
+                  placeholder="For example: MTH202MID"
+                  className="mt-2 w-full rounded-xl border border-slate-300 px-4 py-3 uppercase tracking-[0.2em]"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-700">
+                  Confirm exam password
+                </label>
+                <input
+                  type="text"
+                  value={publishPasswordConfirm}
+                  onChange={(event) => setPublishPasswordConfirm(event.target.value)}
+                  placeholder="Re-enter the same password"
+                  className="mt-2 w-full rounded-xl border border-slate-300 px-4 py-3 uppercase tracking-[0.2em]"
+                />
+              </div>
+            </div>
+
+            <div className="mt-6 flex justify-end gap-3">
+              <button
+                onClick={() => {
+                  setPublishExam(null);
+                  setPublishPassword("");
+                  setPublishPasswordConfirm("");
+                }}
+                className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handlePublishExam}
+                disabled={publishingExamId === publishExam.id}
+                className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-60"
+              >
+                {publishingExamId === publishExam.id ? "Publishing..." : "Save password and publish"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
