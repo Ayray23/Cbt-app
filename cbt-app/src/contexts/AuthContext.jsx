@@ -50,7 +50,10 @@ export function AuthProvider({ children }) {
         return;
       }
 
+      setLoading(true);
       setUser(currentUser);
+      setRole(null);
+      setProfile(null);
       setAuthError("");
 
       try {
