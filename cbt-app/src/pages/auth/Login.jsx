@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { signInWithEmailAndPassword } from "firebase/auth";
 import { auth } from "/firebase";
@@ -9,6 +9,14 @@ export default function Login() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    const loginError = window.sessionStorage.getItem("cbt_login_error");
+    if (loginError) {
+      setError(loginError);
+      window.sessionStorage.removeItem("cbt_login_error");
+    }
+  }, []);
 
   async function handleLogin(event) {
     event.preventDefault();

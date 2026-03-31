@@ -36,6 +36,11 @@ service cloud.firestore {
       allow update: if isSignedIn() && (
         isSuperAdmin() ||
         (
+          isAdmin() &&
+          resource.data.role == 'student' &&
+          request.resource.data.role == resource.data.role
+        ) ||
+        (
           request.auth.uid == userId &&
           request.resource.data.role == resource.data.role
         )

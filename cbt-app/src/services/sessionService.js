@@ -255,3 +255,29 @@ export async function setUserRole(email, role) {
     role: normalizedRole,
   };
 }
+
+export async function setStudentLoginAccess(studentId, loginDisabled) {
+  const studentRef = doc(db, "users", studentId);
+  const studentSnapshot = await getDoc(studentRef);
+
+  if (!studentSnapshot.exists()) {
+    throw new Error("Student profile not found.");
+  }
+
+  const student = studentSnapshot.data();
+  if (student.role !== "student") {
+    throw new Error("Only student accounts can be blocked from this page.");
+  }
+
+  await updateDoc(studentRef, {
+    loginDisabled,
+    updatedAt: serverTimestamp(),
+    disabledAt: loginDisabled ? serverTimestamp() : null,
+  });
+
+  return {
+    ok: true,
+    id: studentId,
+    loginDisabled,
+  };
+}

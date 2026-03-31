@@ -20,6 +20,7 @@ function buildDefaultProfile(currentUser) {
       currentUser.email?.split("@")[0] ??
       "Candidate",
     role: "student",
+    loginDisabled: false,
     createdAt: serverTimestamp(),
     lastLoginAt: serverTimestamp(),
   };
@@ -97,6 +98,19 @@ export function AuthProvider({ children }) {
             }
 
             const liveProfile = profileSnapshot.data();
+            if (liveProfile.role === "student" && liveProfile.loginDisabled) {
+              window.sessionStorage.setItem(
+                "cbt_login_error",
+                "Your student account has been temporarily blocked from accessing the CBT portal. Contact your administrator."
+              );
+              if (unsubscribeProfile) {
+                unsubscribeProfile();
+                unsubscribeProfile = null;
+              }
+              void signOut(auth);
+              return;
+            }
+
             setProfile(liveProfile);
             setRole(liveProfile.role ?? "student");
             setAuthError("");
