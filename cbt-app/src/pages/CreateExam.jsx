@@ -17,6 +17,7 @@ export default function CreateExam() {
   const [exams, setExams] = useState([]);
   const [banner, setBanner] = useState(null);
   const [examToDelete, setExamToDelete] = useState(null);
+  const [publishingExamId, setPublishingExamId] = useState(null);
 
   useEffect(() => {
     const examsQuery = query(collection(db, "exams"), orderBy("createdAt", "desc"));
@@ -50,6 +51,10 @@ export default function CreateExam() {
   }
 
   async function handleStatusChange(examId, status) {
+    if (status === "published") {
+      setPublishingExamId(examId);
+    }
+
     try {
       await updateExamStatus(examId, status);
       setBanner({
@@ -59,6 +64,10 @@ export default function CreateExam() {
     } catch (error) {
       console.error(error);
       setBanner({ tone: "error", message: error.message ?? "Could not update exam status." });
+    } finally {
+      if (status === "published") {
+        setPublishingExamId(null);
+      }
     }
   }
 
@@ -142,12 +151,15 @@ export default function CreateExam() {
                   Move to draft
                 </button>
 
-                <button
-                  onClick={() => handleStatusChange(exam.id, "published")}
-                  className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white"
-                >
-                  Publish
-                </button>
+                {exam.status !== "published" && (
+                  <button
+                    onClick={() => handleStatusChange(exam.id, "published")}
+                    disabled={publishingExamId === exam.id}
+                    className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-60"
+                  >
+                    {publishingExamId === exam.id ? "Publishing..." : "Publish"}
+                  </button>
+                )}
 
                 <button
                   onClick={() => setExamToDelete(exam)}
