@@ -217,6 +217,7 @@ export default function TakeExam() {
   const currentQuestion = questions[currentQuestionIndex];
   const prompt = currentQuestion.text ?? currentQuestion.question ?? "";
   const options = currentQuestion.options ?? {};
+  const isLastQuestion = currentQuestionIndex === questions.length - 1;
 
   async function confirmAndSubmit() {
     setShowSubmitConfirm(true);
@@ -355,13 +356,15 @@ export default function TakeExam() {
               </button>
             </div>
 
-            <button
-              onClick={confirmAndSubmit}
-              disabled={submitting}
-              className="rounded-xl bg-emerald-600 px-5 py-3 text-sm font-medium text-white disabled:opacity-60"
-            >
-              {submitting ? "Submitting..." : "Submit exam"}
-            </button>
+            {isLastQuestion && (
+              <button
+                onClick={confirmAndSubmit}
+                disabled={submitting}
+                className="rounded-xl bg-emerald-600 px-5 py-3 text-sm font-medium text-white disabled:opacity-60"
+              >
+                {submitting ? "Submitting..." : "Submit exam"}
+              </button>
+            )}
           </div>
         </section>
       </section>
