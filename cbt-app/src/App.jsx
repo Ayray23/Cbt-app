@@ -12,12 +12,18 @@ import AddQuestion from "./pages/AddQuestion";
 import Login from "./pages/auth/Login";
 import Signup from "./pages/auth/Signup";
 import TakeExam from "./pages/TakeExam";
+import SplashScreen from "./components/SplashScreen";
 
 function LandingRedirect() {
   const { user, role, loading, isAdmin, authError } = useAuth();
 
   if (loading) {
-    return <div className="p-6 flex justify-center">Loading workspace...</div>;
+    return (
+      <SplashScreen
+        title="Opening your portal"
+        message="We are confirming your account type and loading the correct workspace for you."
+      />
+    );
   }
 
   if (!user) {
@@ -39,7 +45,12 @@ function RequireAuth() {
   const { user, loading, authError } = useAuth();
 
   if (loading) {
-    return <div className="p-6 flex justify-center">Checking account...</div>;
+    return (
+      <SplashScreen
+        title="Checking your account"
+        message="Please wait while we verify your access level and prepare your dashboard."
+      />
+    );
   }
 
   if (!user) {
