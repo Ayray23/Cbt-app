@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import mammoth from "mammoth";
 import { collection, onSnapshot, query, where } from "firebase/firestore";
 import { db } from "/firebase";
@@ -100,6 +100,7 @@ export default function AddQuestion() {
   const [wordFile, setWordFile] = useState(null);
   const [loading, setLoading] = useState(false);
   const [banner, setBanner] = useState(null);
+  const wordFileInputRef = useRef(null);
 
   useEffect(() => {
     const examsQuery = query(
@@ -221,12 +222,23 @@ export default function AddQuestion() {
         message: `${saved} question(s) uploaded.${skipped ? ` ${skipped} block(s) were skipped.` : ""}`,
       });
       setWordFile(null);
+      if (wordFileInputRef.current) {
+        wordFileInputRef.current.value = "";
+      }
     } catch (error) {
       console.error(error);
       setBanner({ tone: "error", message: "Word upload failed." });
     } finally {
       setLoading(false);
     }
+  }
+
+  function handleCancelWordUpload() {
+    setWordFile(null);
+    if (wordFileInputRef.current) {
+      wordFileInputRef.current.value = "";
+    }
+    setBanner({ tone: "info", message: "Selected Word document removed." });
   }
 
   return (
@@ -328,23 +340,38 @@ export default function AddQuestion() {
 
         <div className="mt-4 flex flex-col gap-4 md:flex-row md:items-center">
           <input
+            ref={wordFileInputRef}
             type="file"
             accept=".doc,.docx"
             onChange={(event) => setWordFile(event.target.files?.[0] ?? null)}
             className="flex-1 text-sm"
           />
 
-          <button
-            onClick={handleWordUpload}
-            disabled={loading || !wordFile}
-            className="rounded-xl bg-emerald-600 px-5 py-3 text-sm font-medium text-white disabled:opacity-60"
-          >
-            {loading ? "Uploading..." : "Upload questions"}
-          </button>
+          <div className="flex gap-3">
+            <button
+              onClick={handleWordUpload}
+              disabled={loading || !wordFile}
+              className="rounded-xl bg-emerald-600 px-5 py-3 text-sm font-medium text-white disabled:opacity-60"
+            >
+              {loading ? "Uploading..." : "Upload questions"}
+            </button>
+
+            <button
+              onClick={handleCancelWordUpload}
+              disabled={loading || !wordFile}
+              className="rounded-xl border border-slate-300 px-5 py-3 text-sm font-medium text-slate-700 disabled:opacity-60"
+            >
+              Cancel
+            </button>
+          </div>
         </div>
+
+        {wordFile && (
+          <p className="mt-3 text-sm text-slate-500">
+            Selected file: <span className="font-medium text-slate-700">{wordFile.name}</span>
+          </p>
+        )}
       </section>
     </div>
   );
 }
-//To use the word uploader add a question to the manual uploader so as to allow the word uploader to work
-//To add : a cancel button in the word uploader
