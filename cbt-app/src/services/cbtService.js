@@ -3,14 +3,17 @@ import {
   collection,
   deleteDoc,
   doc,
+  getDoc,
   getCountFromServer,
   getDocs,
   query,
   serverTimestamp,
+  setDoc,
   updateDoc,
   where,
 } from "firebase/firestore";
 import { db } from "/firebase";
+import { generateAccessCode, hashAccessCode } from "../utils/accessCode";
 
 export async function createExam({ title, duration }) {
   const ref = await addDoc(collection(db, "exams"), {
@@ -18,6 +21,8 @@ export async function createExam({ title, duration }) {
     duration: Number(duration) || 0,
     status: "draft",
     questionCount: 0,
+    accessCodeHash: null,
+    accessCodeUpdatedAt: null,
     createdAt: serverTimestamp(),
     publishedAt: null,
   });
@@ -49,6 +54,7 @@ export async function deleteExam(examId) {
   );
 
   await Promise.all(questionsSnapshot.docs.map((item) => deleteDoc(item.ref)));
+  await deleteDoc(doc(db, "examAccess", examId)).catch(() => null);
   await deleteDoc(doc(db, "exams", examId));
 }
 
@@ -84,4 +90,31 @@ export async function addQuestion({
     questionCount: questionCountSnapshot.data().count,
     updatedAt: serverTimestamp(),
   });
+}
+
+export async function generateExamAccessCode(examId) {
+  const examRef = doc(db, "exams", examId);
+  const examSnapshot = await getDoc(examRef);
+
+  if (!examSnapshot.exists()) {
+    throw new Error("Exam not found.");
+  }
+
+  const accessCode = generateAccessCode();
+  const accessCodeHash = await hashAccessCode(accessCode);
+
+  await Promise.all([
+    setDoc(doc(db, "examAccess", examId), {
+      examId,
+      code: accessCode,
+      updatedAt: serverTimestamp(),
+    }),
+    updateDoc(examRef, {
+      accessCodeHash,
+      accessCodeUpdatedAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    }),
+  ]);
+
+  return accessCode;
 }

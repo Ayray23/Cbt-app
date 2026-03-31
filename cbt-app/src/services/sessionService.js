@@ -11,6 +11,7 @@ import {
   where,
 } from "firebase/firestore";
 import { auth, db } from "/firebase";
+import { hashAccessCode } from "../utils/accessCode";
 
 function requireUser() {
   const currentUser = auth.currentUser;
@@ -48,7 +49,7 @@ function toMillis(timestamp, fallback = Date.now()) {
   return timestamp && typeof timestamp.toMillis === "function" ? timestamp.toMillis() : fallback;
 }
 
-export async function startExamSession(examId) {
+export async function startExamSession(examId, accessCode = "") {
   const currentUser = requireUser();
   const examRef = doc(db, "exams", examId);
   const sessionRef = doc(db, "examSessions", `${examId}_${currentUser.uid}`);
@@ -85,7 +86,16 @@ export async function startExamSession(examId) {
         (existing.startedAtMs
           ? existing.startedAtMs + (Number(exam.duration || 0) * 60 * 1000)
           : toMillis(existing.startedAt) + (Number(exam.duration || 0) * 60 * 1000)),
-    };
+      };
+  }
+
+  if (!exam.accessCodeHash) {
+    throw new Error("This exam is not open yet. Ask your supervisor for the exam password.");
+  }
+
+  const providedAccessCodeHash = await hashAccessCode(accessCode);
+  if (providedAccessCodeHash !== exam.accessCodeHash) {
+    throw new Error("Incorrect exam password.");
   }
 
   if (questionsSnapshot.empty) {
