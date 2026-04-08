@@ -145,6 +145,47 @@ function buildStudentReportMarkup(session) {
   `;
 }
 
+function buildResultsPdfMarkup(sessions) {
+  const rows = sessions
+    .map(
+      (session) => `
+        <tr>
+          <td>${escapeHtml(session.studentName ?? session.studentEmail ?? session.studentUid)}</td>
+          <td>${escapeHtml(session.studentEmail ?? "-")}</td>
+          <td>${escapeHtml(session.examTitle ?? session.examId)}</td>
+          <td>${escapeHtml(session.finalScore ?? session.totalAutoScore ?? 0)}</td>
+          <td>${escapeHtml(session.submissionReason ?? "manual")}</td>
+          <td>${escapeHtml(session.tabSwitchCount ?? 0)}</td>
+          <td>${escapeHtml(formatSubmittedAt(session.submittedAt))}</td>
+        </tr>
+      `
+    )
+    .join("");
+
+  return `
+    <h1>Results Summary</h1>
+    <p class="meta">Prepared on ${escapeHtml(new Date().toLocaleString())}</p>
+    <div class="card">
+      <p><strong>Total submitted sessions:</strong> ${escapeHtml(sessions.length)}</p>
+      <p><strong>Export type:</strong> Printable PDF summary</p>
+    </div>
+    <table>
+      <thead>
+        <tr>
+          <th>Student</th>
+          <th>Email</th>
+          <th>Exam</th>
+          <th>Score</th>
+          <th>Submission Reason</th>
+          <th>Tab Warnings</th>
+          <th>Submitted</th>
+        </tr>
+      </thead>
+      <tbody>${rows}</tbody>
+    </table>
+  `;
+}
+
 function buildReportCardMarkup(studentName, studentEmail, sessions) {
   const scores = sessions.map((session) => Number(session.finalScore ?? session.totalAutoScore ?? 0));
   const averageScore = scores.length
@@ -281,6 +322,27 @@ export default function Results() {
     }
   }
 
+  function handleDownloadPdf() {
+    if (submittedSessions.length === 0) {
+      setBanner({ tone: "error", message: "There are no submitted results to export yet." });
+      return;
+    }
+
+    try {
+      openPrintWindow(
+        `Results PDF - ${new Date().toISOString().slice(0, 10)}`,
+        buildResultsPdfMarkup(submittedSessions)
+      );
+      setBanner({
+        tone: "success",
+        message: "Print dialog opened. Choose 'Save as PDF' in your browser to download it.",
+      });
+    } catch (error) {
+      console.error(error);
+      setBanner({ tone: "error", message: error.message ?? "Could not open the PDF export view." });
+    }
+  }
+
   return (
     <div className="space-y-6">
       <StatusBanner
@@ -298,13 +360,22 @@ export default function Results() {
             </p>
           </div>
 
-          <button
-            type="button"
-            onClick={handleDownloadExcel}
-            className="rounded-xl bg-emerald-600 px-5 py-3 text-sm font-medium text-white"
-          >
-            Download results as Excel
-          </button>
+          <div className="flex flex-wrap gap-3">
+            <button
+              type="button"
+              onClick={handleDownloadExcel}
+              className="rounded-xl bg-emerald-600 px-5 py-3 text-sm font-medium text-white"
+            >
+              Download results as Excel
+            </button>
+            <button
+              type="button"
+              onClick={handleDownloadPdf}
+              className="rounded-xl bg-slate-900 px-5 py-3 text-sm font-medium text-white"
+            >
+              Download results as PDF
+            </button>
+          </div>
         </div>
       </section>
 
