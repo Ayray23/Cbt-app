@@ -13,6 +13,7 @@ import Login from "./pages/auth/Login";
 import Signup from "./pages/auth/Signup";
 import TakeExam from "./pages/TakeExam";
 import SplashScreen from "./components/SplashScreen";
+import InstallAppButton from "./components/InstallAppButton";
 
 function LandingRedirect() {
   const { user, role, loading, isAdmin, authError } = useAuth();
@@ -90,6 +91,7 @@ function StudentShell() {
           </div>
 
           <div className="flex items-center gap-3">
+            <InstallAppButton />
             <p className="text-sm font-medium text-slate-700">{user?.email}</p>
             <button
               onClick={logout}
@@ -128,6 +130,7 @@ function AdminShell() {
             </div>
 
             <div className="flex items-center gap-3">
+              <InstallAppButton />
               <div className="text-right">
                 <p className="text-sm font-medium text-slate-700">{user?.email}</p>
                 <p className="text-xs uppercase tracking-[0.25em] text-slate-400">
