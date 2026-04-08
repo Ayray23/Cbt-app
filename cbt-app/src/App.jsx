@@ -9,6 +9,7 @@ import Results from "./pages/Results";
 import Admins from "./pages/Admins";
 import CreateExam from "./pages/CreateExam";
 import AddQuestion from "./pages/AddQuestion";
+import Monitoring from "./pages/Monitoring";
 import Login from "./pages/auth/Login";
 import Signup from "./pages/auth/Signup";
 import TakeExam from "./pages/TakeExam";
@@ -208,6 +209,7 @@ export default function App() {
           <Route element={<AdminShell />}>
             <Route element={<RequireRole allowedRoles={["admin", "superadmin"]} />}>
               <Route path="/dashboard" element={<Dashboard />} />
+              <Route path="/monitoring" element={<Monitoring />} />
               <Route path="/students" element={<Students />} />
               <Route path="/exams/create" element={<CreateExam />} />
               <Route path="/questions/add" element={<AddQuestion />} />

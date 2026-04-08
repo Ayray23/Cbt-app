@@ -13,6 +13,7 @@ export default function Sidebar() {
 
   const adminLinks = [
     { to: "/dashboard", label: "Overview" },
+    { to: "/monitoring", label: "Monitoring" },
     { to: "/students", label: "Students" },
     { to: "/exams/create", label: "Exams" },
     { to: "/questions/add", label: "Add Questions" },
