@@ -13,6 +13,9 @@ import {
 import { auth, db } from "/firebase";
 import { hashAccessCode } from "../utils/accessCode";
 
+const EXAM_DRAFT_PREFIX = "cbt_exam_draft_v1";
+const PENDING_SUBMISSIONS_KEY = "cbt_pending_submissions_v1";
+
 function requireUser() {
   const currentUser = auth.currentUser;
 
@@ -56,6 +59,118 @@ function toMillis(timestamp, fallback = Date.now()) {
   return timestamp && typeof timestamp.toMillis === "function" ? timestamp.toMillis() : fallback;
 }
 
+function draftStorageKey(uid, examId) {
+  return `${EXAM_DRAFT_PREFIX}:${uid}:${examId}`;
+}
+
+function readPendingSubmissions() {
+  try {
+    return JSON.parse(window.localStorage.getItem(PENDING_SUBMISSIONS_KEY) || "[]");
+  } catch {
+    return [];
+  }
+}
+
+function writePendingSubmissions(items) {
+  window.localStorage.setItem(PENDING_SUBMISSIONS_KEY, JSON.stringify(items));
+}
+
+export function getPendingSubmissionMap(uid) {
+  return readPendingSubmissions()
+    .filter((item) => item.uid === uid)
+    .reduce((acc, item) => {
+      acc[item.examId] = item;
+      return acc;
+    }, {});
+}
+
+export function getLocalExamDraft(uid, examId) {
+  try {
+    return JSON.parse(window.localStorage.getItem(draftStorageKey(uid, examId)) || "null");
+  } catch {
+    return null;
+  }
+}
+
+export function saveLocalExamDraft(examId, answers, metadata = {}) {
+  const currentUser = requireUser();
+  const draft = {
+    uid: currentUser.uid,
+    examId,
+    answers: normalizeAnswers(answers),
+    updatedAtMs: Date.now(),
+    ...metadata,
+  };
+
+  window.localStorage.setItem(draftStorageKey(currentUser.uid, examId), JSON.stringify(draft));
+  return draft;
+}
+
+export function clearLocalExamDraft(examId, uid = auth.currentUser?.uid) {
+  if (!uid) {
+    return;
+  }
+
+  window.localStorage.removeItem(draftStorageKey(uid, examId));
+}
+
+async function queuePendingSubmission(uid, examId, payload) {
+  const currentQueue = readPendingSubmissions().filter(
+    (item) => !(item.uid === uid && item.examId === examId)
+  );
+
+  currentQueue.push({
+    uid,
+    examId,
+    payload,
+    queuedAtMs: Date.now(),
+  });
+
+  writePendingSubmissions(currentQueue);
+}
+
+async function writeSubmittedSession(sessionRef, payload) {
+  await setDoc(
+    sessionRef,
+    {
+      ...payload,
+      submittedAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    },
+    { merge: true }
+  );
+}
+
+export async function flushPendingSubmissions() {
+  const currentUser = auth.currentUser;
+  if (!currentUser || !window.navigator.onLine) {
+    return { synced: 0, remaining: readPendingSubmissions().length };
+  }
+
+  const queue = readPendingSubmissions();
+  const remaining = [];
+  let synced = 0;
+
+  for (const item of queue) {
+    if (item.uid !== currentUser.uid) {
+      remaining.push(item);
+      continue;
+    }
+
+    try {
+      await writeSubmittedSession(doc(db, "examSessions", `${item.examId}_${item.uid}`), item.payload);
+      clearLocalExamDraft(item.examId, item.uid);
+      synced += 1;
+    } catch (error) {
+      console.error("Failed to sync queued submission", error);
+      remaining.push(item);
+    }
+  }
+
+  writePendingSubmissions(remaining);
+  return { synced, remaining: remaining.length };
+}
+
 export async function startExamSession(examId, accessCode = "") {
   const currentUser = requireUser();
   const examRef = doc(db, "exams", examId);
@@ -78,15 +193,24 @@ export async function startExamSession(examId, accessCode = "") {
     throw new Error("This exam is not available right now.");
   }
 
+  if (getPendingSubmissionMap(currentUser.uid)[examId]) {
+    throw new Error("This exam has already been submitted and is waiting to sync.");
+  }
+
   if (sessionSnapshot.exists()) {
     const existing = sessionSnapshot.data();
     if (existing.status === "submitted") {
       throw new Error("This exam has already been submitted.");
     }
 
+    const localDraft = getLocalExamDraft(currentUser.uid, examId);
     return {
       id: sessionSnapshot.id,
       ...existing,
+      answers: {
+        ...(existing.answers || {}),
+        ...(localDraft?.answers || {}),
+      },
       startedAtMs: existing.startedAtMs || toMillis(existing.startedAt),
       optionOrderByQuestion: existing.optionOrderByQuestion || {},
       tabSwitchCount: Number(existing.tabSwitchCount || 0),
@@ -171,6 +295,8 @@ export async function saveExamProgress(examId, answers, metadata = {}) {
     };
   }
 
+  saveLocalExamDraft(examId, answers, metadata);
+
   await updateDoc(sessionRef, {
     answers: normalizeAnswers(answers),
     ...metadata,
@@ -243,11 +369,22 @@ export async function submitExamSession(examId, answers, metadata = {}) {
     submissionReason: metadata.submissionReason || "manual",
     tabSwitchCount: Number(metadata.tabSwitchCount ?? existingSession.tabSwitchCount ?? 0),
     integrityWarnings: Number(metadata.integrityWarnings ?? existingSession.integrityWarnings ?? 0),
-    submittedAt: serverTimestamp(),
-    updatedAt: serverTimestamp(),
+    submittedAtMs: Date.now(),
   };
 
-  await setDoc(sessionRef, sessionData, { merge: true });
+  if (!window.navigator.onLine) {
+    await queuePendingSubmission(currentUser.uid, examId, sessionData);
+    clearLocalExamDraft(examId, currentUser.uid);
+    return {
+      id: sessionRef.id,
+      ...existingSession,
+      ...sessionData,
+      pendingSync: true,
+    };
+  }
+
+  await writeSubmittedSession(sessionRef, sessionData);
+  clearLocalExamDraft(examId, currentUser.uid);
 
   return {
     id: sessionRef.id,

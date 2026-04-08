@@ -4,7 +4,7 @@ import { collection, onSnapshot, orderBy, query, where } from "firebase/firestor
 import { db } from "/firebase";
 import StatusBanner from "../components/StatusBanner";
 import { useAuth } from "../contexts/AuthContext";
-import { startExamSession } from "../services/sessionService";
+import { flushPendingSubmissions, getPendingSubmissionMap, startExamSession } from "../services/sessionService";
 
 const INSTRUCTIONS = [
   "Read each question carefully before you choose an answer.",
@@ -22,6 +22,7 @@ export default function StudentDashboard() {
   const [selectedExamId, setSelectedExamId] = useState("");
   const [examPassword, setExamPassword] = useState("");
   const [startingExam, setStartingExam] = useState(false);
+  const [pendingSubmissionMap, setPendingSubmissionMap] = useState({});
   const [banner, setBanner] = useState(
     location.state?.message ? { tone: "success", message: location.state.message } : null
   );
@@ -55,6 +56,27 @@ export default function StudentDashboard() {
   }, [selectedExamId, user.uid]);
 
   useEffect(() => {
+    function refreshPendingState() {
+      setPendingSubmissionMap(getPendingSubmissionMap(user.uid));
+    }
+
+    refreshPendingState();
+
+    async function handleOnline() {
+      await flushPendingSubmissions();
+      refreshPendingState();
+    }
+
+    window.addEventListener("online", handleOnline);
+    window.addEventListener("storage", refreshPendingState);
+
+    return () => {
+      window.removeEventListener("online", handleOnline);
+      window.removeEventListener("storage", refreshPendingState);
+    };
+  }, [user.uid]);
+
+  useEffect(() => {
     setExamPassword("");
     setBanner(location.state?.message ? { tone: "success", message: location.state.message } : null);
   }, [location.state?.message, selectedExamId]);
@@ -70,7 +92,8 @@ export default function StudentDashboard() {
 
   const selectedExam = exams.find((exam) => exam.id === selectedExamId) ?? null;
   const selectedSession = selectedExam ? sessionsByExam[selectedExam.id] : null;
-  const isSubmitted = selectedSession?.status === "submitted";
+  const hasPendingSubmission = Boolean(selectedExam && pendingSubmissionMap[selectedExam.id]);
+  const isSubmitted = selectedSession?.status === "submitted" || hasPendingSubmission;
   const isStarted = selectedSession?.status === "started";
   const hasPassword = Boolean(selectedExam?.accessCodeHash);
 
@@ -131,6 +154,7 @@ export default function StudentDashboard() {
           <div className="mt-6 space-y-3">
             {exams.map((exam) => {
               const session = sessionsByExam[exam.id];
+              const hasQueuedSubmission = Boolean(pendingSubmissionMap[exam.id]);
               return (
                 <button
                   key={exam.id}
@@ -145,7 +169,9 @@ export default function StudentDashboard() {
                   <p className="font-medium">{exam.title}</p>
                   <p className="mt-1 text-sm opacity-80">{exam.duration} minutes</p>
                   <p className="mt-1 text-xs uppercase tracking-[0.25em] opacity-70">
-                    {session?.status === "submitted"
+                    {hasQueuedSubmission
+                      ? "Syncing submission"
+                      : session?.status === "submitted"
                       ? "Submitted"
                       : session?.status === "started"
                         ? "In progress"
@@ -180,8 +206,14 @@ export default function StudentDashboard() {
                 <div className="rounded-2xl bg-slate-100 px-4 py-3 text-sm text-slate-700">
                   {isSubmitted ? (
                     <>
-                      <p className="font-semibold text-slate-900">Submitted</p>
-                      <p className="mt-1">This exam has already been attempted.</p>
+                      <p className="font-semibold text-slate-900">
+                        {hasPendingSubmission ? "Submission syncing" : "Submitted"}
+                      </p>
+                      <p className="mt-1">
+                        {hasPendingSubmission
+                          ? "This exam was closed offline and will sync automatically when internet returns."
+                          : "This exam has already been attempted."}
+                      </p>
                     </>
                   ) : (
                     <>
@@ -221,7 +253,9 @@ export default function StudentDashboard() {
                   className="mt-3 w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm uppercase tracking-[0.2em] disabled:cursor-not-allowed disabled:bg-slate-100"
                 />
                 <p className="mt-2 text-xs text-slate-500">
-                  {isStarted
+                  {hasPendingSubmission
+                    ? "This exam is already closed and waiting for background sync."
+                    : isStarted
                     ? "Your session is already live. Continue now and the timer will keep running."
                     : hasPassword
                       ? "You must enter the correct password before the exam can start."

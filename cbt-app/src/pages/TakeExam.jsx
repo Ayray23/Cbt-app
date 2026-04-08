@@ -62,10 +62,19 @@ export default function TakeExam() {
     setError("");
 
     try {
-      await submitExamSession(examId, answersRef.current, {
+      const result = await submitExamSession(examId, answersRef.current, {
         submissionReason,
         tabSwitchCount: warningCountRef.current,
         integrityWarnings: warningCountRef.current,
+      });
+
+      navigate("/portal", {
+        replace: true,
+        state: {
+          message: result.pendingSync
+            ? "Exam closed offline. Your submission is saved on this device and will sync automatically when internet returns."
+            : "Exam submitted successfully. You cannot reopen this exam.",
+        },
       });
     } catch (submitError) {
       console.error(submitError);
@@ -76,13 +85,6 @@ export default function TakeExam() {
     } finally {
       setSubmitting(false);
     }
-
-    navigate("/portal", {
-      replace: true,
-      state: {
-        message: "Exam submitted successfully. You cannot reopen this exam.",
-      },
-    });
   });
 
   useEffect(() => {

@@ -9,6 +9,7 @@ import {
 } from "firebase/firestore";
 import { onAuthStateChanged, signOut } from "firebase/auth";
 import { auth, db } from "/firebase";
+import { flushPendingSubmissions } from "../services/sessionService";
 
 const AuthContext = createContext(null);
 
@@ -143,6 +144,24 @@ export function AuthProvider({ children }) {
       }
     };
   }, []);
+
+  useEffect(() => {
+    if (!user) {
+      return undefined;
+    }
+
+    void flushPendingSubmissions();
+
+    function handleOnline() {
+      void flushPendingSubmissions();
+    }
+
+    window.addEventListener("online", handleOnline);
+
+    return () => {
+      window.removeEventListener("online", handleOnline);
+    };
+  }, [user]);
 
   const logout = () => signOut(auth);
 
