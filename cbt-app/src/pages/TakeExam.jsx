@@ -10,6 +10,9 @@ import {
 import ConfirmDialog from "../components/ConfirmDialog";
 import StatusBanner from "../components/StatusBanner";
 
+const DISPLAY_OPTION_LABELS = ["A", "B", "C", "D"];
+const MAX_TAB_SWITCH_WARNINGS = 3;
+
 function formatTime(totalSeconds) {
   const minutes = Math.floor(totalSeconds / 60);
   const seconds = totalSeconds % 60;
@@ -42,12 +45,17 @@ export default function TakeExam() {
   const [timeLeft, setTimeLeft] = useState(null);
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
   const [showSubmitConfirm, setShowSubmitConfirm] = useState(false);
+  const [warningCount, setWarningCount] = useState(0);
+  const [integrityMessage, setIntegrityMessage] = useState("");
+  const [fullscreenActive, setFullscreenActive] = useState(Boolean(document.fullscreenElement));
   const hydratedAnswersRef = useRef(false);
   const autosaveTimeoutRef = useRef(null);
   const lastSavedAnswersRef = useRef("");
+  const answersRef = useRef({});
+  const warningCountRef = useRef(0);
   const sessionStatus = session?.status ?? null;
 
-  const handleSubmit = useEffectEvent(async () => {
+  const handleSubmit = useEffectEvent(async (submissionReason = "manual") => {
     if (submitting || session?.status === "submitted") {
       return;
     }
@@ -56,7 +64,11 @@ export default function TakeExam() {
     setError("");
 
     try {
-      await submitExamSession(examId, answers);
+      await submitExamSession(examId, answersRef.current, {
+        submissionReason,
+        tabSwitchCount: warningCountRef.current,
+        integrityWarnings: warningCountRef.current,
+      });
       navigate("/portal", {
         replace: true,
         state: {
@@ -68,6 +80,28 @@ export default function TakeExam() {
       setError(submitError.message ?? "Submission failed.");
     } finally {
       setSubmitting(false);
+    }
+  });
+
+  useEffect(() => {
+    answersRef.current = answers;
+  }, [answers]);
+
+  useEffect(() => {
+    warningCountRef.current = warningCount;
+  }, [warningCount]);
+
+  const requestFullscreenMode = useEffectEvent(async () => {
+    if (!document.fullscreenEnabled || document.fullscreenElement) {
+      return;
+    }
+
+    try {
+      await document.documentElement.requestFullscreen();
+      setFullscreenActive(true);
+    } catch (fullscreenError) {
+      console.error(fullscreenError);
+      setIntegrityMessage("Fullscreen could not be enabled automatically. Enter it manually before you continue.");
     }
   });
 
@@ -103,8 +137,10 @@ export default function TakeExam() {
         setQuestions(sortedQuestions);
         setSession(startedSession);
         setAnswers(startedSession.answers ?? {});
+        answersRef.current = startedSession.answers ?? {};
         hydratedAnswersRef.current = true;
         lastSavedAnswersRef.current = JSON.stringify(startedSession.answers ?? {});
+        setWarningCount(Number(startedSession.tabSwitchCount || 0));
 
         const firstUnansweredIndex = sortedQuestions.findIndex(
           (question) => !(startedSession.answers ?? {})[question.id]
@@ -127,6 +163,12 @@ export default function TakeExam() {
 
     loadExam();
   }, [examId]);
+
+  useEffect(() => {
+    if (!loading && sessionStatus !== "submitted") {
+      void requestFullscreenMode();
+    }
+  }, [loading, requestFullscreenMode, sessionStatus]);
 
   useEffect(() => {
     if (timeLeft === null || session?.status === "submitted") {
@@ -168,7 +210,10 @@ export default function TakeExam() {
     autosaveTimeoutRef.current = window.setTimeout(async () => {
       try {
         setSaving(true);
-        const updatedSession = await saveExamProgress(examId, answers);
+        const updatedSession = await saveExamProgress(examId, answers, {
+          tabSwitchCount: warningCountRef.current,
+          integrityWarnings: warningCountRef.current,
+        });
         lastSavedAnswersRef.current = serializedAnswers;
         setSession((current) => ({
           ...current,
@@ -187,6 +232,100 @@ export default function TakeExam() {
       }
     };
   }, [answers, examId, sessionStatus, submitting]);
+
+  useEffect(() => {
+    if (!sessionStatus || sessionStatus === "submitted") {
+      return undefined;
+    }
+
+    function preventClipboard(event) {
+      event.preventDefault();
+      setIntegrityMessage("Copy, paste, cut, and right-click are disabled during the exam.");
+    }
+
+    function preventShortcutKeys(event) {
+      const pressedKey = String(event.key || "").toLowerCase();
+      if ((event.ctrlKey || event.metaKey) && ["c", "v", "x", "a", "s", "p"].includes(pressedKey)) {
+        event.preventDefault();
+        setIntegrityMessage("Clipboard and print shortcuts are disabled during the exam.");
+      }
+    }
+
+    window.addEventListener("copy", preventClipboard);
+    window.addEventListener("cut", preventClipboard);
+    window.addEventListener("paste", preventClipboard);
+    window.addEventListener("contextmenu", preventClipboard);
+    window.addEventListener("keydown", preventShortcutKeys);
+
+    return () => {
+      window.removeEventListener("copy", preventClipboard);
+      window.removeEventListener("cut", preventClipboard);
+      window.removeEventListener("paste", preventClipboard);
+      window.removeEventListener("contextmenu", preventClipboard);
+      window.removeEventListener("keydown", preventShortcutKeys);
+    };
+  }, [sessionStatus]);
+
+  useEffect(() => {
+    if (!sessionStatus || sessionStatus === "submitted") {
+      return undefined;
+    }
+
+    function handleFullscreenChange() {
+      const isActive = Boolean(document.fullscreenElement);
+      setFullscreenActive(isActive);
+      if (!isActive) {
+        setIntegrityMessage("Fullscreen was exited. Return to fullscreen to continue safely.");
+      }
+    }
+
+    async function handleVisibilityChange() {
+      if (!document.hidden || sessionStatus === "submitted" || submitting) {
+        return;
+      }
+
+      const nextWarningCount = warningCountRef.current + 1;
+      setWarningCount(nextWarningCount);
+      setIntegrityMessage(
+        nextWarningCount >= MAX_TAB_SWITCH_WARNINGS
+          ? "Too many tab switches detected. Submitting your exam now."
+          : `Warning ${nextWarningCount}/${MAX_TAB_SWITCH_WARNINGS}: stay on the exam screen.`
+      );
+
+      try {
+        await saveExamProgress(examId, answersRef.current, {
+          tabSwitchCount: nextWarningCount,
+          integrityWarnings: nextWarningCount,
+          lastVisibilityChangeAtMs: Date.now(),
+        });
+      } catch (visibilityError) {
+        console.error(visibilityError);
+      }
+
+      if (nextWarningCount >= MAX_TAB_SWITCH_WARNINGS) {
+        await handleSubmit("tab-switch-limit");
+      }
+    }
+
+    function handleBeforeUnload(event) {
+      if (sessionStatus === "submitted") {
+        return;
+      }
+
+      event.preventDefault();
+      event.returnValue = "";
+    }
+
+    document.addEventListener("fullscreenchange", handleFullscreenChange);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    window.addEventListener("beforeunload", handleBeforeUnload);
+
+    return () => {
+      document.removeEventListener("fullscreenchange", handleFullscreenChange);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      window.removeEventListener("beforeunload", handleBeforeUnload);
+    };
+  }, [examId, handleSubmit, sessionStatus, submitting]);
 
   const totalMarks = useMemo(
     () => questions.reduce((sum, question) => sum + Number(question.marks ?? 1), 0),
@@ -217,6 +356,7 @@ export default function TakeExam() {
   const currentQuestion = questions[currentQuestionIndex];
   const prompt = currentQuestion.text ?? currentQuestion.question ?? "";
   const options = currentQuestion.options ?? {};
+  const optionOrder = session?.optionOrderByQuestion?.[currentQuestion.id] ?? DISPLAY_OPTION_LABELS;
   const isLastQuestion = currentQuestionIndex === questions.length - 1;
 
   async function confirmAndSubmit() {
@@ -233,6 +373,11 @@ export default function TakeExam() {
 
   return (
     <div className="space-y-6">
+      <StatusBanner
+        tone={integrityMessage ? "warning" : null}
+        message={integrityMessage}
+        onClose={() => setIntegrityMessage("")}
+      />
       <StatusBanner
         tone={saving ? "info" : null}
         message={saving ? "Saving your answers..." : ""}
@@ -257,6 +402,10 @@ export default function TakeExam() {
             <p className="mt-1 text-xs text-slate-500">
               {saving ? "Saving your answers..." : "Answers autosave while you work."}
             </p>
+            <p className="mt-1 text-xs text-slate-500">Tab warnings: {warningCount}/{MAX_TAB_SWITCH_WARNINGS}</p>
+            <p className="mt-1 text-xs text-slate-500">
+              Fullscreen: {fullscreenActive ? "Active" : "Inactive"}
+            </p>
           </div>
         </div>
       </section>
@@ -272,6 +421,7 @@ export default function TakeExam() {
             {questions.map((question, index) => (
               <button
                 key={question.id}
+                type="button"
                 onClick={() => setCurrentQuestionIndex(index)}
                 className={[
                   "rounded-xl border px-0 py-3 text-sm font-semibold transition",
@@ -306,12 +456,12 @@ export default function TakeExam() {
           <h3 className="mt-4 text-2xl font-medium text-slate-900">{prompt}</h3>
 
           <div className="mt-6 grid gap-4">
-            {["A", "B", "C", "D"].map((optionKey) => (
+            {optionOrder.map((originalOptionKey, optionIndex) => (
               <label
-                key={optionKey}
+                key={`${currentQuestion.id}-${originalOptionKey}`}
                 className={[
                   "flex cursor-pointer items-start gap-4 rounded-2xl border px-4 py-4 transition",
-                  answers[currentQuestion.id] === optionKey
+                  answers[currentQuestion.id] === originalOptionKey
                     ? "border-slate-900 bg-slate-900 text-white"
                     : "border-slate-200 bg-slate-50 text-slate-700",
                 ].join(" ")}
@@ -319,8 +469,8 @@ export default function TakeExam() {
                 <input
                   type="radio"
                   name={currentQuestion.id}
-                  value={optionKey}
-                  checked={answers[currentQuestion.id] === optionKey}
+                  value={originalOptionKey}
+                  checked={answers[currentQuestion.id] === originalOptionKey}
                   onChange={(event) =>
                     setAnswers((current) => ({
                       ...current,
@@ -330,8 +480,8 @@ export default function TakeExam() {
                   className="mt-1"
                 />
                 <span className="text-sm">
-                  <span className="font-semibold">{optionKey}.</span>{" "}
-                  {options[optionKey] ?? ""}
+                  <span className="font-semibold">{DISPLAY_OPTION_LABELS[optionIndex]}.</span>{" "}
+                  {options[originalOptionKey] ?? ""}
                 </span>
               </label>
             ))}
@@ -340,6 +490,7 @@ export default function TakeExam() {
           <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex gap-3">
               <button
+                type="button"
                 onClick={moveToPreviousQuestion}
                 disabled={currentQuestionIndex === 0}
                 className="rounded-xl border border-slate-300 px-5 py-3 text-sm font-medium text-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
@@ -348,6 +499,7 @@ export default function TakeExam() {
               </button>
 
               <button
+                type="button"
                 onClick={moveToNextQuestion}
                 disabled={currentQuestionIndex === questions.length - 1}
                 className="rounded-xl bg-slate-900 px-5 py-3 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
@@ -358,6 +510,7 @@ export default function TakeExam() {
 
             {isLastQuestion && (
               <button
+                type="button"
                 onClick={confirmAndSubmit}
                 disabled={submitting}
                 className="rounded-xl bg-emerald-600 px-5 py-3 text-sm font-medium text-white disabled:opacity-60"
@@ -382,6 +535,16 @@ export default function TakeExam() {
         }}
         onCancel={() => setShowSubmitConfirm(false)}
       />
+
+      {!fullscreenActive && sessionStatus !== "submitted" && (
+        <button
+          type="button"
+          onClick={() => void requestFullscreenMode()}
+          className="fixed bottom-6 right-6 rounded-full bg-slate-900 px-5 py-3 text-sm font-medium text-white shadow-lg"
+        >
+          Return to fullscreen
+        </button>
+      )}
     </div>
   );
 }

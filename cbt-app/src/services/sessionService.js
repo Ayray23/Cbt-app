@@ -45,6 +45,13 @@ function shuffleArray(items) {
   return next;
 }
 
+function buildOptionOrderByQuestion(questionDocs) {
+  return questionDocs.reduce((acc, questionDoc) => {
+    acc[questionDoc.id] = shuffleArray(["A", "B", "C", "D"]);
+    return acc;
+  }, {});
+}
+
 function toMillis(timestamp, fallback = Date.now()) {
   return timestamp && typeof timestamp.toMillis === "function" ? timestamp.toMillis() : fallback;
 }
@@ -81,12 +88,15 @@ export async function startExamSession(examId, accessCode = "") {
       id: sessionSnapshot.id,
       ...existing,
       startedAtMs: existing.startedAtMs || toMillis(existing.startedAt),
+      optionOrderByQuestion: existing.optionOrderByQuestion || {},
+      tabSwitchCount: Number(existing.tabSwitchCount || 0),
+      integrityWarnings: Number(existing.integrityWarnings || 0),
       expiresAtMs:
         existing.expiresAtMs ||
         (existing.startedAtMs
           ? existing.startedAtMs + (Number(exam.duration || 0) * 60 * 1000)
           : toMillis(existing.startedAt) + (Number(exam.duration || 0) * 60 * 1000)),
-      };
+    };
   }
 
   if (!exam.accessCodeHash) {
@@ -103,6 +113,7 @@ export async function startExamSession(examId, accessCode = "") {
   }
 
   const questionOrder = shuffleArray(questionsSnapshot.docs.map((questionDoc) => questionDoc.id));
+  const optionOrderByQuestion = buildOptionOrderByQuestion(questionsSnapshot.docs);
   const profile = userSnapshot.exists() ? userSnapshot.data() : {};
   const startedAtMs = Date.now();
   const expiresAtMs = startedAtMs + (Number(exam.duration || 0) * 60 * 1000);
@@ -115,10 +126,13 @@ export async function startExamSession(examId, accessCode = "") {
     status: "started",
     answers: {},
     questionOrder,
+    optionOrderByQuestion,
     startedAtMs,
     expiresAtMs,
     totalAutoScore: 0,
     finalScore: 0,
+    tabSwitchCount: 0,
+    integrityWarnings: 0,
     startedAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   };
@@ -140,7 +154,7 @@ export async function startExamSession(examId, accessCode = "") {
   return result;
 }
 
-export async function saveExamProgress(examId, answers) {
+export async function saveExamProgress(examId, answers, metadata = {}) {
   const currentUser = requireUser();
   const sessionRef = doc(db, "examSessions", `${examId}_${currentUser.uid}`);
   const sessionSnapshot = await getDoc(sessionRef);
@@ -159,6 +173,7 @@ export async function saveExamProgress(examId, answers) {
 
   await updateDoc(sessionRef, {
     answers: normalizeAnswers(answers),
+    ...metadata,
     lastSavedAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   });
@@ -170,7 +185,7 @@ export async function saveExamProgress(examId, answers) {
   };
 }
 
-export async function submitExamSession(examId, answers) {
+export async function submitExamSession(examId, answers, metadata = {}) {
   const currentUser = requireUser();
   const normalizedAnswers = normalizeAnswers(answers);
   const examRef = doc(db, "exams", examId);
@@ -219,11 +234,15 @@ export async function submitExamSession(examId, answers) {
     studentName: profile.displayName || currentUser.email || "Candidate",
     answers: normalizedAnswers,
     questionOrder: existingSession.questionOrder || [],
+    optionOrderByQuestion: existingSession.optionOrderByQuestion || {},
     startedAtMs: existingSession.startedAtMs || Date.now(),
     expiresAtMs: existingSession.expiresAtMs || Date.now(),
     totalAutoScore: total,
     finalScore: total,
     status: "submitted",
+    submissionReason: metadata.submissionReason || "manual",
+    tabSwitchCount: Number(metadata.tabSwitchCount ?? existingSession.tabSwitchCount ?? 0),
+    integrityWarnings: Number(metadata.integrityWarnings ?? existingSession.integrityWarnings ?? 0),
     submittedAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   };
