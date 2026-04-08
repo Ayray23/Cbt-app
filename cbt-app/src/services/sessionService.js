@@ -248,11 +248,11 @@ export async function submitExamSession(examId, answers, metadata = {}) {
   };
 
   await setDoc(sessionRef, sessionData, { merge: true });
-  const sessionSnapshot = await getDoc(sessionRef);
 
   return {
-    id: sessionSnapshot.id,
-    ...sessionSnapshot.data(),
+    id: sessionRef.id,
+    ...existingSession,
+    ...sessionData,
   };
 }
 

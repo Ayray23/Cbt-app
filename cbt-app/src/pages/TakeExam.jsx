@@ -46,8 +46,6 @@ export default function TakeExam() {
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
   const [showSubmitConfirm, setShowSubmitConfirm] = useState(false);
   const [warningCount, setWarningCount] = useState(0);
-  const [integrityMessage, setIntegrityMessage] = useState("");
-  const [fullscreenActive, setFullscreenActive] = useState(Boolean(document.fullscreenElement));
   const hydratedAnswersRef = useRef(false);
   const autosaveTimeoutRef = useRef(null);
   const lastSavedAnswersRef = useRef("");
@@ -69,18 +67,22 @@ export default function TakeExam() {
         tabSwitchCount: warningCountRef.current,
         integrityWarnings: warningCountRef.current,
       });
-      navigate("/portal", {
-        replace: true,
-        state: {
-          message: "Exam submitted successfully. You cannot reopen this exam.",
-        },
-      });
     } catch (submitError) {
       console.error(submitError);
-      setError(submitError.message ?? "Submission failed.");
+      if (window.navigator.onLine) {
+        setError(submitError.message ?? "Submission failed.");
+        return;
+      }
     } finally {
       setSubmitting(false);
     }
+
+    navigate("/portal", {
+      replace: true,
+      state: {
+        message: "Exam submitted successfully. You cannot reopen this exam.",
+      },
+    });
   });
 
   useEffect(() => {
@@ -98,10 +100,8 @@ export default function TakeExam() {
 
     try {
       await document.documentElement.requestFullscreen();
-      setFullscreenActive(true);
     } catch (fullscreenError) {
       console.error(fullscreenError);
-      setIntegrityMessage("Fullscreen could not be enabled automatically. Enter it manually before you continue.");
     }
   });
 
@@ -240,14 +240,12 @@ export default function TakeExam() {
 
     function preventClipboard(event) {
       event.preventDefault();
-      setIntegrityMessage("Copy, paste, cut, and right-click are disabled during the exam.");
     }
 
     function preventShortcutKeys(event) {
       const pressedKey = String(event.key || "").toLowerCase();
       if ((event.ctrlKey || event.metaKey) && ["c", "v", "x", "a", "s", "p"].includes(pressedKey)) {
         event.preventDefault();
-        setIntegrityMessage("Clipboard and print shortcuts are disabled during the exam.");
       }
     }
 
@@ -273,9 +271,8 @@ export default function TakeExam() {
 
     function handleFullscreenChange() {
       const isActive = Boolean(document.fullscreenElement);
-      setFullscreenActive(isActive);
-      if (!isActive) {
-        setIntegrityMessage("Fullscreen was exited. Return to fullscreen to continue safely.");
+      if (!isActive && sessionStatus !== "submitted" && !submitting) {
+        void handleSubmit("fullscreen-exit");
       }
     }
 
@@ -286,11 +283,6 @@ export default function TakeExam() {
 
       const nextWarningCount = warningCountRef.current + 1;
       setWarningCount(nextWarningCount);
-      setIntegrityMessage(
-        nextWarningCount >= MAX_TAB_SWITCH_WARNINGS
-          ? "Too many tab switches detected. Submitting your exam now."
-          : `Warning ${nextWarningCount}/${MAX_TAB_SWITCH_WARNINGS}: stay on the exam screen.`
-      );
 
       try {
         await saveExamProgress(examId, answersRef.current, {
@@ -374,11 +366,6 @@ export default function TakeExam() {
   return (
     <div className="space-y-6">
       <StatusBanner
-        tone={integrityMessage ? "warning" : null}
-        message={integrityMessage}
-        onClose={() => setIntegrityMessage("")}
-      />
-      <StatusBanner
         tone={saving ? "info" : null}
         message={saving ? "Saving your answers..." : ""}
       />
@@ -403,9 +390,6 @@ export default function TakeExam() {
               {saving ? "Saving your answers..." : "Answers autosave while you work."}
             </p>
             <p className="mt-1 text-xs text-slate-500">Tab warnings: {warningCount}/{MAX_TAB_SWITCH_WARNINGS}</p>
-            <p className="mt-1 text-xs text-slate-500">
-              Fullscreen: {fullscreenActive ? "Active" : "Inactive"}
-            </p>
           </div>
         </div>
       </section>
@@ -535,16 +519,6 @@ export default function TakeExam() {
         }}
         onCancel={() => setShowSubmitConfirm(false)}
       />
-
-      {!fullscreenActive && sessionStatus !== "submitted" && (
-        <button
-          type="button"
-          onClick={() => void requestFullscreenMode()}
-          className="fixed bottom-6 right-6 rounded-full bg-slate-900 px-5 py-3 text-sm font-medium text-white shadow-lg"
-        >
-          Return to fullscreen
-        </button>
-      )}
     </div>
   );
 }
