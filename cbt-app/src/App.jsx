@@ -14,6 +14,7 @@ import Signup from "./pages/auth/Signup";
 import TakeExam from "./pages/TakeExam";
 import SplashScreen from "./components/SplashScreen";
 import InstallAppButton from "./components/InstallAppButton";
+import NetworkStatusBanner from "./components/NetworkStatusBanner";
 
 function LandingRedirect() {
   const { user, role, loading, isAdmin, authError } = useAuth();
@@ -104,6 +105,7 @@ function StudentShell() {
       </header>
 
       <main className="mx-auto max-w-6xl p-4 md:p-8">
+        <NetworkStatusBanner />
         <Outlet />
       </main>
     </div>
@@ -149,6 +151,7 @@ function AdminShell() {
         </header>
 
         <main className="p-4 md:p-8">
+          <NetworkStatusBanner />
           <Outlet />
         </main>
       </div>

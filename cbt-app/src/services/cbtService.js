@@ -40,9 +40,14 @@ export async function updateExamStatus(examId, status) {
     const questionCountSnapshot = await getCountFromServer(
       query(collection(db, "questions"), where("examId", "==", examId))
     );
+    const questionCount = questionCountSnapshot.data().count;
+
+    if (questionCount <= 0) {
+      throw new Error("Add at least one question before publishing this exam.");
+    }
 
     updates.publishedAt = serverTimestamp();
-    updates.questionCount = questionCountSnapshot.data().count;
+    updates.questionCount = questionCount;
   }
 
   await updateDoc(doc(db, "exams", examId), updates);
