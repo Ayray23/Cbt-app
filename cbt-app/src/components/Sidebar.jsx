@@ -1,5 +1,6 @@
 import { NavLink } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
+import AppLogo from "./AppLogo";
 
 function linkClassName({ isActive }) {
   return [
@@ -26,8 +27,8 @@ export default function Sidebar() {
   return (
     <aside className="bg-slate-950 px-4 py-6 text-white md:min-h-screen md:w-72">
       <div className="mb-8">
-        <p className="text-xs uppercase tracking-[0.35em] text-slate-500">CBT</p>
-        <h1 className="mt-2 text-2xl font-semibold">
+        <AppLogo size="md" tone="light" />
+        <h1 className="mt-4 text-2xl font-semibold">
           {isAdmin ? "Admin Control" : "Exam Portal"}
         </h1>
         <p className="mt-2 text-sm text-slate-400">

@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { signInWithEmailAndPassword } from "firebase/auth";
 import { auth } from "/firebase";
+import AppLogo from "../../components/AppLogo";
 
 export default function Login() {
   const navigate = useNavigate();
@@ -37,7 +38,7 @@ export default function Login() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-slate-100 px-4">
       <div className="w-full max-w-md rounded-3xl bg-white p-8 shadow-xl shadow-slate-200/70">
-        <p className="text-xs uppercase tracking-[0.35em] text-slate-400">CBT Platform</p>
+        <AppLogo size="lg" />
         <h1 className="mt-3 text-3xl font-semibold text-slate-900">Sign in</h1>
         <p className="mt-2 text-sm text-slate-500">
           Candidates and admins use the same login. Access is routed by role after sign-in.

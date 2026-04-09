@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { createUserWithEmailAndPassword } from "firebase/auth";
 import { auth } from "/firebase";
+import AppLogo from "../../components/AppLogo";
 
 export default function Signup() {
   const navigate = useNavigate();
@@ -37,7 +38,7 @@ export default function Signup() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-slate-100 px-4">
       <div className="w-full max-w-md rounded-3xl bg-white p-8 shadow-xl shadow-slate-200/70">
-        <p className="text-xs uppercase tracking-[0.35em] text-slate-400">Candidate Onboarding</p>
+        <AppLogo size="lg" />
         <h1 className="mt-3 text-3xl font-semibold text-slate-900">Create account</h1>
         <p className="mt-2 text-sm text-slate-500">
           New accounts are created as students by default. Admin access is granted separately by a

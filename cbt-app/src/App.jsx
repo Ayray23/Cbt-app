@@ -16,6 +16,7 @@ import TakeExam from "./pages/TakeExam";
 import SplashScreen from "./components/SplashScreen";
 import InstallAppButton from "./components/InstallAppButton";
 import NetworkStatusBanner from "./components/NetworkStatusBanner";
+import AppLogo from "./components/AppLogo";
 
 function LandingRedirect() {
   const { user, role, loading, isAdmin, authError } = useAuth();
@@ -86,7 +87,8 @@ function StudentShell() {
       <header className="border-b border-slate-200 bg-white px-4 py-4 md:px-8">
         <div className="mx-auto flex max-w-6xl flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div>
-            <p className="text-xs uppercase tracking-[0.3em] text-slate-400">Student Portal</p>
+            <AppLogo size="sm" />
+            <p className="mt-3 text-xs uppercase tracking-[0.3em] text-slate-400">Student Portal</p>
             <h1 className="text-2xl font-semibold text-slate-900">
               {profile?.displayName ?? user?.email ?? "CBT Portal"}
             </h1>
@@ -124,6 +126,7 @@ function AdminShell() {
         <header className="border-b border-slate-200 bg-white px-4 py-4 md:px-8">
           <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
             <div>
+              <AppLogo size="sm" />
               <p className="text-xs uppercase tracking-[0.3em] text-slate-400">
                 {role === "superadmin" || role === "admin" ? "Admin Workspace" : "Student Portal"}
               </p>
