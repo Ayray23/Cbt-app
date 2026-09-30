@@ -1,0 +1,38 @@
+name: CI
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+    branches: [master, main]
+  workflow_dispatch:
+
+jobs:
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: cbt-app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: cbt-app/package-lock.json
+      - run: npm ci
+      - run: npm run build
+
+  functions:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: cloud-functions/functions
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: cloud-functions/functions/package-lock.json
+      - run: npm ci
+      - run: npm run lint
