@@ -64,6 +64,7 @@ export default function ExamCalculator() {
 
   useEffect(() => {
     function handleKeyDown(event) {
+      if (!event.target.closest?.("[data-exam-calculator]")) return;
       if (/^[0-9().%+*/-]$/.test(event.key)) {
         event.preventDefault();
         setExpression((current) => current + event.key);
@@ -121,7 +122,7 @@ export default function ExamCalculator() {
 
   return (
     <aside className="order-first min-w-0 w-full self-start rounded-3xl border border-slate-200 bg-white p-4 shadow-sm xl:sticky xl:top-4 xl:order-none xl:max-h-[calc(100vh-2rem)] xl:overflow-y-auto xl:p-5">
-      <section role="dialog" aria-modal="false" aria-labelledby="exam-calculator-title" className="min-w-0">
+      <section data-exam-calculator role="group" aria-labelledby="exam-calculator-title" className="min-w-0">
         <div className="flex items-center justify-between">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.2em] text-emerald-600">Exam tool</p>
