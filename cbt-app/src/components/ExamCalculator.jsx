@@ -121,8 +121,8 @@ export default function ExamCalculator({ onClose }) {
   }
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/60 p-4" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
-      <section role="dialog" aria-modal="true" aria-labelledby="exam-calculator-title" className="w-full max-w-sm rounded-3xl bg-white p-5 shadow-2xl">
+    <div className="fixed bottom-4 right-4 z-[100] w-[min(20rem,calc(100vw-2rem))] sm:bottom-6 sm:right-6" role="presentation">
+      <section role="dialog" aria-modal="false" aria-labelledby="exam-calculator-title" className="rounded-3xl border border-slate-200 bg-white p-4 shadow-2xl ring-1 ring-slate-900/10">
         <div className="flex items-center justify-between">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.2em] text-emerald-600">Exam tool</p>
@@ -143,7 +143,7 @@ export default function ExamCalculator({ onClose }) {
           ))}
           <button type="button" onClick={() => press("=", "equals")} className="col-span-4 min-h-12 rounded-xl bg-emerald-600 font-semibold text-white hover:bg-emerald-700">Calculate =</button>
         </div>
-        <p className="mt-3 text-center text-xs text-slate-500">Use the buttons or your keyboard. Esc closes the calculator.</p>
+        <p className="mt-3 text-center text-xs text-slate-500">Floating calculator — keep answering while it is open. Dragging is not required; Esc closes it.</p>
       </section>
     </div>
   );
