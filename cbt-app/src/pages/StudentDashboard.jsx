@@ -239,14 +239,14 @@ export default function StudentDashboard() {
               </div>
 
               <div className="mt-8 rounded-2xl border border-slate-200 bg-slate-50 p-5">
-                <label className="block text-sm font-medium text-slate-700">Exam password</label>
+                <label className="block text-sm font-medium text-slate-700">Individual exam code</label>
                 <input
                   type="text"
                   value={examPassword}
                   onChange={(event) => setExamPassword(event.target.value)}
                   placeholder={
                     hasPassword
-                      ? "Enter the password given by the invigilator"
+                      ? "Enter the exam code assigned to you"
                       : "Exam password has not been generated yet"
                   }
                   disabled={isSubmitted || isStarted}
@@ -258,8 +258,8 @@ export default function StudentDashboard() {
                     : isStarted
                     ? "Your session is already live. Continue now and the timer will keep running."
                     : hasPassword
-                      ? "You must enter the correct password before the exam can start."
-                      : "This exam is not open yet because no password has been generated."}
+                      ? "Enter the correct code assigned to your student account before the exam can start."
+                      : "This exam is not open yet because no exam code has been generated."}
                 </p>
               </div>
 
