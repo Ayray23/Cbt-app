@@ -4,6 +4,7 @@ import { collection, onSnapshot, query, where } from "firebase/firestore";
 import { db } from "/firebase";
 import StatusBanner from "../components/StatusBanner";
 import { addQuestion } from "../services/cbtService";
+import { useNavigate } from "react-router-dom";
 
 function normalizeLine(line) {
   return line.replace(/\u00a0/g, " ").trim();
@@ -100,7 +101,19 @@ export default function AddQuestion() {
   const [wordFile, setWordFile] = useState(null);
   const [loading, setLoading] = useState(false);
   const [banner, setBanner] = useState(null);
+  const [uploadModal, setUploadModal] = useState(null);
+  const navigate = useNavigate();
   const wordFileInputRef = useRef(null);
+
+  useEffect(() => {
+    if (uploadModal?.type !== "success") return undefined;
+
+    const redirectTimer = window.setTimeout(() => {
+      navigate("/dashboard", { replace: true });
+    }, 2200);
+
+    return () => window.clearTimeout(redirectTimer);
+  }, [uploadModal, navigate]);
 
   useEffect(() => {
     const examsQuery = query(
@@ -155,10 +168,19 @@ export default function AddQuestion() {
       setOptions({ A: "", B: "", C: "", D: "" });
       setCorrectAnswer("");
       setMarks(1);
-      setBanner({ tone: "success", message: "Question saved successfully." });
+      setBanner(null);
+      setUploadModal({
+        type: "success",
+        title: "Question saved successfully",
+        message: "Your question has been added. Taking you back to the admin overview…",
+      });
     } catch (error) {
       console.error(error);
-      setBanner({ tone: "error", message: "Could not save question." });
+      setUploadModal({
+        type: "error",
+        title: "Question was not saved",
+        message: "The question could not be saved. Check your connection and try again. Your entries have been kept on this page.",
+      });
     } finally {
       setLoading(false);
     }
@@ -166,12 +188,12 @@ export default function AddQuestion() {
 
   async function handleWordUpload() {
     if (!examId) {
-      setBanner({ tone: "error", message: "Select an exam first." });
+      setUploadModal({ type: "error", title: "Select an exam", message: "Choose the exam you want to add questions to, then try again." });
       return;
     }
 
     if (!wordFile) {
-      setBanner({ tone: "error", message: "Choose a Word document." });
+      setUploadModal({ type: "error", title: "Choose a Word document", message: "Select a .doc or .docx file before uploading." });
       return;
     }
 
@@ -217,17 +239,33 @@ export default function AddQuestion() {
         saved += 1;
       }
 
-      setBanner({
-        tone: "success",
-        message: `${saved} question(s) uploaded.${skipped ? ` ${skipped} block(s) were skipped.` : ""}`,
-      });
-      setWordFile(null);
-      if (wordFileInputRef.current) {
-        wordFileInputRef.current.value = "";
+      if (saved > 0 && skipped === 0) {
+        setBanner(null);
+        setUploadModal({
+          type: "success",
+          title: "Questions uploaded successfully",
+          message: `${saved} question(s) were added to the selected exam. Taking you back to the admin overview…`,
+        });
+        setWordFile(null);
+        if (wordFileInputRef.current) {
+          wordFileInputRef.current.value = "";
+        }
+      } else {
+        setUploadModal({
+          type: "error",
+          title: saved > 0 ? "Upload partly completed" : "Upload failed",
+          message: saved > 0
+            ? `${saved} question(s) were saved, but ${skipped} block(s) were skipped. You are still on this page. Fix the skipped questions and upload only those questions to avoid duplicates.`
+            : `No questions were uploaded; ${skipped} block(s) were skipped. Check the Word format and try again. You are still on this page.`,
+        });
       }
     } catch (error) {
       console.error(error);
-      setBanner({ tone: "error", message: "Word upload failed." });
+      setUploadModal({
+        type: "error",
+        title: "Word upload failed",
+        message: "The document could not be processed or saved. Check your connection and file format, then try again. You are still on this page.",
+      });
     } finally {
       setLoading(false);
     }
@@ -248,6 +286,38 @@ export default function AddQuestion() {
         message={banner?.message}
         onClose={() => setBanner(null)}
       />
+
+      {uploadModal && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="upload-result-title"
+        >
+          <div className="w-full max-w-md rounded-3xl bg-white p-7 shadow-2xl">
+            <div className={`mx-auto flex h-14 w-14 items-center justify-center rounded-full text-2xl font-bold ${uploadModal.type === "success" ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-700"}`}>
+              {uploadModal.type === "success" ? "✓" : "!"}
+            </div>
+            <h2 id="upload-result-title" className="mt-5 text-center text-xl font-semibold text-slate-900">
+              {uploadModal.title}
+            </h2>
+            <p className="mt-3 text-center text-sm leading-6 text-slate-600">
+              {uploadModal.message}
+            </p>
+            {uploadModal.type === "success" ? (
+              <p className="mt-4 text-center text-xs text-slate-400">Redirecting in a moment…</p>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setUploadModal(null)}
+                className="mt-6 w-full rounded-xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white"
+              >
+                Stay here and try again
+              </button>
+            )}
+          </div>
+        </div>
+      )}
 
       <section className="rounded-2xl bg-white p-6 shadow-sm">
         <h2 className="text-2xl font-semibold text-slate-900">Add questions</h2>
