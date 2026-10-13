@@ -140,29 +140,54 @@ export async function generateStudentExamCodes(exam, students) {
   }
 
   const generated = [];
-  for (const student of students) {
-    if (!student?.id) continue;
-    const code = generateAccessCode(10);
-    const codeHash = await hashAccessCode(code);
-    const codeRef = doc(db, "studentExamCodes", `${exam.id}_${student.id}`);
-    const record = {
-      examId: exam.id,
-      examTitle: exam.title || "Exam",
-      studentUid: student.id,
-      studentName: student.displayName || student.fullName || student.email || "Student",
-      studentEmail: student.email || "",
-      studentId: student.studentId || "",
-      className: student.className || "",
-      code,
-      codeHash,
-      status: "active",
-      usedAt: null,
-      updatedAt: serverTimestamp(),
-    };
-    await setDoc(codeRef, { ...record, createdAt: serverTimestamp() });
-    generated.push({ id: codeRef.id, ...record });
+  const eligibleStudents = students.filter((student) => student?.id);
+
+  // Two documents per student: an admin-only printable record containing the
+  // plaintext code, and a student-readable validation record containing only
+  // the one-way hash. Keep batches below Firestore's 500-write limit.
+  for (let offset = 0; offset < eligibleStudents.length; offset += 200) {
+    const batch = writeBatch(db);
+    const chunk = eligibleStudents.slice(offset, offset + 200);
+
+    for (const student of chunk) {
+      const code = generateAccessCode(10);
+      const codeHash = await hashAccessCode(code);
+      const codeId = `${exam.id}_${student.id}`;
+      const printRef = doc(db, "studentExamCodePrintRecords", codeId);
+      const hashRef = doc(db, "studentExamCodeHashes", codeId);
+      const studentName = student.displayName || student.fullName || student.email || "Student";
+      const record = {
+        examId: exam.id,
+        examTitle: exam.title || "Exam",
+        studentUid: student.id,
+        studentName,
+        studentEmail: student.email || "",
+        studentId: student.studentId || "",
+        className: student.className || "",
+        code,
+        updatedAt: serverTimestamp(),
+      };
+      batch.set(printRef, { ...record, createdAt: serverTimestamp() });
+      batch.set(hashRef, {
+        examId: exam.id,
+        studentUid: student.id,
+        codeHash,
+        status: "active",
+        usedAt: null,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+      generated.push({ id: codeId, ...record, status: "active" });
+    }
+
+    await batch.commit();
   }
-  await updateDoc(doc(db, "exams", exam.id), { individualCodesEnabled: true, individualCodesUpdatedAt: serverTimestamp(), updatedAt: serverTimestamp() });
+
+  await updateDoc(doc(db, "exams", exam.id), {
+    individualCodesEnabled: true,
+    individualCodesUpdatedAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  });
   return generated;
 }
 
