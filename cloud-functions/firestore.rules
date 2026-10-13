@@ -31,7 +31,15 @@ service cloud.firestore {
         request.auth.uid == userId || isAdmin()
       );
 
-      allow create: if isSignedIn() && request.auth.uid == userId;
+      // Users may create only student profiles. Admins may provision student
+      // profiles for accounts created through the secondary Firebase Auth app.
+      allow create: if isSignedIn() && (
+        (
+          request.auth.uid == userId &&
+          (!('role' in request.resource.data) || request.resource.data.role == 'student')
+        ) ||
+        (isAdmin() && request.resource.data.role == 'student')
+      );
 
       allow update: if isSignedIn() && (
         isSuperAdmin() ||
@@ -42,7 +50,18 @@ service cloud.firestore {
         ) ||
         (
           request.auth.uid == userId &&
-          request.resource.data.role == resource.data.role
+          request.resource.data.role == resource.data.role &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'displayName',
+            'photoURL',
+            'photoUrl',
+            'phone',
+            'preferences',
+            'lastLoginAt',
+            'lastLogin',
+            'lastSeen',
+            'updatedAt'
+          ])
         )
       );
 
@@ -68,6 +87,36 @@ service cloud.firestore {
       );
 
       allow create, update, delete: if isAdmin();
+    }
+
+    // Student-readable validation records contain only a hash, never the
+    // plaintext code printed on the candidate's slip.
+    match /studentExamCodeHashes/{codeId} {
+      allow get: if isSignedIn() && (
+        isAdmin() || resource.data.studentUid == request.auth.uid
+      );
+      allow list: if isAdmin();
+
+      allow create, delete: if isAdmin();
+      allow update: if isAdmin() || (
+        isSignedIn() &&
+        resource.data.studentUid == request.auth.uid &&
+        resource.data.status == 'active' &&
+        request.resource.data.status == 'used' &&
+        request.resource.data.studentUid == resource.data.studentUid &&
+        request.resource.data.examId == resource.data.examId &&
+        request.resource.data.codeHash == resource.data.codeHash &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'status',
+          'usedAt',
+          'updatedAt'
+        ])
+      );
+    }
+
+    // Plaintext codes and printable student details are strictly admin-only.
+    match /studentExamCodePrintRecords/{codeId} {
+      allow read, write: if isAdmin();
     }
 
     match /examSessions/{sessionId} {
