@@ -9,7 +9,6 @@ import {
   submitExamSession,
 } from "../services/sessionService";
 import ConfirmDialog from "../components/ConfirmDialog";
-import StatusBanner from "../components/StatusBanner";
 import ExamCalculator from "../components/ExamCalculator";
 
 const DISPLAY_OPTION_LABELS = ["A", "B", "C", "D"];
