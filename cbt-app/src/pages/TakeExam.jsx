@@ -47,6 +47,7 @@ export default function TakeExam() {
   const [showSubmitConfirm, setShowSubmitConfirm] = useState(false);
   const [warningCount, setWarningCount] = useState(0);
   const hydratedAnswersRef = useRef(false);
+  const hasEnteredFullscreenRef = useRef(false);
   const autosaveTimeoutRef = useRef(null);
   const lastSavedAnswersRef = useRef("");
   const answersRef = useRef({});
@@ -102,8 +103,11 @@ export default function TakeExam() {
 
     try {
       await document.documentElement.requestFullscreen();
+      hasEnteredFullscreenRef.current = Boolean(document.fullscreenElement);
     } catch (fullscreenError) {
-      console.error(fullscreenError);
+      // Fullscreen can be denied unless the request follows a user gesture.
+      // A denied request must not be treated as an exam violation.
+      console.info("Fullscreen mode is unavailable; continuing the exam normally.", fullscreenError);
     }
   });
 
@@ -273,7 +277,16 @@ export default function TakeExam() {
 
     function handleFullscreenChange() {
       const isActive = Boolean(document.fullscreenElement);
-      if (!isActive && sessionStatus !== "submitted" && !submitting) {
+
+      if (isActive) {
+        hasEnteredFullscreenRef.current = true;
+        return;
+      }
+
+      // Enforce fullscreen exit only after fullscreen was genuinely entered.
+      // Browser-denied initial requests must never close or submit an exam.
+      if (hasEnteredFullscreenRef.current && sessionStatus !== "submitted" && !submitting) {
+        hasEnteredFullscreenRef.current = false;
         void handleSubmit("fullscreen-exit");
       }
     }
