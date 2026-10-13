@@ -4,6 +4,7 @@ import Sidebar from "./components/Sidebar";
 import Dashboard from "./pages/Dashboard";
 import StudentDashboard from "./pages/StudentDashboard";
 import Students from "./pages/Students";
+import ExamCodes from "./pages/ExamCodes";
 import Questions from "./pages/Questions";
 import Results from "./pages/Results";
 import Admins from "./pages/Admins";
@@ -214,6 +215,7 @@ export default function App() {
               <Route path="/dashboard" element={<Dashboard />} />
               <Route path="/monitoring" element={<Monitoring />} />
               <Route path="/students" element={<Students />} />
+              <Route path="/exam-codes" element={<ExamCodes />} />
               <Route path="/exams/create" element={<CreateExam />} />
               <Route path="/questions/add" element={<AddQuestion />} />
               <Route path="/questions" element={<Questions />} />
