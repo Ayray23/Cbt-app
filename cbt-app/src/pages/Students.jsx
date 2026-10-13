@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
-import { collection, onSnapshot, query, where, doc, updateDoc, writeBatch, serverTimestamp } from "firebase/firestore";
-import { db } from "/firebase";
+import { collection, onSnapshot, query, where, doc, setDoc, writeBatch, serverTimestamp } from "firebase/firestore";
+import { deleteApp, getApp, initializeApp } from "firebase/app";
+import { createUserWithEmailAndPassword, deleteUser, getAuth } from "firebase/auth";
+import { auth, db } from "/firebase";
 import StatusBanner from "../components/StatusBanner";
 import { setStudentLoginAccess } from "../services/sessionService";
 import { updateStudentProfile } from "../services/cbtService";
@@ -47,6 +49,9 @@ export default function Students() {
   const [profileForm, setProfileForm] = useState(emptyProfile);
   const [savingProfile, setSavingProfile] = useState(false);
   const [importing, setImporting] = useState(false);
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [creatingStudent, setCreatingStudent] = useState(false);
+  const [newStudentForm, setNewStudentForm] = useState({ ...emptyProfile, email: "", password: "" });
 
   useEffect(() => {
     const studentsQuery = query(collection(db, "users"), where("role", "==", "student"));
@@ -80,6 +85,51 @@ export default function Students() {
       department: student.department || "",
       phone: student.phone || "",
     });
+  }
+
+  async function createStudentAccount(event) {
+    event.preventDefault();
+    const email = newStudentForm.email.trim().toLowerCase();
+    if (!email || !newStudentForm.password || newStudentForm.password.length < 6 || !newStudentForm.displayName.trim()) {
+      setBanner({ tone: "error", message: "Enter the student's full name, email and a temporary password of at least 6 characters." });
+      return;
+    }
+
+    setCreatingStudent(true);
+    let secondaryApp;
+    let createdUser;
+    try {
+      secondaryApp = initializeApp(getApp().options, `cbt-student-provision-${Date.now()}`);
+      const secondaryAuth = getAuth(secondaryApp);
+      const credential = await createUserWithEmailAndPassword(secondaryAuth, email, newStudentForm.password);
+      createdUser = credential.user;
+      await setDoc(doc(db, "users", createdUser.uid), {
+        email,
+        displayName: newStudentForm.displayName.trim(),
+        studentId: newStudentForm.studentId.trim(),
+        className: newStudentForm.className.trim(),
+        department: newStudentForm.department.trim(),
+        phone: newStudentForm.phone.trim(),
+        role: "student",
+        loginDisabled: false,
+        createdBy: auth.currentUser?.uid || "",
+        createdAt: serverTimestamp(),
+        lastLoginAt: null,
+      });
+      setBanner({ tone: "success", message: `Student account created for ${newStudentForm.displayName.trim()}. Share the temporary password with the student securely.` });
+      setNewStudentForm({ ...emptyProfile, email: "", password: "" });
+      setShowCreateModal(false);
+    } catch (error) {
+      if (createdUser) {
+        try { await deleteUser(createdUser); } catch (cleanupError) { console.error("Could not roll back student auth account", cleanupError); }
+      }
+      setBanner({ tone: "error", message: error.code === "auth/email-already-in-use" ? "That email already has a Firebase login account." : error.message || "Could not create the student account." });
+    } finally {
+      if (secondaryApp) {
+        try { await deleteApp(secondaryApp); } catch (cleanupError) { console.error("Could not close temporary auth app", cleanupError); }
+      }
+      setCreatingStudent(false);
+    }
   }
 
   async function saveProfile(event) {
@@ -210,7 +260,7 @@ export default function Students() {
           <div className="flex flex-wrap gap-2">
             <select value={classFilter} onChange={(event) => setClassFilter(event.target.value)} className={fieldClass + " min-w-36"}><option value="all">All classes</option>{classes.map((className) => <option key={className} value={className}>{className}</option>)}</select>
             <select value={accessFilter} onChange={(event) => setAccessFilter(event.target.value)} className={fieldClass + " min-w-36"}><option value="all">All access</option><option value="active">Active</option><option value="blocked">Blocked</option></select>
-            <button type="button" onClick={exportStudents} className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50">Export CSV</button>
+            <button type="button" onClick={() => setShowCreateModal(true)} className="rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700">+ Add student</button><button type="button" onClick={exportStudents} className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50">Export CSV</button>
             <label className={`cursor-pointer rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 ${importing ? "pointer-events-none opacity-60" : ""}`}>{importing ? "Importing…" : "Import roster"}<input type="file" accept=".csv,text/csv" className="hidden" onChange={importRoster} disabled={importing} /></label>
           </div>
         </div>
@@ -240,6 +290,7 @@ export default function Students() {
         {filteredStudents.length === 0 && <div className="p-12 text-center"><div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100 text-xl text-slate-500">⌕</div><p className="mt-4 font-semibold text-slate-900">No matching students</p><p className="mt-1 text-sm text-slate-500">Try another search or change the filters.</p></div>}
       </section>
 
+      {showCreateModal && <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-slate-950/50 p-4"><div role="dialog" aria-modal="true" aria-labelledby="create-student-title" className="my-auto w-full max-w-2xl rounded-3xl bg-white p-6 shadow-2xl md:p-8"><div className="flex items-start justify-between gap-4"><div><p className="text-xs font-bold uppercase tracking-[0.2em] text-indigo-600">New candidate</p><h3 id="create-student-title" className="mt-2 text-2xl font-semibold text-slate-900">Create student account</h3><p className="mt-1 text-sm text-slate-500">Creates a Firebase login and student profile without signing you out.</p></div><button type="button" onClick={() => setShowCreateModal(false)} className="rounded-xl px-3 py-2 text-xl text-slate-500 hover:bg-slate-100" aria-label="Close create form">×</button></div><form onSubmit={createStudentAccount} className="mt-6 grid gap-4 sm:grid-cols-2"><label className="text-sm font-medium text-slate-700 sm:col-span-2">Full name<input required value={newStudentForm.displayName} onChange={(event) => setNewStudentForm((current) => ({ ...current, displayName: event.target.value }))} className={fieldClass + " mt-1.5"} /></label><label className="text-sm font-medium text-slate-700 sm:col-span-2">Email address<input type="email" required value={newStudentForm.email} onChange={(event) => setNewStudentForm((current) => ({ ...current, email: event.target.value }))} className={fieldClass + " mt-1.5"} /></label><label className="text-sm font-medium text-slate-700 sm:col-span-2">Temporary password<input type="text" autoComplete="off" minLength={6} required value={newStudentForm.password} onChange={(event) => setNewStudentForm((current) => ({ ...current, password: event.target.value }))} className={fieldClass + " mt-1.5"} /><span className="mt-1 block text-xs font-normal text-slate-500">Use at least 6 characters and share it with the student privately.</span></label><label className="text-sm font-medium text-slate-700">Student ID / Matric no.<input value={newStudentForm.studentId} onChange={(event) => setNewStudentForm((current) => ({ ...current, studentId: event.target.value }))} className={fieldClass + " mt-1.5"} /></label><label className="text-sm font-medium text-slate-700">Class / Level<input value={newStudentForm.className} onChange={(event) => setNewStudentForm((current) => ({ ...current, className: event.target.value }))} className={fieldClass + " mt-1.5"} /></label><label className="text-sm font-medium text-slate-700">Department<input value={newStudentForm.department} onChange={(event) => setNewStudentForm((current) => ({ ...current, department: event.target.value }))} className={fieldClass + " mt-1.5"} /></label><label className="text-sm font-medium text-slate-700">Phone number<input value={newStudentForm.phone} onChange={(event) => setNewStudentForm((current) => ({ ...current, phone: event.target.value }))} className={fieldClass + " mt-1.5"} /></label><div className="mt-2 flex justify-end gap-3 sm:col-span-2"><button type="button" onClick={() => setShowCreateModal(false)} className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700">Cancel</button><button type="submit" disabled={creatingStudent} className="rounded-xl bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-60">{creatingStudent ? "Creating account…" : "Create student"}</button></div></form></div></div>}
       {editingStudent && <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-slate-950/50 p-4"><div role="dialog" aria-modal="true" aria-labelledby="edit-student-title" className="my-auto w-full max-w-xl rounded-3xl bg-white p-6 shadow-2xl md:p-8"><div className="flex items-start justify-between gap-4"><div><p className="text-xs font-bold uppercase tracking-[0.2em] text-indigo-600">Student record</p><h3 id="edit-student-title" className="mt-2 text-2xl font-semibold text-slate-900">Edit student</h3><p className="mt-1 text-sm text-slate-500">{editingStudent.email}</p></div><button type="button" onClick={() => setEditingStudent(null)} className="rounded-xl px-3 py-2 text-xl text-slate-500 hover:bg-slate-100" aria-label="Close edit form">×</button></div><form onSubmit={saveProfile} className="mt-6 grid gap-4 sm:grid-cols-2"><label className="text-sm font-medium text-slate-700 sm:col-span-2">Full name<input required value={profileForm.displayName} onChange={(event) => setProfileForm((current) => ({ ...current, displayName: event.target.value }))} className={fieldClass + " mt-1.5"} /></label><label className="text-sm font-medium text-slate-700">Student ID / Matric no.<input value={profileForm.studentId} onChange={(event) => setProfileForm((current) => ({ ...current, studentId: event.target.value }))} className={fieldClass + " mt-1.5"} /></label><label className="text-sm font-medium text-slate-700">Class / Level<input value={profileForm.className} onChange={(event) => setProfileForm((current) => ({ ...current, className: event.target.value }))} className={fieldClass + " mt-1.5"} /></label><label className="text-sm font-medium text-slate-700">Department<input value={profileForm.department} onChange={(event) => setProfileForm((current) => ({ ...current, department: event.target.value }))} className={fieldClass + " mt-1.5"} /></label><label className="text-sm font-medium text-slate-700">Phone number<input value={profileForm.phone} onChange={(event) => setProfileForm((current) => ({ ...current, phone: event.target.value }))} className={fieldClass + " mt-1.5"} /></label><div className="mt-2 flex justify-end gap-3 sm:col-span-2"><button type="button" onClick={() => setEditingStudent(null)} className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700">Cancel</button><button type="submit" disabled={savingProfile} className="rounded-xl bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-60">{savingProfile ? "Saving…" : "Save changes"}</button></div></form></div></div>}
     </div>
   );
