@@ -177,7 +177,7 @@ export async function startExamSession(examId, accessCode = "") {
   const sessionRef = doc(db, "examSessions", `${examId}_${currentUser.uid}`);
   const userRef = doc(db, "users", currentUser.uid);
 
-  const studentCodeRef = doc(db, "studentExamCodes", `${examId}_${currentUser.uid}`);
+  const studentCodeRef = doc(db, "studentExamCodeHashes", `${examId}_${currentUser.uid}`);
   const [examSnapshot, sessionSnapshot, userSnapshot, questionsSnapshot, studentCodeSnapshot] = await Promise.all([
     getDoc(examRef),
     getDoc(sessionRef),
