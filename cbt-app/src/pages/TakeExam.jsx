@@ -339,7 +339,7 @@ export default function TakeExam() {
 
   if (error) {
     return (
-      <div className={`space-y-6 transition-[margin] duration-200 ${showCalculator ? "xl:mr-[22rem]" : ""}`}>
+      <div className="space-y-6">
         <StatusBanner tone="error" message={error} />
       </div>
     );
@@ -369,6 +369,8 @@ export default function TakeExam() {
 
   return (
     <div className="space-y-6">
+      <div className={showCalculator ? "grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1fr)_21rem] xl:items-start" : ""}>
+        <div className="min-w-0 space-y-6">
       <StatusBanner
         tone={saving ? "info" : null}
         message={saving ? "Saving your answers..." : ""}
@@ -520,7 +522,9 @@ export default function TakeExam() {
         </section>
       </section>
 
-      {showCalculator && <ExamCalculator onClose={() => setShowCalculator(false)} />}
+              </div>
+        {showCalculator && <ExamCalculator onClose={() => setShowCalculator(false)} />}
+      </div>
 
       <ConfirmDialog
         open={showSubmitConfirm}
