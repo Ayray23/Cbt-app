@@ -61,7 +61,7 @@ export default function StudentDashboard() {
       setHasAssignedCode(false);
       return undefined;
     }
-    return onSnapshot(doc(db, "studentExamCodes", `${selectedExamId}_${user.uid}`), (snapshot) => {
+    return onSnapshot(doc(db, "studentExamCodeHashes", `${selectedExamId}_${user.uid}`), (snapshot) => {
       setHasAssignedCode(snapshot.exists() && snapshot.data().status !== "revoked");
     }, () => setHasAssignedCode(false));
   }, [selectedExamId, user.uid]);
