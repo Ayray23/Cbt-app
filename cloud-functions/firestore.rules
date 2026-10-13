@@ -93,7 +93,11 @@ service cloud.firestore {
     // plaintext code printed on the candidate's slip.
     match /studentExamCodeHashes/{codeId} {
       allow get: if isSignedIn() && (
-        isAdmin() || resource.data.studentUid == request.auth.uid
+        isAdmin() || (
+          codeId.matches('.*_' + request.auth.uid) &&
+          (!exists(/databases/$(database)/documents/studentExamCodeHashes/$(codeId)) ||
+            resource.data.studentUid == request.auth.uid)
+        )
       );
       allow list: if isAdmin();
 
