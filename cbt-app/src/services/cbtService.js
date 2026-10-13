@@ -159,8 +159,7 @@ export async function generateStudentExamCodes(exam, students) {
       usedAt: null,
       updatedAt: serverTimestamp(),
     };
-    const { createdAt, ...updates } = record;
-    await setDoc(codeRef, { ...updates, createdAt: serverTimestamp() });
+    await setDoc(codeRef, { ...record, createdAt: serverTimestamp() });
     generated.push({ id: codeRef.id, ...record });
   }
   return generated;
