@@ -7,7 +7,8 @@ import { generateStudentExamCodes } from "../services/cbtService";
 export default function ExamCodes() {
   const [students, setStudents] = useState([]);
   const [exams, setExams] = useState([]);
-  const [codes, setCodes] = useState([]);
+  const [printRecords, setPrintRecords] = useState([]);
+  const [codeHashes, setCodeHashes] = useState([]);
   const [examId, setExamId] = useState("");
   const [studentSearch, setStudentSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
@@ -23,13 +24,15 @@ export default function ExamCodes() {
         setExams(next);
         setExamId((current) => current || next.find((exam) => exam.status === "published")?.id || next[0]?.id || "");
       }, (error) => setBanner({ tone: "error", message: error.message || "Could not load exams." })),
-      onSnapshot(collection(db, "studentExamCodes"), (snapshot) => setCodes(snapshot.docs.map((item) => ({ id: item.id, ...item.data() }))), (error) => setBanner({ tone: "error", message: error.message || "Could not load exam codes." })),
+      onSnapshot(collection(db, "studentExamCodePrintRecords"), (snapshot) => setPrintRecords(snapshot.docs.map((item) => ({ id: item.id, ...item.data() }))), (error) => setBanner({ tone: "error", message: error.message || "Could not load printable exam codes." })),
+      onSnapshot(collection(db, "studentExamCodeHashes"), (snapshot) => setCodeHashes(snapshot.docs.map((item) => ({ id: item.id, ...item.data() }))), (error) => setBanner({ tone: "error", message: error.message || "Could not load exam-code statuses." })),
     ];
     return () => unsubs.forEach((unsubscribe) => unsubscribe());
   }, []);
 
   const selectedExam = exams.find((exam) => exam.id === examId) || null;
-  const examCodes = useMemo(() => codes.filter((code) => code.examId === examId).sort((a, b) => String(a.studentName || "").localeCompare(String(b.studentName || ""))), [codes, examId]);
+  const hashById = useMemo(() => codeHashes.reduce((acc, item) => { acc[item.id] = item; return acc; }, {}), [codeHashes]);
+  const examCodes = useMemo(() => printRecords.filter((code) => code.examId === examId).map((code) => ({ ...code, status: hashById[code.id]?.status || "revoked" })).sort((a, b) => String(a.studentName || "").localeCompare(String(b.studentName || ""))), [printRecords, hashById, examId]);
   const codeByStudent = useMemo(() => examCodes.reduce((acc, code) => { acc[code.studentUid] = code; return acc; }, {}), [examCodes]);
   const filteredStudents = useMemo(() => {
     const term = studentSearch.trim().toLowerCase();
@@ -73,7 +76,7 @@ export default function ExamCodes() {
 
   async function revokeCode(code) {
     try {
-      await updateDoc(doc(db, "studentExamCodes", code.id), { status: "revoked", updatedAt: serverTimestamp() });
+      await updateDoc(doc(db, "studentExamCodeHashes", code.id), { status: "revoked", updatedAt: serverTimestamp() });
       setBanner({ tone: "success", message: `The code for ${code.studentName || "this student"} has been revoked.` });
     } catch (error) {
       setBanner({ tone: "error", message: error.message || "Could not revoke the code." });
