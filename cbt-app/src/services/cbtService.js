@@ -13,7 +13,7 @@ import {
   where,
 } from "firebase/firestore";
 import { db } from "/firebase";
-import { hashAccessCode, normalizeAccessCode } from "../utils/accessCode";
+import { generateAccessCode, hashAccessCode, normalizeAccessCode } from "../utils/accessCode";
 
 export async function createExam({ title, duration }) {
   const ref = await addDoc(collection(db, "exams"), {
@@ -131,4 +131,49 @@ export async function setExamAccessCode(examId, accessCode) {
   ]);
 
   return normalizedAccessCode;
+}
+
+
+export async function generateStudentExamCodes(exam, students) {
+  if (!exam?.id || !students?.length) {
+    throw new Error("Select an exam and at least one student.");
+  }
+
+  const generated = [];
+  for (const student of students) {
+    if (!student?.id) continue;
+    const code = generateAccessCode(10);
+    const codeHash = await hashAccessCode(code);
+    const codeRef = doc(db, "studentExamCodes", `${exam.id}_${student.id}`);
+    const record = {
+      examId: exam.id,
+      examTitle: exam.title || "Exam",
+      studentUid: student.id,
+      studentName: student.displayName || student.fullName || student.email || "Student",
+      studentEmail: student.email || "",
+      studentId: student.studentId || "",
+      className: student.className || "",
+      code,
+      codeHash,
+      status: "active",
+      usedAt: null,
+      updatedAt: serverTimestamp(),
+    };
+    const { createdAt, ...updates } = record;
+    await setDoc(codeRef, { ...updates, createdAt: serverTimestamp() });
+    generated.push({ id: codeRef.id, ...record });
+  }
+  return generated;
+}
+
+export async function updateStudentProfile(studentUid, profile) {
+  if (!studentUid) throw new Error("Student account is missing.");
+  const allowedFields = ["displayName", "studentId", "className", "department", "phone"];
+  const updates = {};
+  for (const field of allowedFields) {
+    if (profile[field] !== undefined) updates[field] = String(profile[field] || "").trim();
+  }
+  updates.updatedAt = serverTimestamp();
+  await updateDoc(doc(db, "users", studentUid), updates);
+  return updates;
 }
