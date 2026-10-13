@@ -20,7 +20,7 @@ export default function StudentDashboard() {
   const [exams, setExams] = useState([]);
   const [sessions, setSessions] = useState([]);
   const [selectedExamId, setSelectedExamId] = useState("");
-  const [examPassword, setExamPassword] = useState("");
+  const [examCode, setExamCode] = useState("");
   const [startingExam, setStartingExam] = useState(false);
   const [pendingSubmissionMap, setPendingSubmissionMap] = useState({});
   const [banner, setBanner] = useState(
@@ -77,7 +77,7 @@ export default function StudentDashboard() {
   }, [user.uid]);
 
   useEffect(() => {
-    setExamPassword("");
+    setExamCode("");
     setBanner(location.state?.message ? { tone: "success", message: location.state.message } : null);
   }, [location.state?.message, selectedExamId]);
 
@@ -95,7 +95,7 @@ export default function StudentDashboard() {
   const hasPendingSubmission = Boolean(selectedExam && pendingSubmissionMap[selectedExam.id]);
   const isSubmitted = selectedSession?.status === "submitted" || hasPendingSubmission;
   const isStarted = selectedSession?.status === "started";
-  const hasPassword = Boolean(selectedExam?.accessCodeHash);
+  const hasAccessCode = Boolean(selectedExam?.accessCodeHash);
 
   async function handleStartExam() {
     if (!selectedExam) {
@@ -106,7 +106,7 @@ export default function StudentDashboard() {
     setBanner(null);
 
     try {
-      await startExamSession(selectedExam.id, examPassword);
+      await startExamSession(selectedExam.id, examCode);
       navigate(`/exam/${selectedExam.id}`);
     } catch (error) {
       console.error(error);
@@ -242,12 +242,12 @@ export default function StudentDashboard() {
                 <label className="block text-sm font-medium text-slate-700">Individual exam code</label>
                 <input
                   type="text"
-                  value={examPassword}
-                  onChange={(event) => setExamPassword(event.target.value)}
+                  value={examCode}
+                  onChange={(event) => setExamCode(event.target.value)}
                   placeholder={
-                    hasPassword
+                    hasAccessCode
                       ? "Enter the exam code assigned to you"
-                      : "Exam password has not been generated yet"
+                      : "Exam code has not been generated yet"
                   }
                   disabled={isSubmitted || isStarted}
                   className="mt-3 w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm uppercase tracking-[0.2em] disabled:cursor-not-allowed disabled:bg-slate-100"
@@ -257,7 +257,7 @@ export default function StudentDashboard() {
                     ? "This exam is already closed and waiting for background sync."
                     : isStarted
                     ? "Your session is already live. Continue now and the timer will keep running."
-                    : hasPassword
+                    : hasAccessCode
                       ? "Enter the correct code assigned to your student account before the exam can start."
                       : "This exam is not open yet because no exam code has been generated."}
                 </p>
@@ -267,7 +267,7 @@ export default function StudentDashboard() {
                 {!isSubmitted ? (
                   <button
                     onClick={handleStartExam}
-                    disabled={startingExam || (!isStarted && !hasPassword)}
+                    disabled={startingExam || (!isStarted && !hasAccessCode)}
                     className="inline-flex rounded-xl bg-emerald-600 px-5 py-3 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-60"
                   >
                     {startingExam ? "Verifying..." : isStarted ? "Continue exam" : "Start exam"}
