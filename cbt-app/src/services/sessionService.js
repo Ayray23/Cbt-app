@@ -297,17 +297,21 @@ export async function saveExamProgress(examId, answers, metadata = {}) {
 
   saveLocalExamDraft(examId, answers, metadata);
 
+  const normalizedAnswers = normalizeAnswers(answers);
   await updateDoc(sessionRef, {
-    answers: normalizeAnswers(answers),
+    answers: normalizedAnswers,
     ...metadata,
     lastSavedAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   });
 
-  const updatedSnapshot = await getDoc(sessionRef);
+  // The caller only needs the save to complete; avoid an extra Firestore read
+  // immediately after the write.
   return {
-    id: updatedSnapshot.id,
-    ...updatedSnapshot.data(),
+    id: sessionSnapshot.id,
+    ...session,
+    answers: normalizedAnswers,
+    ...metadata,
   };
 }
 
