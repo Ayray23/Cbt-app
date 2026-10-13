@@ -10,6 +10,7 @@ import {
 } from "../services/sessionService";
 import ConfirmDialog from "../components/ConfirmDialog";
 import StatusBanner from "../components/StatusBanner";
+import ExamCalculator from "../components/ExamCalculator";
 
 const DISPLAY_OPTION_LABELS = ["A", "B", "C", "D"];
 const MAX_TAB_SWITCH_WARNINGS = 3;
@@ -46,6 +47,7 @@ export default function TakeExam() {
   const [timeLeft, setTimeLeft] = useState(null);
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
   const [showSubmitConfirm, setShowSubmitConfirm] = useState(false);
+  const [showCalculator, setShowCalculator] = useState(false);
   const [warningCount, setWarningCount] = useState(0);
   const hydratedAnswersRef = useRef(false);
   const hasEnteredFullscreenRef = useRef(false);
@@ -388,6 +390,8 @@ export default function TakeExam() {
 
   return (
     <div className="space-y-6">
+      <div className={showCalculator ? "grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1fr)_21rem] xl:items-start" : ""}>
+        <div className="min-w-0 space-y-6">
       <StatusBanner
         tone={saving ? "info" : null}
         message={saving ? "Saving your answers..." : ""}
@@ -405,7 +409,16 @@ export default function TakeExam() {
             </p>
           </div>
 
-          <div className="rounded-2xl bg-slate-100 px-4 py-4 text-sm text-slate-700">
+          <div className="flex flex-wrap items-center gap-3 lg:justify-end">
+            <button
+              type="button"
+              onClick={() => setShowCalculator(true)}
+              className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-800 transition hover:bg-emerald-100"
+              aria-haspopup="dialog"
+            >
+              Open calculator
+            </button>
+            <div className="rounded-2xl bg-slate-100 px-4 py-4 text-sm text-slate-700">
             <p className="font-semibold text-slate-900">Time left</p>
             <p className="mt-1 text-2xl">{formatTime(timeLeft ?? exam.duration * 60)}</p>
             <p className="mt-2 text-xs text-slate-500">Answered {answeredCount} of {questions.length}</p>
@@ -413,6 +426,7 @@ export default function TakeExam() {
               {saving ? "Saving your answers..." : "Answers autosave while you work."}
             </p>
             <p className="mt-1 text-xs text-slate-500">Tab warnings: {warningCount}/{MAX_TAB_SWITCH_WARNINGS}</p>
+            </div>
           </div>
         </div>
       </section>
@@ -528,6 +542,10 @@ export default function TakeExam() {
           </div>
         </section>
       </section>
+
+              </div>
+        {showCalculator && <ExamCalculator onClose={() => setShowCalculator(false)} />}
+      </div>
 
       <ConfirmDialog
         open={showSubmitConfirm}
