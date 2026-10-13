@@ -121,8 +121,8 @@ export default function ExamCalculator({ onClose }) {
   }
 
   return (
-    <div className="fixed bottom-4 right-4 z-[100] w-[min(20rem,calc(100vw-2rem))] sm:bottom-6 sm:right-6" role="presentation">
-      <section role="dialog" aria-modal="false" aria-labelledby="exam-calculator-title" className="rounded-3xl border border-slate-200 bg-white p-4 shadow-2xl ring-1 ring-slate-900/10">
+    <div className="fixed bottom-3 right-3 z-[100] max-h-[calc(100vh-1.5rem)] w-[min(20rem,calc(100vw-1.5rem))] overflow-y-auto sm:bottom-4 sm:right-4 xl:bottom-0 xl:right-0 xl:top-0 xl:max-h-none xl:w-[21rem] xl:rounded-none xl:border-l xl:border-slate-200 xl:shadow-2xl" role="presentation">
+      <section role="dialog" aria-modal="false" aria-labelledby="exam-calculator-title" className="rounded-3xl border border-slate-200 bg-white p-4 shadow-2xl ring-1 ring-slate-900/10 xl:min-h-full xl:rounded-none xl:border-0 xl:p-5 xl:shadow-none xl:ring-0">
         <div className="flex items-center justify-between">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.2em] text-emerald-600">Exam tool</p>
@@ -143,7 +143,7 @@ export default function ExamCalculator({ onClose }) {
           ))}
           <button type="button" onClick={() => press("=", "equals")} className="col-span-4 min-h-12 rounded-xl bg-emerald-600 font-semibold text-white hover:bg-emerald-700">Calculate =</button>
         </div>
-        <p className="mt-3 text-center text-xs text-slate-500">Floating calculator — keep answering while it is open. Dragging is not required; Esc closes it.</p>
+        <p className="mt-3 text-center text-xs text-slate-500">Docked to the right on desktop so the question area stays clear.</p>
       </section>
     </div>
   );
