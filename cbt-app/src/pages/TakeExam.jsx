@@ -339,7 +339,7 @@ export default function TakeExam() {
 
   if (error) {
     return (
-      <div className="space-y-6">
+      <div className={`space-y-6 transition-[margin] duration-200 ${showCalculator ? "xl:mr-[22rem]" : ""}`}>
         <StatusBanner tone="error" message={error} />
       </div>
     );
