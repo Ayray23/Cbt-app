@@ -21,17 +21,6 @@ function formatTime(totalSeconds) {
   return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
 }
 
-function paletteClassName({ isActive, isAnswered }) {
-  if (isActive) {
-    return "border-slate-900 bg-slate-900 text-white";
-  }
-
-  if (isAnswered) {
-    return "border-emerald-300 bg-emerald-50 text-emerald-700";
-  }
-
-  return "border-slate-200 bg-white text-slate-600";
-}
 
 export default function TakeExam() {
   const { examId } = useParams();
@@ -47,7 +36,6 @@ export default function TakeExam() {
   const [timeLeft, setTimeLeft] = useState(null);
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
   const [showSubmitConfirm, setShowSubmitConfirm] = useState(false);
-  const [showCalculator, setShowCalculator] = useState(false);
   const [warningCount, setWarningCount] = useState(0);
   const hydratedAnswersRef = useRef(false);
   const hasEnteredFullscreenRef = useRef(false);
@@ -399,6 +387,10 @@ export default function TakeExam() {
   const optionOrder = session?.optionOrderByQuestion?.[currentQuestion.id] ?? DISPLAY_OPTION_LABELS;
   const isLastQuestion = currentQuestionIndex === questions.length - 1;
   const progressPercent = Math.round((answeredCount / questions.length) * 100);
+
+  function confirmAndSubmit() {
+    setShowSubmitConfirm(true);
+  }
 
   function moveToNextQuestion() {
     setCurrentQuestionIndex((current) => Math.min(current + 1, questions.length - 1));
