@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 
 function calculateExpression(source) {
-  const tokens = source.match(/\d*\.?\d+|[()+\-*/%]/g) ?? [];
+  const tokens = source.match(/\d*\.?\d+|[()+\-*\/%]/g) ?? [];
   const normalized = tokens.join("");
   if (!source.trim() || normalized !== source.replace(/\s+/g, "")) {
     throw new Error("Enter a valid calculation.");
