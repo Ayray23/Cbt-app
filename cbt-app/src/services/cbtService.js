@@ -11,6 +11,7 @@ import {
   setDoc,
   updateDoc,
   where,
+  writeBatch,
 } from "firebase/firestore";
 import { db } from "/firebase";
 import { generateAccessCode, hashAccessCode, normalizeAccessCode } from "../utils/accessCode";
