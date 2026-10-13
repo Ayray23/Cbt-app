@@ -4,6 +4,7 @@ import { collection, doc, getDoc, getDocs, query, where } from "firebase/firesto
 import { db } from "/firebase";
 import {
   saveExamProgress,
+  saveLocalExamDraft,
   startExamSession,
   submitExamSession,
 } from "../services/sessionService";
@@ -209,6 +210,17 @@ export default function TakeExam() {
       return undefined;
     }
 
+    // Persist the latest selection locally immediately. Firebase sync is debounced
+    // so changing several answers quickly does not trigger a write for each click.
+    try {
+      saveLocalExamDraft(examId, answers, {
+        tabSwitchCount: warningCountRef.current,
+        integrityWarnings: warningCountRef.current,
+      });
+    } catch (draftError) {
+      console.error("Could not save the local exam draft", draftError);
+    }
+
     if (autosaveTimeoutRef.current) {
       window.clearTimeout(autosaveTimeoutRef.current);
     }
@@ -216,21 +228,17 @@ export default function TakeExam() {
     autosaveTimeoutRef.current = window.setTimeout(async () => {
       try {
         setSaving(true);
-        const updatedSession = await saveExamProgress(examId, answers, {
+        await saveExamProgress(examId, answers, {
           tabSwitchCount: warningCountRef.current,
           integrityWarnings: warningCountRef.current,
         });
         lastSavedAnswersRef.current = serializedAnswers;
-        setSession((current) => ({
-          ...current,
-          ...updatedSession,
-        }));
       } catch (saveError) {
         console.error(saveError);
       } finally {
         setSaving(false);
       }
-    }, 800);
+    }, 1500);
 
     return () => {
       if (autosaveTimeoutRef.current) {
