@@ -240,6 +240,9 @@ export async function startExamSession(examId, accessCode = "") {
     }
     useAssignedCode = true;
   } else {
+    if (exam.individualCodesEnabled) {
+      throw new Error("Your administrator has not issued an individual code for this exam. Contact your administrator.");
+    }
     if (!exam.accessCodeHash) {
       throw new Error("This exam is not open yet. Ask your supervisor for your exam code.");
     }
