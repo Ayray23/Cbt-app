@@ -156,7 +156,7 @@ export default function AddQuestion() {
     const validationError = validate(payload);
 
     if (validationError) {
-      setBanner({ tone: "error", message: validationError });
+      setUploadModal({ type: "error", title: "Check the question details", message: validationError });
       return;
     }
 
@@ -264,7 +264,7 @@ export default function AddQuestion() {
       setUploadModal({
         type: "error",
         title: "Word upload failed",
-        message: "The document could not be processed or saved. Check your connection and file format, then try again. You are still on this page.",
+        message: "The document could not be processed or fully saved. Check your connection and file format. If the upload stopped unexpectedly, review the question list before retrying the whole file so you do not create duplicates. You are still on this page.",
       });
     } finally {
       setLoading(false);
