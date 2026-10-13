@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { collection, onSnapshot, orderBy, query, where } from "firebase/firestore";
+import { collection, doc, onSnapshot, orderBy, query, where } from "firebase/firestore";
 import { db } from "/firebase";
 import StatusBanner from "../components/StatusBanner";
 import { useAuth } from "../contexts/AuthContext";
@@ -21,6 +21,7 @@ export default function StudentDashboard() {
   const [sessions, setSessions] = useState([]);
   const [selectedExamId, setSelectedExamId] = useState("");
   const [examCode, setExamCode] = useState("");
+  const [hasAssignedCode, setHasAssignedCode] = useState(false);
   const [startingExam, setStartingExam] = useState(false);
   const [pendingSubmissionMap, setPendingSubmissionMap] = useState({});
   const [banner, setBanner] = useState(
@@ -53,6 +54,16 @@ export default function StudentDashboard() {
       unsubscribeExams();
       unsubscribeSessions();
     };
+  }, [selectedExamId, user.uid]);
+
+  useEffect(() => {
+    if (!selectedExamId || !user.uid) {
+      setHasAssignedCode(false);
+      return undefined;
+    }
+    return onSnapshot(doc(db, "studentExamCodes", `${selectedExamId}_${user.uid}`), (snapshot) => {
+      setHasAssignedCode(snapshot.exists() && snapshot.data().status !== "revoked");
+    }, () => setHasAssignedCode(false));
   }, [selectedExamId, user.uid]);
 
   useEffect(() => {
@@ -95,7 +106,9 @@ export default function StudentDashboard() {
   const hasPendingSubmission = Boolean(selectedExam && pendingSubmissionMap[selectedExam.id]);
   const isSubmitted = selectedSession?.status === "submitted" || hasPendingSubmission;
   const isStarted = selectedSession?.status === "started";
-  const hasAccessCode = Boolean(selectedExam?.accessCodeHash);
+  const hasAccessCode = selectedExam?.individualCodesEnabled
+    ? hasAssignedCode
+    : Boolean(selectedExam?.accessCodeHash);
 
   async function handleStartExam() {
     if (!selectedExam) {
@@ -247,7 +260,7 @@ export default function StudentDashboard() {
                   placeholder={
                     hasAccessCode
                       ? "Enter the exam code assigned to you"
-                      : "Exam code has not been generated yet"
+                      : "Your individual exam code has not been issued yet"
                   }
                   disabled={isSubmitted || isStarted}
                   className="mt-3 w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm uppercase tracking-[0.2em] disabled:cursor-not-allowed disabled:bg-slate-100"
@@ -259,7 +272,9 @@ export default function StudentDashboard() {
                     ? "Your session is already live. Continue now and the timer will keep running."
                     : hasAccessCode
                       ? "Enter the correct code assigned to your student account before the exam can start."
-                      : "This exam is not open yet because no exam code has been generated."}
+                      : selectedExam?.individualCodesEnabled
+                        ? "Your individual code has not been issued. Contact your administrator."
+                        : "This exam is not open yet because no exam code has been generated."}
                 </p>
               </div>
 
