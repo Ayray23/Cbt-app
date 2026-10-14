@@ -30,6 +30,17 @@ async function getUserProfile(uid) {
   return snapshot.exists ? snapshot.data() : {};
 }
 
+async function writeAuditLog({ action, uid, examId = null, sessionId = null, metadata = {} }) {
+  await db.collection("auditLogs").add({
+    action,
+    actorUid: uid,
+    examId,
+    sessionId,
+    metadata,
+    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+  });
+}
+
 async function validateExamCode(examId, uid, accessCode, exam) {
   const provided = normalizeAccessCode(accessCode);
   if (!provided) throw new HttpsError("invalid-argument", "Enter your exam code.");
@@ -74,6 +85,7 @@ exports.startExamSession = onCall(async (request) => {
   if (sessionSnapshot.exists) {
     const current = sessionSnapshot.data();
     if (current.status === "submitted") throw new HttpsError("failed-precondition", "This exam has already been submitted.");
+    await writeAuditLog({ action: "exam.session.resumed", uid: request.auth.uid, examId, sessionId: sessionRef.id });
     return { id: sessionSnapshot.id, ...current, startedAtMs: current.startedAtMs || toMillis(current.startedAt) };
   }
 
@@ -114,11 +126,19 @@ exports.startExamSession = onCall(async (request) => {
   });
 
   if (transactionResult.existing) {
+    await writeAuditLog({ action: "exam.session.resumed", uid: request.auth.uid, examId, sessionId: sessionRef.id });
     return { id: sessionRef.id, ...transactionResult.existing, startedAtMs: transactionResult.existing.startedAtMs || toMillis(transactionResult.existing.startedAt) };
   }
 
   const storedSnapshot = await sessionRef.get();
   const stored = storedSnapshot.data() || {};
+  await writeAuditLog({
+    action: "exam.session.started",
+    uid: request.auth.uid,
+    examId,
+    sessionId: storedSnapshot.id,
+    metadata: { individualCode: Boolean(codeRef), questionCount: questionsSnapshot.size },
+  });
   return { id: storedSnapshot.id, ...stored, startedAtMs: stored.startedAtMs || toMillis(stored.startedAt) };
 });
 
@@ -172,6 +192,14 @@ exports.submitExamSession = onCall(async (request) => {
     submittedAt: admin.firestore.FieldValue.serverTimestamp(),
     updatedAt: admin.firestore.FieldValue.serverTimestamp(),
   }, { merge: true });
+
+  await writeAuditLog({
+    action: "exam.session.submitted",
+    uid: request.auth.uid,
+    examId,
+    sessionId: sessionRef.id,
+    metadata: { score: total, maxScore: questionsSnapshot.docs.reduce((sum, item) => sum + Number(item.data().marks || 1), 0), submissionReason },
+  });
 
   return { id: sessionRef.id, score: total, maxScore: questionsSnapshot.docs.reduce((sum, item) => sum + Number(item.data().marks || 1), 0), status: "submitted" };
 });
