@@ -64,8 +64,27 @@ export default function ExamCodes() {
     }
     setBusy(true);
     try {
-      await generateStudentExamCodes(selectedExam, targets);
-      setBanner({ tone: "success", message: `Generated individual ${selectedExam.title} codes for ${targets.length} student(s). Previously issued codes for these students were replaced.` });
+      const generatedCodes = await generateStudentExamCodes(selectedExam, targets);
+
+      // Update the visible admin table immediately instead of waiting for the
+      // Firestore listeners. Otherwise, after reissuing codes, the print view
+      // can briefly contain the previous plaintext code while Firestore already
+      // stores the new hash, causing the printed code to be rejected.
+      const generatedIds = new Set(generatedCodes.map((code) => code.id));
+      setPrintRecords((current) => [
+        ...current.filter((code) => !generatedIds.has(code.id)),
+        ...generatedCodes,
+      ]);
+      setCodeHashes((current) => [
+        ...current.filter((code) => !generatedIds.has(code.id)),
+        ...generatedCodes.map(({ id, examId: generatedExamId, studentUid, status }) => ({
+          id,
+          examId: generatedExamId,
+          studentUid,
+          status,
+        })),
+      ]);
+      setBanner({ tone: "success", message: `Generated individual ${selectedExam.title} codes for ${targets.length} student(s). The latest codes are ready to print. Previously issued codes for these students were replaced.` });
       setStatusFilter("all");
     } catch (error) {
       setBanner({ tone: "error", message: error.message || "Could not generate exam codes." });
