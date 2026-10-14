@@ -11,6 +11,7 @@ import {
 } from "firebase/firestore";
 import { getFunctions, httpsCallable } from "firebase/functions";
 import { auth, db } from "/firebase";
+import { startExamSession } from "./sessionService";
 
 function requireUser() {
   const user = auth.currentUser;
@@ -42,10 +43,6 @@ function errorMessage(error) {
   return error?.details || error?.message || "Could not verify the exam code.";
 }
 
-/**
- * Starts a student exam only after the backend has verified the individual code.
- * The plaintext code is never compared against Firestore from the browser.
- */
 export async function startSecureExamSession(examId, accessCode = "") {
   const currentUser = requireUser();
   const examRef = doc(db, "exams", examId);
@@ -63,10 +60,15 @@ export async function startSecureExamSession(examId, accessCode = "") {
   const exam = examSnapshot.data();
   if (exam.status !== "published") throw new Error("This exam is not available right now.");
 
+  // Keep the existing shared-code flow intact. The secure backend validator is
+  // specifically used for exams that have individual student codes enabled.
+  if (!exam.individualCodesEnabled) {
+    return startExamSession(examId, accessCode);
+  }
+
   if (sessionSnapshot.exists()) {
     const existing = sessionSnapshot.data();
     if (existing.status === "submitted") throw new Error("This exam has already been submitted.");
-
     return {
       id: sessionSnapshot.id,
       ...existing,
@@ -84,8 +86,7 @@ export async function startSecureExamSession(examId, accessCode = "") {
 
   if (questionsSnapshot.empty) throw new Error("This exam has no questions yet.");
 
-  const functions = getFunctions();
-  const validateCode = httpsCallable(functions, "validateStudentExamCode");
+  const validateCode = httpsCallable(getFunctions(), "validateStudentExamCode");
   try {
     await validateCode({ examId, accessCode });
   } catch (error) {
@@ -97,7 +98,6 @@ export async function startSecureExamSession(examId, accessCode = "") {
   const profile = userSnapshot.exists() ? userSnapshot.data() : {};
   const startedAtMs = Date.now();
   const expiresAtMs = startedAtMs + Number(exam.duration || 0) * 60 * 1000;
-
   const sessionData = {
     examId,
     examTitle: exam.title || "",
@@ -120,20 +120,12 @@ export async function startSecureExamSession(examId, accessCode = "") {
 
   await setDoc(sessionRef, sessionData);
 
-  // Mark the assigned code used only after the session exists. This prevents a
-  // failed session write from consuming a valid code.
   const codeRef = doc(db, "studentExamCodeHashes", `${examId}_${currentUser.uid}`);
   const codeSnapshot = await getDoc(codeRef);
-  if (codeSnapshot.exists() && codeSnapshot.data().status === "active") {
-    await updateDoc(codeRef, {
-      status: "used",
-      usedAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
-    });
+  if (!codeSnapshot.exists() || codeSnapshot.data().status !== "active") {
+    throw new Error("The individual exam code is no longer available. Contact your administrator.");
   }
+  await updateDoc(codeRef, { status: "used", usedAt: serverTimestamp(), updatedAt: serverTimestamp() });
 
-  return {
-    id: sessionRef.id,
-    ...sessionData,
-  };
+  return { id: sessionRef.id, ...sessionData };
 }
