@@ -9,23 +9,69 @@ const fs = require("fs");
 const os = require("os");
 const path = require("path");
 const express = require("express");
+const crypto = require("crypto");
 
 admin.initializeApp();
 const db = admin.firestore();
 const storage = new Storage();
 
+function normalizeAccessCode(value) {
+  return String(value || "").trim().replace(/\s+/g, "").toUpperCase();
+}
+
+function hashAccessCode(value) {
+  return crypto.createHash("sha256").update(normalizeAccessCode(value)).digest("hex");
+}
+
+// Secure server-side validation for a student's individual exam code.
+// The plaintext code is never stored or returned by this function.
+exports.validateStudentExamCode = functions.https.onCall(async (data, context) => {
+  if (!context.auth) {
+    throw new functions.https.HttpsError("unauthenticated", "Please sign in before entering an exam code.");
+  }
+
+  const examId = String(data?.examId || "").trim();
+  const accessCode = normalizeAccessCode(data?.accessCode);
+  if (!examId || !accessCode) {
+    throw new functions.https.HttpsError("invalid-argument", "Exam and exam code are required.");
+  }
+
+  const codeRef = db.collection("studentExamCodeHashes").doc(`${examId}_${context.auth.uid}`);
+  const codeSnapshot = await codeRef.get();
+  if (!codeSnapshot.exists) {
+    throw new functions.https.HttpsError("permission-denied", "No individual exam code has been issued for this student.");
+  }
+
+  const record = codeSnapshot.data();
+  if (record.studentUid !== context.auth.uid || record.examId !== examId) {
+    throw new functions.https.HttpsError("permission-denied", "This exam code is not assigned to this student.");
+  }
+  if (record.status === "revoked") {
+    throw new functions.https.HttpsError("permission-denied", "This exam code has been revoked.");
+  }
+  if (record.status === "used") {
+    throw new functions.https.HttpsError("failed-precondition", "This exam code has already been used.");
+  }
+
+  const expectedHash = String(record.codeHash || "");
+  const providedHash = hashAccessCode(accessCode);
+  if (!expectedHash || providedHash !== expectedHash) {
+    throw new functions.https.HttpsError("permission-denied", "Incorrect exam code for this student account.");
+  }
+
+  return { valid: true, examId, studentUid: context.auth.uid };
+});
+
 // Storage-trigger: parse student spreadsheet uploads
 exports.onStudentFileUpload = functions.storage.object().onFinalize(async (object) => {
   try {
-    const filePath = object.name; // e.g. "uploads/students/..."
+    const filePath = object.name;
     if (!filePath || !filePath.startsWith("uploads/students/")) return null;
     const bucket = storage.bucket(object.bucket);
     const tmpFile = path.join(os.tmpdir(), path.basename(filePath));
     await bucket.file(filePath).download({ destination: tmpFile });
-
     const ext = path.extname(filePath).toLowerCase();
     let rows = [];
-
     if (ext === ".csv") {
       const text = fs.readFileSync(tmpFile, "utf8");
       const lines = text.split(/\r?\n/).filter(Boolean);
@@ -40,15 +86,12 @@ exports.onStudentFileUpload = functions.storage.object().onFinalize(async (objec
       const wb = XLSX.readFile(tmpFile);
       const sheet = wb.Sheets[wb.SheetNames[0]];
       rows = XLSX.utils.sheet_to_json(sheet, { defval: "" });
-    } else {
-      console.log("Unsupported ext for students:", ext);
     }
-
     if (rows.length) {
       const batch = db.batch();
       rows.forEach((r) => {
-        const doc = db.collection("students").doc();
-        batch.set(doc, {
+        const ref = db.collection("students").doc();
+        batch.set(ref, {
           name: r.Name || r.name || `${r.FirstName || ""} ${r.LastName || ""}`.trim(),
           studentNumber: r.StudentNumber || r.RegNo || r.ID || "",
           email: r.Email || "",
@@ -58,10 +101,7 @@ exports.onStudentFileUpload = functions.storage.object().onFinalize(async (objec
         });
       });
       await batch.commit();
-      console.log("Imported students:", rows.length);
     }
-
-    // move to archive (optional)
     const archivePath = filePath.replace("uploads/", "archives/");
     await bucket.file(filePath).move(archivePath);
     fs.unlinkSync(tmpFile);
@@ -72,18 +112,16 @@ exports.onStudentFileUpload = functions.storage.object().onFinalize(async (objec
   }
 });
 
-// Storage-trigger: parse question spreadsheets (best-effort) and create question docs
+// Storage-trigger: parse question uploads
 exports.onQuestionFileUpload = functions.storage.object().onFinalize(async (object) => {
   try {
-    const filePath = object.name; // e.g. "uploads/questions/..."
+    const filePath = object.name;
     if (!filePath || !filePath.startsWith("uploads/questions/")) return null;
     const bucket = storage.bucket(object.bucket);
     const tmpFile = path.join(os.tmpdir(), path.basename(filePath));
     await bucket.file(filePath).download({ destination: tmpFile });
-
     const ext = path.extname(filePath).toLowerCase();
     let items = [];
-
     if (ext === ".csv" || ext === ".xlsx" || ext === ".xls") {
       if (ext === ".csv") {
         const text = fs.readFileSync(tmpFile, "utf8");
@@ -100,12 +138,10 @@ exports.onQuestionFileUpload = functions.storage.object().onFinalize(async (obje
         const sheet = wb.Sheets[wb.SheetNames[0]];
         items = XLSX.utils.sheet_to_json(sheet, { defval: "" });
       }
-
       if (items.length) {
         const batch = db.batch();
         items.forEach((r) => {
           const qDoc = db.collection("questions").doc();
-          // recommended fields: questionText, type, options(JSON), correctAnswer, marks
           const options = (() => {
             try {
               if (r.options && typeof r.options === "string") return JSON.parse(r.options);
@@ -125,10 +161,8 @@ exports.onQuestionFileUpload = functions.storage.object().onFinalize(async (obje
           });
         });
         await batch.commit();
-        console.log("Imported questions:", items.length);
       }
     } else if (ext === ".pdf" || ext === ".docx") {
-      // best-effort text extraction: for docx use mammoth, for pdf use pdf-parse
       let text = "";
       if (ext === ".docx") {
         const result = await mammoth.extractRawText({ path: tmpFile });
@@ -138,32 +172,18 @@ exports.onQuestionFileUpload = functions.storage.object().onFinalize(async (obje
         const res = await pdf(data);
         text = res.text || "";
       }
-
-      // naive splitter: look for lines starting with number + dot
       const qblocks = text.split(/\n(?=\d+\.)/).map(s => s.trim()).filter(Boolean);
       const batch = db.batch();
       qblocks.forEach((block) => {
-        // further naive parse: first line is question, following lines that start with A) or A. are options
         const lines = block.split(/\n/).map(l => l.trim()).filter(Boolean);
         const first = lines.shift();
         const optLines = lines.filter(l => /^[A-D]\s*[\)\.]|^[A-D]\s+/.test(l) || /^[A-D]\./.test(l) || /^[A-D]\)/.test(l));
         const options = optLines.map((o, idx) => ({ id: String(idx), text: o.replace(/^[A-D]\s*[\)\.]?\s*/, "") }));
         const qDoc = db.collection("questions").doc();
-        batch.set(qDoc, {
-          text: first,
-          type: options.length ? "mcq" : "short",
-          options,
-          createdAt: admin.firestore.FieldValue.serverTimestamp(),
-          source: "auto-parsed",
-        });
+        batch.set(qDoc, { text: first, type: options.length ? "mcq" : "short", options, createdAt: admin.firestore.FieldValue.serverTimestamp(), source: "auto-parsed" });
       });
       await batch.commit();
-      console.log("Parsed PDF/DOCX questions (approx):", qblocks.length);
-    } else {
-      console.log("Unsupported question file ext:", ext);
     }
-
-    // archive file
     const archivePath = filePath.replace("uploads/", "archives/");
     await bucket.file(filePath).move(archivePath);
     fs.unlinkSync(tmpFile);
@@ -174,10 +194,9 @@ exports.onQuestionFileUpload = functions.storage.object().onFinalize(async (obje
   }
 });
 
-// HTTP API for grading a session (simplified)
+// HTTP API for grading a session (legacy/admin use)
 const app = express();
 app.use(express.json());
-
 app.post("/grade-session", async (req, res) => {
   try {
     const { sessionId } = req.body;
@@ -186,16 +205,11 @@ app.post("/grade-session", async (req, res) => {
     const snap = await sessRef.get();
     if (!snap.exists) return res.status(404).json({ error: "session not found" });
     const session = snap.data();
-
     let total = 0;
     const updatedAnswers = [];
-
     for (const a of session.answers || []) {
       const qsnap = await db.collection("questions").doc(a.questionId).get();
-      if (!qsnap.exists) {
-        updatedAnswers.push({ ...a, autoMark: 0 });
-        continue;
-      }
+      if (!qsnap.exists) { updatedAnswers.push({ ...a, autoMark: 0 }); continue; }
       const q = qsnap.data();
       if (q.type === "mcq") {
         const correct = String(q.correctAnswer || "").trim().toUpperCase();
@@ -203,48 +217,29 @@ app.post("/grade-session", async (req, res) => {
         const mark = studentAns === correct ? (q.marks || 1) : 0;
         total += mark;
         updatedAnswers.push({ ...a, autoMark: mark });
-      } else {
-        // essay/short -> manual
-        updatedAnswers.push({ ...a, autoMark: 0, manualRequired: true });
-      }
+      } else updatedAnswers.push({ ...a, autoMark: 0, manualRequired: true });
     }
-
-    await sessRef.update({
-      answers: updatedAnswers,
-      totalAutoScore: total,
-      finalScore: total,
-      status: "graded",
-      gradedAt: admin.firestore.FieldValue.serverTimestamp(),
-    });
-
+    await sessRef.update({ answers: updatedAnswers, totalAutoScore: total, finalScore: total, status: "graded", gradedAt: admin.firestore.FieldValue.serverTimestamp() });
     return res.json({ ok: true, total });
   } catch (e) {
     console.error(e);
     return res.status(500).json({ error: e.message });
   }
 });
-
 exports.api = functions.https.onRequest(app);
 
-
-// List all users
 exports.listUsers = functions.https.onCall(async (data, context) => {
   if (!context.auth) throw new functions.https.HttpsError("unauthenticated", "Login required");
   const requester = await admin.auth().getUser(context.auth.uid);
-  if (!requester.customClaims?.admin) {
-    throw new functions.https.HttpsError("permission-denied", "Admin only");
-  }
+  if (!requester.customClaims?.admin) throw new functions.https.HttpsError("permission-denied", "Admin only");
   const list = await admin.auth().listUsers(1000);
   return { users: list.users.map(u => ({ uid: u.uid, email: u.email, customClaims: u.customClaims })) };
 });
 
-// Promote user to admin
 exports.makeAdmin = functions.https.onCall(async (data, context) => {
   if (!context.auth) throw new functions.https.HttpsError("unauthenticated", "Login required");
   const requester = await admin.auth().getUser(context.auth.uid);
-  if (!requester.customClaims?.admin) {
-    throw new functions.https.HttpsError("permission-denied", "Admin only");
-  }
+  if (!requester.customClaims?.admin) throw new functions.https.HttpsError("permission-denied", "Admin only");
   if (!data.uid) throw new functions.https.HttpsError("invalid-argument", "UID required");
   await admin.auth().setCustomUserClaims(data.uid, { admin: true });
   return { ok: true };
