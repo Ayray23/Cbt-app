@@ -12,6 +12,7 @@ import Admins from "./pages/Admins";
 import CreateExam from "./pages/CreateExam";
 import AddQuestion from "./pages/AddQuestion";
 import Monitoring from "./pages/Monitoring";
+import AuditLogs from "./pages/AuditLogs";
 import Login from "./pages/auth/Login";
 import Signup from "./pages/auth/Signup";
 import TakeExam from "./pages/TakeExam";
@@ -26,10 +27,8 @@ import { flushPendingSubmissions } from "./services/sessionService";
 function ConnectivitySync() {
   const { user } = useAuth();
   const { success, error } = useToast();
-
   useEffect(() => {
     if (!user) return undefined;
-
     let syncing = false;
     const sync = async () => {
       if (syncing || !navigator.onLine) return;
@@ -44,17 +43,11 @@ function ConnectivitySync() {
         syncing = false;
       }
     };
-
     void sync();
     window.addEventListener("online", sync);
     const interval = window.setInterval(sync, 30000);
-
-    return () => {
-      window.removeEventListener("online", sync);
-      window.clearInterval(interval);
-    };
+    return () => { window.removeEventListener("online", sync); window.clearInterval(interval); };
   }, [error, success, user]);
-
   return null;
 }
 
@@ -117,7 +110,7 @@ export default function App() {
             <Route element={<StudentShell />}><Route path="/portal" element={<StudentDashboard />} /><Route path="/exam/:examId" element={<ExamSessionGuard><TakeExam /></ExamSessionGuard>} /></Route>
             <Route element={<AdminShell />}>
               <Route element={<RequireRole allowedRoles={["admin", "superadmin"]} />}>
-                <Route path="/dashboard" element={<Dashboard />} /><Route path="/monitoring" element={<Monitoring />} /><Route path="/students" element={<Students />} /><Route path="/exam-codes" element={<ExamCodes />} /><Route path="/exams/create" element={<CreateExam />} /><Route path="/questions/add" element={<AddQuestion />} /><Route path="/questions" element={<Questions />} /><Route path="/results" element={<Results />} />
+                <Route path="/dashboard" element={<Dashboard />} /><Route path="/monitoring" element={<Monitoring />} /><Route path="/students" element={<Students />} /><Route path="/exam-codes" element={<ExamCodes />} /><Route path="/exams/create" element={<CreateExam />} /><Route path="/questions/add" element={<AddQuestion />} /><Route path="/questions" element={<Questions />} /><Route path="/results" element={<Results />} /><Route path="/audit-logs" element={<AuditLogs />} />
               </Route>
               <Route element={<RequireRole allowedRoles={["superadmin"]} />}><Route path="/admins" element={<Admins />} /></Route>
             </Route>
