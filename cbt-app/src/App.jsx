@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { BrowserRouter, Navigate, Outlet, Route, Routes, useLocation } from "react-router-dom";
 import { useAuth } from "./contexts/AuthContext";
 import Sidebar from "./components/Sidebar";
@@ -19,7 +20,43 @@ import InstallAppButton from "./components/InstallAppButton";
 import NetworkStatusBanner from "./components/NetworkStatusBanner";
 import AppLogo from "./components/AppLogo";
 import ExamSessionGuard from "./components/ExamSessionGuard";
-import { ToastProvider } from "./components/ToastProvider";
+import { ToastProvider, useToast } from "./components/ToastProvider";
+import { flushPendingSubmissions } from "./services/sessionService";
+
+function ConnectivitySync() {
+  const { user } = useAuth();
+  const { success, error } = useToast();
+
+  useEffect(() => {
+    if (!user) return undefined;
+
+    let syncing = false;
+    const sync = async () => {
+      if (syncing || !navigator.onLine) return;
+      syncing = true;
+      try {
+        const result = await flushPendingSubmissions();
+        if (result.synced > 0) success(`${result.synced} offline exam submission${result.synced === 1 ? "" : "s"} synced successfully.`, { duration: 5000 });
+      } catch (syncError) {
+        console.error("Automatic offline submission sync failed", syncError);
+        if (navigator.onLine) error("Your offline exam data is still waiting to sync. We will retry automatically.", { duration: 8000 });
+      } finally {
+        syncing = false;
+      }
+    };
+
+    void sync();
+    window.addEventListener("online", sync);
+    const interval = window.setInterval(sync, 30000);
+
+    return () => {
+      window.removeEventListener("online", sync);
+      window.clearInterval(interval);
+    };
+  }, [error, success, user]);
+
+  return null;
+}
 
 function LandingRedirect() {
   const { user, role, loading, isAdmin, authError } = useAuth();
@@ -72,19 +109,22 @@ function AccountErrorScreen() {
 export default function App() {
   return (
     <ToastProvider>
-      <BrowserRouter><Routes>
-        <Route path="/" element={<LandingRedirect />} /><Route path="/login" element={<Login />} /><Route path="/signup" element={<Signup />} /><Route path="/account-error" element={<AccountErrorScreen />} />
-        <Route element={<RequireAuth />}>
-          <Route element={<StudentShell />}><Route path="/portal" element={<StudentDashboard />} /><Route path="/exam/:examId" element={<ExamSessionGuard><TakeExam /></ExamSessionGuard>} /></Route>
-          <Route element={<AdminShell />}>
-            <Route element={<RequireRole allowedRoles={["admin", "superadmin"]} />}>
-              <Route path="/dashboard" element={<Dashboard />} /><Route path="/monitoring" element={<Monitoring />} /><Route path="/students" element={<Students />} /><Route path="/exam-codes" element={<ExamCodes />} /><Route path="/exams/create" element={<CreateExam />} /><Route path="/questions/add" element={<AddQuestion />} /><Route path="/questions" element={<Questions />} /><Route path="/results" element={<Results />} />
+      <BrowserRouter>
+        <ConnectivitySync />
+        <Routes>
+          <Route path="/" element={<LandingRedirect />} /><Route path="/login" element={<Login />} /><Route path="/signup" element={<Signup />} /><Route path="/account-error" element={<AccountErrorScreen />} />
+          <Route element={<RequireAuth />}>
+            <Route element={<StudentShell />}><Route path="/portal" element={<StudentDashboard />} /><Route path="/exam/:examId" element={<ExamSessionGuard><TakeExam /></ExamSessionGuard>} /></Route>
+            <Route element={<AdminShell />}>
+              <Route element={<RequireRole allowedRoles={["admin", "superadmin"]} />}>
+                <Route path="/dashboard" element={<Dashboard />} /><Route path="/monitoring" element={<Monitoring />} /><Route path="/students" element={<Students />} /><Route path="/exam-codes" element={<ExamCodes />} /><Route path="/exams/create" element={<CreateExam />} /><Route path="/questions/add" element={<AddQuestion />} /><Route path="/questions" element={<Questions />} /><Route path="/results" element={<Results />} />
+              </Route>
+              <Route element={<RequireRole allowedRoles={["superadmin"]} />}><Route path="/admins" element={<Admins />} /></Route>
             </Route>
-            <Route element={<RequireRole allowedRoles={["superadmin"]} />}><Route path="/admins" element={<Admins />} /></Route>
           </Route>
-        </Route>
-        <Route path="*" element={<LandingRedirect />} />
-      </Routes></BrowserRouter>
+          <Route path="*" element={<LandingRedirect />} />
+        </Routes>
+      </BrowserRouter>
     </ToastProvider>
   );
 }
