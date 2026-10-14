@@ -51,33 +51,18 @@ service cloud.firestore {
       allow read, write: if isAdmin();
     }
 
+    // Students must use the trusted getExamQuestions callable. This prevents
+    // correctAnswer/answerKey fields from being exposed through Firestore reads.
     match /questions/{questionId} {
-      allow read: if isSignedIn() && (
-        isAdmin() ||
-        get(/databases/$(database)/documents/exams/$(resource.data.examId)).data.status == 'published'
-      );
+      allow read: if isAdmin();
       allow create, update, delete: if isAdmin();
     }
 
     match /studentExamCodeHashes/{codeId} {
-      allow get: if isSignedIn() && (
-        isAdmin() || (
-          codeId.matches('.*_' + request.auth.uid) &&
-          (!exists(/databases/$(database)/documents/studentExamCodeHashes/$(codeId)) || resource.data.studentUid == request.auth.uid)
-        )
-      );
+      allow get: if isSignedIn() && isAdmin();
       allow list: if isAdmin();
       allow create, delete: if isAdmin();
-      allow update: if isAdmin() || (
-        isSignedIn() &&
-        resource.data.studentUid == request.auth.uid &&
-        resource.data.status == 'active' &&
-        request.resource.data.status == 'used' &&
-        request.resource.data.studentUid == resource.data.studentUid &&
-        request.resource.data.examId == resource.data.examId &&
-        request.resource.data.codeHash == resource.data.codeHash &&
-        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'usedAt', 'updatedAt'])
-      );
+      allow update: if isAdmin();
     }
 
     match /studentExamCodePrintRecords/{codeId} {
@@ -93,8 +78,6 @@ service cloud.firestore {
 
       allow create: if isSignedIn() && isAdmin();
 
-      // Students may only save their working answers/monitoring metadata.
-      // Official status, score, timestamps used for grading and identity remain server-controlled.
       allow update: if isSignedIn() && (
         isAdmin() ||
         (
@@ -109,6 +92,11 @@ service cloud.firestore {
       );
 
       allow delete: if isAdmin();
+    }
+
+    match /auditLogs/{logId} {
+      allow read: if isAdmin();
+      allow write: if false;
     }
 
     match /{document=**} {
