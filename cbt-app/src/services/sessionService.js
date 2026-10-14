@@ -12,8 +12,9 @@ import {
 import { getFunctions, httpsCallable } from "firebase/functions";
 import { auth, db } from "/firebase";
 
-const EXAM_DRAFT_PREFIX = "cbt_exam_draft_v2";
-const PENDING_SUBMISSIONS_KEY = "cbt_pending_submissions_v2";
+const EXAM_DRAFT_PREFIX = "cbt_exam_draft_v3";
+const EXAM_BUNDLE_PREFIX = "cbt_exam_bundle_v1";
+const PENDING_SUBMISSIONS_KEY = "cbt_pending_submissions_v3";
 
 function requireUser() {
   const currentUser = auth.currentUser;
@@ -31,6 +32,10 @@ function normalizeAnswers(answers) {
 
 function draftStorageKey(uid, examId) {
   return `${EXAM_DRAFT_PREFIX}:${uid}:${examId}`;
+}
+
+function bundleStorageKey(uid, examId) {
+  return `${EXAM_BUNDLE_PREFIX}:${uid}:${examId}`;
 }
 
 function readPendingSubmissions() {
@@ -51,6 +56,7 @@ function friendlyCallableError(error, fallback) {
   if (code.includes("functions/failed-precondition")) return error?.details || error?.message || fallback;
   if (code.includes("functions/deadline-exceeded")) return error?.details || "The exam time has expired.";
   if (code.includes("functions/not-found")) return "The secure exam service is not deployed yet. Please contact the administrator.";
+  if (code.includes("functions/unavailable")) return "The exam service is temporarily unavailable. Check your connection and try again.";
   if (code.includes("functions/internal")) return "The exam server could not complete this request. Please try again or contact the administrator.";
   return error?.details || error?.message || fallback;
 }
@@ -70,6 +76,31 @@ export function getLocalExamDraft(uid, examId) {
   } catch {
     return null;
   }
+}
+
+export function getLocalExamBundle(uid, examId) {
+  try {
+    return JSON.parse(window.localStorage.getItem(bundleStorageKey(uid, examId)) || "null");
+  } catch {
+    return null;
+  }
+}
+
+export function cacheExamBundle(examId, exam, questions, session) {
+  const currentUser = requireUser();
+  const bundle = {
+    uid: currentUser.uid,
+    examId,
+    exam,
+    questions,
+    session: {
+      ...session,
+      answers: normalizeAnswers(session?.answers || {}),
+      cachedAtMs: Date.now(),
+    },
+  };
+  window.localStorage.setItem(bundleStorageKey(currentUser.uid, examId), JSON.stringify(bundle));
+  return bundle;
 }
 
 export function saveLocalExamDraft(examId, answers, metadata = {}) {
@@ -129,13 +160,24 @@ export async function flushPendingSubmissions() {
   return { synced, remaining: remaining.length };
 }
 
-export async function startExamSession(examId, accessCode = "") {
+export async function loadExamQuestions(examId) {
   requireUser();
+  const getQuestions = httpsCallable(getFunctions(), "getExamQuestions");
+  try {
+    const result = await getQuestions({ examId });
+    return Array.isArray(result.data?.questions) ? result.data.questions : [];
+  } catch (error) {
+    throw new Error(friendlyCallableError(error, "Could not load the exam questions."));
+  }
+}
+
+export async function startExamSession(examId, accessCode = "") {
+  const currentUser = requireUser();
   const startExam = httpsCallable(getFunctions(), "startExamSession");
   try {
     const result = await startExam({ examId, accessCode: String(accessCode || "").trim().toUpperCase() });
     const session = result.data || {};
-    const localDraft = getLocalExamDraft(auth.currentUser.uid, examId);
+    const localDraft = getLocalExamDraft(currentUser.uid, examId);
     return {
       ...session,
       answers: { ...(session.answers || {}), ...(localDraft?.answers || {}) },
