@@ -1,4 +1,4 @@
-import { BrowserRouter, Navigate, Outlet, Route, Routes } from "react-router-dom";
+import { BrowserRouter, Navigate, Outlet, Route, Routes, useLocation } from "react-router-dom";
 import { useAuth } from "./contexts/AuthContext";
 import Sidebar from "./components/Sidebar";
 import Dashboard from "./pages/Dashboard";
@@ -81,6 +81,11 @@ function RequireRole({ allowedRoles }) {
 
 function StudentShell() {
   const { user, profile, logout } = useAuth();
+  const location = useLocation();
+
+  if (location.pathname.startsWith("/exam/")) {
+    return <div className="min-h-screen"><Outlet /></div>;
+  }
 
   return (
     <div className="min-h-screen bg-slate-100">

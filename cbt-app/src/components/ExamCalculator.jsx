@@ -57,14 +57,14 @@ const KEYS = [
   ["0", "normal"], [".", "normal"], ["%", "operator"], ["+", "operator"],
 ];
 
-export default function ExamCalculator({ onClose }) {
+export default function ExamCalculator() {
   const [expression, setExpression] = useState("");
   const [display, setDisplay] = useState("0");
   const [error, setError] = useState("");
 
   useEffect(() => {
     function handleKeyDown(event) {
-      if (event.key === "Escape") onClose();
+      if (!event.target.closest?.("[data-exam-calculator]")) return;
       if (/^[0-9().%+*/-]$/.test(event.key)) {
         event.preventDefault();
         setExpression((current) => current + event.key);
@@ -90,7 +90,7 @@ export default function ExamCalculator({ onClose }) {
     }
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [expression, onClose]);
+  }, [expression]);
 
   function press(label, kind) {
     setError("");
@@ -122,13 +122,12 @@ export default function ExamCalculator({ onClose }) {
 
   return (
     <aside className="order-first min-w-0 w-full self-start rounded-3xl border border-slate-200 bg-white p-4 shadow-sm xl:sticky xl:top-4 xl:order-none xl:max-h-[calc(100vh-2rem)] xl:overflow-y-auto xl:p-5">
-      <section role="dialog" aria-modal="false" aria-labelledby="exam-calculator-title" className="min-w-0">
+      <section data-exam-calculator role="group" aria-labelledby="exam-calculator-title" className="min-w-0">
         <div className="flex items-center justify-between">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.2em] text-emerald-600">Exam tool</p>
             <h2 id="exam-calculator-title" className="mt-1 text-xl font-bold text-slate-900">Calculator</h2>
           </div>
-          <button type="button" onClick={onClose} aria-label="Close calculator" className="rounded-xl px-3 py-2 text-xl text-slate-500 hover:bg-slate-100">×</button>
         </div>
         <div className="mt-5 rounded-2xl bg-slate-900 p-4 text-right text-white">
           <p className="min-h-6 break-all text-sm text-slate-400">{expression || " "}</p>
@@ -143,7 +142,7 @@ export default function ExamCalculator({ onClose }) {
           ))}
           <button type="button" onClick={() => press("=", "equals")} className="col-span-4 min-h-12 rounded-xl bg-emerald-600 font-semibold text-white hover:bg-emerald-700">Calculate =</button>
         </div>
-        <p className="mt-3 text-center text-xs text-slate-500">On desktop this stays in its own right-side column. On smaller screens it sits above the questions without covering them.</p>
+        <p className="mt-3 text-center text-xs text-slate-500">The calculator stays in its own panel. On smaller screens, it moves below the question area so it never covers an answer.</p>
       </section>
     </aside>
   );

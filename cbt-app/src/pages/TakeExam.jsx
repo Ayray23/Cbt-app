@@ -9,7 +9,6 @@ import {
   submitExamSession,
 } from "../services/sessionService";
 import ConfirmDialog from "../components/ConfirmDialog";
-import StatusBanner from "../components/StatusBanner";
 import ExamCalculator from "../components/ExamCalculator";
 
 const DISPLAY_OPTION_LABELS = ["A", "B", "C", "D"];
@@ -21,17 +20,6 @@ function formatTime(totalSeconds) {
   return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
 }
 
-function paletteClassName({ isActive, isAnswered }) {
-  if (isActive) {
-    return "border-slate-900 bg-slate-900 text-white";
-  }
-
-  if (isAnswered) {
-    return "border-emerald-300 bg-emerald-50 text-emerald-700";
-  }
-
-  return "border-slate-200 bg-white text-slate-600";
-}
 
 export default function TakeExam() {
   const { examId } = useParams();
@@ -47,7 +35,6 @@ export default function TakeExam() {
   const [timeLeft, setTimeLeft] = useState(null);
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
   const [showSubmitConfirm, setShowSubmitConfirm] = useState(false);
-  const [showCalculator, setShowCalculator] = useState(false);
   const [warningCount, setWarningCount] = useState(0);
   const hydratedAnswersRef = useRef(false);
   const hasEnteredFullscreenRef = useRef(false);
@@ -355,19 +342,42 @@ export default function TakeExam() {
   );
 
   if (loading) {
-    return <div className="rounded-2xl bg-white p-6 shadow-sm">Loading exam...</div>;
+    return (
+      <div className="min-h-screen bg-[#f5f7fb] px-4 py-8 sm:px-6">
+        <div className="mx-auto max-w-7xl animate-pulse space-y-5">
+          <div className="h-16 rounded-2xl bg-white" />
+          <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_330px]">
+            <div className="h-[560px] rounded-3xl bg-white" />
+            <div className="h-[560px] rounded-3xl bg-white" />
+          </div>
+        </div>
+      </div>
+    );
   }
 
   if (error) {
     return (
-      <div className="space-y-6">
-        <StatusBanner tone="error" message={error} />
+      <div className="flex min-h-screen items-center justify-center bg-[#f5f7fb] px-4">
+        <div className="w-full max-w-xl rounded-3xl border border-rose-100 bg-white p-8 shadow-sm">
+          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-rose-50 text-xl text-rose-600">!</div>
+          <h1 className="mt-5 text-2xl font-semibold tracking-tight text-slate-900">We couldn’t open this exam</h1>
+          <p className="mt-2 text-sm leading-6 text-slate-500">{error}</p>
+          <button type="button" onClick={() => navigate("/portal")} className="mt-6 rounded-xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-700">Return to portal</button>
+        </div>
       </div>
     );
   }
 
   if (!exam || questions.length === 0) {
-    return <div className="rounded-2xl bg-white p-6 shadow-sm">Exam unavailable.</div>;
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-[#f5f7fb] px-4">
+        <div className="rounded-3xl border border-slate-200 bg-white p-8 text-center shadow-sm">
+          <h1 className="text-xl font-semibold text-slate-900">Exam unavailable</h1>
+          <p className="mt-2 text-sm text-slate-500">There are no questions available for this exam.</p>
+          <button type="button" onClick={() => navigate("/portal")} className="mt-5 rounded-xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white">Return to portal</button>
+        </div>
+      </div>
+    );
   }
 
   const currentQuestion = questions[currentQuestionIndex];
@@ -375,8 +385,9 @@ export default function TakeExam() {
   const options = currentQuestion.options ?? {};
   const optionOrder = session?.optionOrderByQuestion?.[currentQuestion.id] ?? DISPLAY_OPTION_LABELS;
   const isLastQuestion = currentQuestionIndex === questions.length - 1;
+  const progressPercent = Math.round((answeredCount / questions.length) * 100);
 
-  async function confirmAndSubmit() {
+  function confirmAndSubmit() {
     setShowSubmitConfirm(true);
   }
 
@@ -389,170 +400,136 @@ export default function TakeExam() {
   }
 
   return (
-    <div className="space-y-6">
-      <div className={showCalculator ? "grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1fr)_21rem] xl:items-start" : ""}>
-        <div className="min-w-0 space-y-6">
-      <StatusBanner
-        tone={saving ? "info" : null}
-        message={saving ? "Saving your answers..." : ""}
-      />
-
-      <section className="rounded-3xl bg-white p-6 shadow-sm">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-          <div>
-            <p className="text-sm font-medium uppercase tracking-[0.3em] text-slate-400">
-              Live Exam
-            </p>
-            <h2 className="mt-2 text-3xl font-semibold text-slate-900">{exam.title}</h2>
-            <p className="mt-2 text-sm text-slate-500">
-              {questions.length} questions • {totalMarks} total marks
-            </p>
+    <div className="min-h-screen bg-[#f5f7fb] text-slate-900">
+      <div className="mx-auto max-w-[1500px] px-3 pb-6 pt-3 sm:px-6 sm:pt-5 lg:px-8">
+        <header className="mb-5 flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-slate-200/80 bg-white px-4 py-4 shadow-[0_2px_12px_rgba(15,23,42,0.025)] sm:px-6">
+          <div className="flex min-w-0 items-center gap-3">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-indigo-600 text-sm font-bold tracking-tight text-white">CBT</div>
+            <div className="min-w-0">
+              <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-indigo-600">Examination in progress</p>
+              <h1 className="mt-1 truncate text-base font-semibold tracking-tight text-slate-900 sm:text-lg">{exam.title}</h1>
+            </div>
           </div>
 
-          <div className="flex flex-wrap items-center gap-3 lg:justify-end">
-            <button
-              type="button"
-              onClick={() => setShowCalculator(true)}
-              className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-800 transition hover:bg-emerald-100"
-              aria-haspopup="dialog"
-            >
-              Open calculator
-            </button>
-            <div className="rounded-2xl bg-slate-100 px-4 py-4 text-sm text-slate-700">
-            <p className="font-semibold text-slate-900">Time left</p>
-            <p className="mt-1 text-2xl">{formatTime(timeLeft ?? exam.duration * 60)}</p>
-            <p className="mt-2 text-xs text-slate-500">Answered {answeredCount} of {questions.length}</p>
-            <p className="mt-1 text-xs text-slate-500">
-              {saving ? "Saving your answers..." : "Answers autosave while you work."}
-            </p>
-            <p className="mt-1 text-xs text-slate-500">Tab warnings: {warningCount}/{MAX_TAB_SWITCH_WARNINGS}</p>
+          <div className="flex flex-wrap items-center gap-3 sm:gap-5">
+            <div className="hidden items-center gap-2 text-xs font-medium text-slate-500 sm:flex">
+              <span className={["h-2 w-2 rounded-full", saving ? "animate-pulse bg-amber-500" : "bg-emerald-500"].join(" ")} />
+              {saving ? "Saving progress" : "Progress saved"}
             </div>
+            <div className={["flex items-center gap-3 rounded-xl border px-4 py-2.5", (timeLeft ?? 0) <= 300 ? "border-rose-200 bg-rose-50" : "border-slate-200 bg-slate-50"].join(" ")}>
+              <div className="text-right">
+                <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">Time remaining</p>
+                <p role="timer" aria-live="off" className={["mt-0.5 font-mono text-xl font-semibold tabular-nums", (timeLeft ?? 0) <= 300 ? "text-rose-700" : "text-slate-900"].join(" ")}>{formatTime(timeLeft ?? exam.duration * 60)}</p>
+              </div>
+              <div className={["flex h-9 w-9 items-center justify-center rounded-lg", (timeLeft ?? 0) <= 300 ? "bg-rose-100 text-rose-700" : "bg-white text-slate-600"].join(" ")} aria-hidden="true">◷</div>
+            </div>
+            <button type="button" onClick={confirmAndSubmit} disabled={submitting} className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-700 disabled:opacity-50">
+              {submitting ? "Submitting…" : "Finish exam"}
+            </button>
+          </div>
+        </header>
+
+        <div className="mb-5 grid gap-3 sm:grid-cols-3">
+          <div className="rounded-2xl border border-slate-200/80 bg-white px-4 py-3.5">
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-xs font-medium text-slate-500">Questions answered</p>
+              <p className="text-sm font-semibold tabular-nums text-slate-900">{answeredCount}<span className="font-medium text-slate-400"> / {questions.length}</span></p>
+            </div>
+            <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full bg-indigo-600 transition-[width] duration-300" style={{ width: progressPercent + "%" }} /></div>
+          </div>
+          <div className="rounded-2xl border border-slate-200/80 bg-white px-4 py-3.5">
+            <p className="text-xs font-medium text-slate-500">Current question</p>
+            <p className="mt-1 text-sm font-semibold text-slate-900">{currentQuestionIndex + 1} <span className="font-medium text-slate-400">of {questions.length}</span></p>
+          </div>
+          <div className="rounded-2xl border border-slate-200/80 bg-white px-4 py-3.5">
+            <p className="text-xs font-medium text-slate-500">Question value</p>
+            <p className="mt-1 text-sm font-semibold text-slate-900">{currentQuestion.marks ?? 1} <span className="font-medium text-slate-400">{Number(currentQuestion.marks ?? 1) === 1 ? "mark" : "marks"}</span></p>
           </div>
         </div>
-      </section>
 
-      <section className="grid gap-6 xl:grid-cols-[280px_1fr]">
-        <aside className="rounded-3xl bg-white p-6 shadow-sm">
-          <h3 className="text-lg font-semibold text-slate-900">Question palette</h3>
-          <p className="mt-2 text-sm text-slate-500">
-            Tap any number to jump directly to that question.
-          </p>
-
-          <div className="mt-5 grid grid-cols-5 gap-3">
-            {questions.map((question, index) => (
-              <button
-                key={question.id}
-                type="button"
-                onClick={() => setCurrentQuestionIndex(index)}
-                className={[
-                  "rounded-xl border px-0 py-3 text-sm font-semibold transition",
-                  paletteClassName({
-                    isActive: index === currentQuestionIndex,
-                    isAnswered: Boolean(answers[question.id]),
-                  }),
-                ].join(" ")}
-              >
-                {index + 1}
-              </button>
-            ))}
-          </div>
-
-          <div className="mt-6 space-y-2 text-xs text-slate-500">
-            <p>Dark tile: current question</p>
-            <p>Green tile: answered question</p>
-            <p>White tile: unanswered question</p>
-          </div>
-        </aside>
-
-        <section className="rounded-3xl bg-white p-6 shadow-sm md:p-8">
-          <div className="flex items-center justify-between">
-            <p className="text-sm font-medium uppercase tracking-[0.25em] text-slate-400">
-              Question {currentQuestionIndex + 1}
-            </p>
-            <p className="text-sm text-slate-500">
-              Marks: {currentQuestion.marks ?? 1}
-            </p>
-          </div>
-
-          <h3 className="mt-4 text-2xl font-medium text-slate-900">{prompt}</h3>
-
-          <div className="mt-6 grid gap-4">
-            {optionOrder.map((originalOptionKey, optionIndex) => (
-              <label
-                key={`${currentQuestion.id}-${originalOptionKey}`}
-                className={[
-                  "flex cursor-pointer items-start gap-4 rounded-2xl border px-4 py-4 transition",
-                  answers[currentQuestion.id] === originalOptionKey
-                    ? "border-slate-900 bg-slate-900 text-white"
-                    : "border-slate-200 bg-slate-50 text-slate-700",
-                ].join(" ")}
-              >
-                <input
-                  type="radio"
-                  name={currentQuestion.id}
-                  value={originalOptionKey}
-                  checked={answers[currentQuestion.id] === originalOptionKey}
-                  onChange={(event) =>
-                    setAnswers((current) => ({
-                      ...current,
-                      [currentQuestion.id]: event.target.value,
-                    }))
-                  }
-                  className="mt-1"
-                />
-                <span className="text-sm">
-                  <span className="font-semibold">{DISPLAY_OPTION_LABELS[optionIndex]}.</span>{" "}
-                  {options[originalOptionKey] ?? ""}
-                </span>
-              </label>
-            ))}
-          </div>
-
-          <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex gap-3">
-              <button
-                type="button"
-                onClick={moveToPreviousQuestion}
-                disabled={currentQuestionIndex === 0}
-                className="rounded-xl border border-slate-300 px-5 py-3 text-sm font-medium text-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                Previous
-              </button>
-
-              <button
-                type="button"
-                onClick={moveToNextQuestion}
-                disabled={currentQuestionIndex === questions.length - 1}
-                className="rounded-xl bg-slate-900 px-5 py-3 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                Next
-              </button>
-            </div>
-
-            {isLastQuestion && (
-              <button
-                type="button"
-                onClick={confirmAndSubmit}
-                disabled={submitting}
-                className="rounded-xl bg-emerald-600 px-5 py-3 text-sm font-medium text-white disabled:opacity-60"
-              >
-                {submitting ? "Submitting..." : "Submit exam"}
-              </button>
-            )}
-          </div>
-        </section>
-      </section>
-
+        <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
+          <main className="min-w-0">
+            <section className="overflow-hidden rounded-3xl border border-slate-200/80 bg-white shadow-[0_8px_30px_rgba(15,23,42,0.035)]">
+              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-5 py-4 sm:px-8">
+                <div className="flex items-center gap-3">
+                  <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-indigo-50 text-sm font-bold text-indigo-700">{String(currentQuestionIndex + 1).padStart(2, "0")}</span>
+                  <div>
+                    <p className="text-sm font-semibold text-slate-900">Question {currentQuestionIndex + 1}</p>
+                    <p className="mt-0.5 text-xs text-slate-500">Choose one answer</p>
+                  </div>
+                </div>
+                <span className={["rounded-full px-3 py-1.5 text-xs font-semibold", answers[currentQuestion.id] ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-500"].join(" ")}>{answers[currentQuestion.id] ? "Answer selected" : "Not answered"}</span>
               </div>
-        {showCalculator && <ExamCalculator onClose={() => setShowCalculator(false)} />}
+
+              <div className="px-5 py-7 sm:px-8 sm:py-9">
+                <h2 className="max-w-4xl whitespace-pre-wrap text-lg font-medium leading-8 tracking-[-0.015em] text-slate-900 sm:text-[22px] sm:leading-9">{prompt}</h2>
+
+                <fieldset className="mt-7 space-y-3">
+                  <legend className="sr-only">Answer options</legend>
+                  {optionOrder.map((originalOptionKey, optionIndex) => {
+                    const selected = answers[currentQuestion.id] === originalOptionKey;
+                    return (
+                      <label key={`${currentQuestion.id}-${originalOptionKey}`} className={["group flex cursor-pointer items-start gap-4 rounded-2xl border p-4 transition-colors duration-150 sm:p-5", selected ? "border-indigo-500 bg-indigo-50/70 ring-1 ring-indigo-500/20" : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50"].join(" ")}>
+                        <input type="radio" name={currentQuestion.id} value={originalOptionKey} checked={selected} onChange={(event) => setAnswers((current) => ({ ...current, [currentQuestion.id]: event.target.value }))} className="sr-only" />
+                        <span className={["flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border text-sm font-bold transition-colors", selected ? "border-indigo-600 bg-indigo-600 text-white" : "border-slate-200 bg-white text-slate-600 group-hover:border-slate-300"].join(" ")}>{DISPLAY_OPTION_LABELS[optionIndex]}<span className="sr-only"> option</span></span>
+                        <span className={["min-w-0 flex-1 pt-1 text-sm leading-6 sm:text-base sm:leading-7", selected ? "font-medium text-indigo-950" : "text-slate-700"].join(" ")}>{options[originalOptionKey] ?? ""}</span>
+                        <span className={["mt-1 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border", selected ? "border-indigo-600 bg-indigo-600 text-white" : "border-slate-300 bg-white"].join(" ")} aria-hidden="true">{selected ? <span className="text-xs">✓</span> : null}</span>
+                      </label>
+                    );
+                  })}
+                </fieldset>
+
+                <div className="mt-8 flex flex-col gap-4 border-t border-slate-100 pt-6 sm:flex-row sm:items-center sm:justify-between">
+                  <p className="text-xs text-slate-500">Your selection is saved automatically.</p>
+                  <div className="flex gap-3">
+                    <button type="button" onClick={moveToPreviousQuestion} disabled={currentQuestionIndex === 0} className="inline-flex min-h-11 flex-1 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40 sm:flex-none"><span aria-hidden="true">←</span> Previous</button>
+                    <button type="button" onClick={moveToNextQuestion} disabled={isLastQuestion} className="inline-flex min-h-11 flex-1 items-center justify-center gap-2 rounded-xl bg-indigo-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-400 sm:flex-none">Next <span aria-hidden="true">→</span></button>
+                  </div>
+                </div>
+              </div>
+            </section>
+            <div className="mt-4 flex flex-wrap items-center justify-between gap-2 px-1 text-xs text-slate-400">
+              <span>Tab warnings: {warningCount}/{MAX_TAB_SWITCH_WARNINGS}</span>
+              <span>{totalMarks} total marks · {questions.length} questions</span>
+            </div>
+          </main>
+
+          <aside className="min-w-0 space-y-4 xl:sticky xl:top-4">
+            <section className="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-[0_2px_12px_rgba(15,23,42,0.025)]">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <h2 className="text-sm font-semibold text-slate-900">Question navigator</h2>
+                  <p className="mt-1 text-xs text-slate-500">Jump to any question</p>
+                </div>
+                <span className="rounded-lg bg-slate-100 px-2.5 py-1.5 text-xs font-semibold text-slate-600">{answeredCount}/{questions.length}</span>
+              </div>
+              <div className="mt-4 grid grid-cols-6 gap-2 sm:grid-cols-8 xl:grid-cols-6">
+                {questions.map((question, index) => {
+                  const active = index === currentQuestionIndex;
+                  const answered = Boolean(answers[question.id]);
+                  return (
+                    <button key={question.id} type="button" onClick={() => setCurrentQuestionIndex(index)} aria-label={`Go to question ${index + 1}`} aria-current={active ? "step" : undefined} className={["flex aspect-square min-h-9 items-center justify-center rounded-lg border text-xs font-semibold transition", active ? "border-indigo-600 bg-indigo-600 text-white shadow-sm shadow-indigo-600/20" : answered ? "border-emerald-200 bg-emerald-50 text-emerald-700 hover:border-emerald-300" : "border-slate-200 bg-white text-slate-500 hover:border-slate-300 hover:bg-slate-50"].join(" ")}>{index + 1}</button>
+                  );
+                })}
+              </div>
+              <div className="mt-4 flex flex-wrap gap-x-4 gap-y-2 border-t border-slate-100 pt-3 text-[11px] text-slate-500">
+                <span className="inline-flex items-center gap-1.5"><span className="h-2 w-2 rounded-sm bg-indigo-600" />Current</span>
+                <span className="inline-flex items-center gap-1.5"><span className="h-2 w-2 rounded-sm bg-emerald-400" />Answered</span>
+                <span className="inline-flex items-center gap-1.5"><span className="h-2 w-2 rounded-sm border border-slate-300 bg-white" />Unanswered</span>
+              </div>
+            </section>
+
+            <ExamCalculator />
+          </aside>
+        </div>
       </div>
 
       <ConfirmDialog
         open={showSubmitConfirm}
-        title="Submit exam?"
-        message="After you submit, you cannot return to this exam again."
-        confirmLabel="Yes, submit"
-        cancelLabel="No, go back"
+        title="Finish and submit exam?"
+        message={`You have answered ${answeredCount} of ${questions.length} questions. Once submitted, you cannot return to this exam.`}
+        confirmLabel="Submit exam"
+        cancelLabel="Continue exam"
         tone="success"
         onConfirm={async () => {
           setShowSubmitConfirm(false);
