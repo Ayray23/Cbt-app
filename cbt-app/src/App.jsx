@@ -19,6 +19,7 @@ import InstallAppButton from "./components/InstallAppButton";
 import NetworkStatusBanner from "./components/NetworkStatusBanner";
 import AppLogo from "./components/AppLogo";
 import ExamSessionGuard from "./components/ExamSessionGuard";
+import { ToastProvider } from "./components/ToastProvider";
 
 function LandingRedirect() {
   const { user, role, loading, isAdmin, authError } = useAuth();
@@ -69,17 +70,21 @@ function AccountErrorScreen() {
 }
 
 export default function App() {
-  return <BrowserRouter><Routes>
-    <Route path="/" element={<LandingRedirect />} /><Route path="/login" element={<Login />} /><Route path="/signup" element={<Signup />} /><Route path="/account-error" element={<AccountErrorScreen />} />
-    <Route element={<RequireAuth />}>
-      <Route element={<StudentShell />}><Route path="/portal" element={<StudentDashboard />} /><Route path="/exam/:examId" element={<ExamSessionGuard><TakeExam /></ExamSessionGuard>} /></Route>
-      <Route element={<AdminShell />}>
-        <Route element={<RequireRole allowedRoles={["admin", "superadmin"]} />}>
-          <Route path="/dashboard" element={<Dashboard />} /><Route path="/monitoring" element={<Monitoring />} /><Route path="/students" element={<Students />} /><Route path="/exam-codes" element={<ExamCodes />} /><Route path="/exams/create" element={<CreateExam />} /><Route path="/questions/add" element={<AddQuestion />} /><Route path="/questions" element={<Questions />} /><Route path="/results" element={<Results />} />
+  return (
+    <ToastProvider>
+      <BrowserRouter><Routes>
+        <Route path="/" element={<LandingRedirect />} /><Route path="/login" element={<Login />} /><Route path="/signup" element={<Signup />} /><Route path="/account-error" element={<AccountErrorScreen />} />
+        <Route element={<RequireAuth />}>
+          <Route element={<StudentShell />}><Route path="/portal" element={<StudentDashboard />} /><Route path="/exam/:examId" element={<ExamSessionGuard><TakeExam /></ExamSessionGuard>} /></Route>
+          <Route element={<AdminShell />}>
+            <Route element={<RequireRole allowedRoles={["admin", "superadmin"]} />}>
+              <Route path="/dashboard" element={<Dashboard />} /><Route path="/monitoring" element={<Monitoring />} /><Route path="/students" element={<Students />} /><Route path="/exam-codes" element={<ExamCodes />} /><Route path="/exams/create" element={<CreateExam />} /><Route path="/questions/add" element={<AddQuestion />} /><Route path="/questions" element={<Questions />} /><Route path="/results" element={<Results />} />
+            </Route>
+            <Route element={<RequireRole allowedRoles={["superadmin"]} />}><Route path="/admins" element={<Admins />} /></Route>
+          </Route>
         </Route>
-        <Route element={<RequireRole allowedRoles={["superadmin"]} />}><Route path="/admins" element={<Admins />} /></Route>
-      </Route>
-    </Route>
-    <Route path="*" element={<LandingRedirect />} />
-  </Routes></BrowserRouter>;
+        <Route path="*" element={<LandingRedirect />} />
+      </Routes></BrowserRouter>
+    </ToastProvider>
+  );
 }
