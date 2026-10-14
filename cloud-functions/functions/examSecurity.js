@@ -116,7 +116,9 @@ exports.startExamSession = onCall(async (request) => {
     return { id: sessionRef.id, ...transactionResult.existing, startedAtMs: transactionResult.existing.startedAtMs || toMillis(transactionResult.existing.startedAt) };
   }
 
-  return { id: sessionRef.id, ...sessionData };
+  const storedSnapshot = await sessionRef.get();
+  const stored = storedSnapshot.data() || {};
+  return { id: storedSnapshot.id, ...stored, startedAtMs: stored.startedAtMs || toMillis(stored.startedAt) };
 });
 
 exports.submitExamSession = onCall(async (request) => {
