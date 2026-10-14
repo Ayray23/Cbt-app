@@ -2,16 +2,13 @@ import { useEffect, useMemo, useState } from "react";
 import { doc, getDoc, onSnapshot, serverTimestamp, setDoc } from "firebase/firestore";
 import { useNavigate, useParams } from "react-router-dom";
 import { auth, db } from "/firebase";
-import { flushPendingSubmissions } from "../services/sessionService";
+import { flushPendingSubmissions, getLocalExamDraft } from "../services/sessionService";
+import { syncLocalExamDraft } from "../services/offlineExamSync";
 
 function scheduleMessage(exam) {
   const now = Date.now();
-  if (exam.scheduleStartAtMs && now < exam.scheduleStartAtMs) {
-    return `This examination opens on ${new Date(exam.scheduleStartAtMs).toLocaleString()}.`;
-  }
-  if (exam.scheduleEndAtMs && now >= exam.scheduleEndAtMs) {
-    return `This examination closed on ${new Date(exam.scheduleEndAtMs).toLocaleString()}.`;
-  }
+  if (exam.scheduleStartAtMs && now < exam.scheduleStartAtMs) return `This examination opens on ${new Date(exam.scheduleStartAtMs).toLocaleString()}.`;
+  if (exam.scheduleEndAtMs && now >= exam.scheduleEndAtMs) return `This examination closed on ${new Date(exam.scheduleEndAtMs).toLocaleString()}.`;
   return "";
 }
 
@@ -36,6 +33,13 @@ export default function ExamSessionGuard({ children }) {
         const message = hasActiveSession ? "" : scheduleMessage(exam);
         setState({ loading: false, blocked: Boolean(message), message, exam });
       } catch (error) {
+        // Firestore persistentLocalCache normally serves an active exam offline.
+        // If a transient cache read still fails, a previously saved local draft
+        // is enough evidence to let the student recover the exam shell.
+        if (!window.navigator.onLine && auth.currentUser && getLocalExamDraft(auth.currentUser.uid, examId)) {
+          if (active) setState({ loading: false, blocked: false, message: "", exam: { id: examId, title: "Examination (offline recovery)" } });
+          return;
+        }
         if (active) setState({ loading: false, blocked: true, message: error.message ?? "Could not verify the examination window.", exam: null });
       }
     }
@@ -49,7 +53,7 @@ export default function ExamSessionGuard({ children }) {
     const uid = auth.currentUser.uid;
     const sessionRef = doc(db, "examSessions", `${examId}_${uid}`);
     const writeHeartbeat = async () => {
-      if (cancelled) return;
+      if (cancelled || !window.navigator.onLine) return;
       try {
         await setDoc(sessionRef, {
           lastHeartbeatAtMs: Date.now(),
@@ -60,8 +64,15 @@ export default function ExamSessionGuard({ children }) {
         console.error("Exam heartbeat failed", error);
       }
     };
-    const handleOnline = () => { void flushPendingSubmissions(); void writeHeartbeat(); };
-    const handleOffline = () => { void writeHeartbeat(); };
+    const handleOnline = async () => {
+      await syncLocalExamDraft(examId);
+      await flushPendingSubmissions();
+      await writeHeartbeat();
+    };
+    const handleOffline = () => {
+      // Answer selections are persisted by TakeExam before cloud sync is attempted.
+      // This event intentionally does not attempt a network write.
+    };
     void flushPendingSubmissions();
     void writeHeartbeat();
     const interval = window.setInterval(writeHeartbeat, 15000);
@@ -77,9 +88,7 @@ export default function ExamSessionGuard({ children }) {
 
   const title = useMemo(() => state.exam?.title || "Examination", [state.exam]);
 
-  if (state.loading) {
-    return <div className="flex min-h-screen items-center justify-center bg-slate-50"><div className="rounded-2xl bg-white px-6 py-5 text-sm text-slate-600 shadow-sm">Checking examination access…</div></div>;
-  }
+  if (state.loading) return <div className="flex min-h-screen items-center justify-center bg-slate-50"><div className="rounded-2xl bg-white px-6 py-5 text-sm text-slate-600 shadow-sm">Checking examination access…</div></div>;
 
   if (state.blocked) {
     return (
