@@ -1,7 +1,7 @@
 name: CI
 on:
   push:
-    branches: [master, main]
+    branches: [master, main, feature/cbt-1.0-hardening]
   pull_request:
     branches: [master, main]
   workflow_dispatch:
