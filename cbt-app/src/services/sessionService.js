@@ -177,11 +177,13 @@ export async function startExamSession(examId, accessCode = "") {
   const sessionRef = doc(db, "examSessions", `${examId}_${currentUser.uid}`);
   const userRef = doc(db, "users", currentUser.uid);
 
-  const [examSnapshot, sessionSnapshot, userSnapshot, questionsSnapshot] = await Promise.all([
+  const studentCodeRef = doc(db, "studentExamCodeHashes", `${examId}_${currentUser.uid}`);
+  const [examSnapshot, sessionSnapshot, userSnapshot, questionsSnapshot, studentCodeSnapshot] = await Promise.all([
     getDoc(examRef),
     getDoc(sessionRef),
     getDoc(userRef),
     getDocs(query(collection(db, "questions"), where("examId", "==", examId))),
+    getDoc(studentCodeRef),
   ]);
 
   if (!examSnapshot.exists()) {
@@ -223,13 +225,31 @@ export async function startExamSession(examId, accessCode = "") {
     };
   }
 
-  if (!exam.accessCodeHash) {
-    throw new Error("This exam is not open yet. Ask your supervisor for the exam password.");
-  }
-
-  const providedAccessCodeHash = await hashAccessCode(accessCode);
-  if (providedAccessCodeHash !== exam.accessCodeHash) {
-    throw new Error("Incorrect exam password.");
+  let useAssignedCode = false;
+  if (studentCodeSnapshot.exists()) {
+    const assignedCode = studentCodeSnapshot.data();
+    if (assignedCode.status === "revoked") {
+      throw new Error("Your exam code has been revoked. Contact your administrator.");
+    }
+    if (assignedCode.status === "used") {
+      throw new Error("This exam code has already been used. Contact your administrator if you need help.");
+    }
+    const providedAccessCodeHash = await hashAccessCode(accessCode);
+    if (!assignedCode.codeHash || providedAccessCodeHash !== assignedCode.codeHash) {
+      throw new Error("Incorrect exam code for your student account.");
+    }
+    useAssignedCode = true;
+  } else {
+    if (exam.individualCodesEnabled) {
+      throw new Error("Your administrator has not issued an individual code for this exam. Contact your administrator.");
+    }
+    if (!exam.accessCodeHash) {
+      throw new Error("This exam is not open yet. Ask your supervisor for your exam code.");
+    }
+    const providedAccessCodeHash = await hashAccessCode(accessCode);
+    if (providedAccessCodeHash !== exam.accessCodeHash) {
+      throw new Error("Incorrect exam code.");
+    }
   }
 
   if (questionsSnapshot.empty) {
@@ -262,6 +282,9 @@ export async function startExamSession(examId, accessCode = "") {
   };
 
   await setDoc(sessionRef, sessionData);
+  if (useAssignedCode) {
+    await updateDoc(studentCodeRef, { status: "used", usedAt: serverTimestamp(), updatedAt: serverTimestamp() });
+  }
   const createdSnapshot = await getDoc(sessionRef);
   const result = {
     id: createdSnapshot.id,

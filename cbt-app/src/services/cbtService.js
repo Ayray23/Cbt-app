@@ -11,9 +11,10 @@ import {
   setDoc,
   updateDoc,
   where,
+  writeBatch,
 } from "firebase/firestore";
 import { db } from "/firebase";
-import { hashAccessCode, normalizeAccessCode } from "../utils/accessCode";
+import { generateAccessCode, hashAccessCode, normalizeAccessCode } from "../utils/accessCode";
 
 export async function createExam({ title, duration }) {
   const ref = await addDoc(collection(db, "exams"), {
@@ -131,4 +132,74 @@ export async function setExamAccessCode(examId, accessCode) {
   ]);
 
   return normalizedAccessCode;
+}
+
+
+export async function generateStudentExamCodes(exam, students) {
+  if (!exam?.id || !students?.length) {
+    throw new Error("Select an exam and at least one student.");
+  }
+
+  const generated = [];
+  const eligibleStudents = students.filter((student) => student?.id);
+
+  // Two documents per student: an admin-only printable record containing the
+  // plaintext code, and a student-readable validation record containing only
+  // the one-way hash. Keep batches below Firestore's 500-write limit.
+  for (let offset = 0; offset < eligibleStudents.length; offset += 200) {
+    const batch = writeBatch(db);
+    const chunk = eligibleStudents.slice(offset, offset + 200);
+
+    for (const student of chunk) {
+      const code = generateAccessCode(10);
+      const codeHash = await hashAccessCode(code);
+      const codeId = `${exam.id}_${student.id}`;
+      const printRef = doc(db, "studentExamCodePrintRecords", codeId);
+      const hashRef = doc(db, "studentExamCodeHashes", codeId);
+      const studentName = student.displayName || student.fullName || student.email || "Student";
+      const record = {
+        examId: exam.id,
+        examTitle: exam.title || "Exam",
+        studentUid: student.id,
+        studentName,
+        studentEmail: student.email || "",
+        studentId: student.studentId || "",
+        className: student.className || "",
+        code,
+        updatedAt: serverTimestamp(),
+      };
+      batch.set(printRef, { ...record, createdAt: serverTimestamp() });
+      batch.set(hashRef, {
+        examId: exam.id,
+        studentUid: student.id,
+        codeHash,
+        status: "active",
+        usedAt: null,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+      generated.push({ id: codeId, ...record, status: "active" });
+    }
+
+    await batch.commit();
+  }
+
+  await updateDoc(doc(db, "exams", exam.id), {
+    individualCodesEnabled: true,
+    individualCodesUpdatedAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  });
+  return generated;
+}
+
+export async function updateStudentProfile(studentUid, profile) {
+  if (!studentUid) throw new Error("Student account is missing.");
+  const allowedFields = ["displayName", "studentId", "className", "department", "phone"];
+  const updates = {};
+  for (const field of allowedFields) {
+    if (profile[field] !== undefined) updates[field] = String(profile[field] || "").trim();
+  }
+  updates.updatedAt = serverTimestamp();
+  await updateDoc(doc(db, "users", studentUid), updates);
+  return updates;
 }

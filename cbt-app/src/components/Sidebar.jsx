@@ -16,6 +16,7 @@ export default function Sidebar() {
     { to: "/dashboard", label: "Overview" },
     { to: "/monitoring", label: "Monitoring" },
     { to: "/students", label: "Students" },
+    { to: "/exam-codes", label: "Exam Codes & Printing" },
     { to: "/exams/create", label: "Exams" },
     { to: "/questions/add", label: "Add Questions" },
     { to: "/questions", label: "Question Bank" },
