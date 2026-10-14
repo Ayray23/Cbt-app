@@ -1,3 +1,4 @@
+/* eslint-disable max-len, indent, object-curly-spacing, require-jsdoc */
 const admin = require("firebase-admin");
 const { HttpsError, onCall } = require("firebase-functions/v2/https");
 const crypto = require("crypto");
