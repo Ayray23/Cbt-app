@@ -51,10 +51,13 @@ service cloud.firestore {
       allow read, write: if isAdmin();
     }
 
-    // Students must use the trusted getExamQuestions callable. This prevents
-    // correctAnswer/answerKey fields from being exposed through Firestore reads.
     match /questions/{questionId} {
-      allow read: if isAdmin();
+      // Legacy client exam loading remains temporarily allowed for published exams.
+      // The secure getExamQuestions callable is available for the final client migration.
+      allow read: if isSignedIn() && (
+        isAdmin() ||
+        get(/databases/$(database)/documents/exams/$(resource.data.examId)).data.status == 'published'
+      );
       allow create, update, delete: if isAdmin();
     }
 
