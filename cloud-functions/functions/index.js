@@ -21,11 +21,33 @@ async function requireRole(uid, allowedRoles) {
   return profile;
 }
 
-// Exam start/submission live in one dedicated security module so there is only
-// one authoritative implementation for code validation, session creation and grading.
 const examSecurity = require("./examSecurity");
 exports.startExamSession = examSecurity.startExamSession;
 exports.submitExamSession = examSecurity.submitExamSession;
+
+// Students receive only the fields required to render an exam. The answer key
+// remains server-side and is never sent to the candidate browser.
+exports.getExamQuestions = onCall(async (request) => {
+  if (!request.auth) throw new HttpsError("unauthenticated", "Sign in required.");
+  const examId = String(request.data?.examId || "").trim();
+  if (!examId) throw new HttpsError("invalid-argument", "examId is required.");
+
+  const examSnapshot = await db.collection("exams").doc(examId).get();
+  if (!examSnapshot.exists) throw new HttpsError("not-found", "Exam not found.");
+  const exam = examSnapshot.data();
+  if (exam.status !== "published") throw new HttpsError("failed-precondition", "Exam is not published.");
+
+  const snapshot = await db.collection("questions").where("examId", "==", examId).get();
+  if (snapshot.empty) throw new HttpsError("failed-precondition", "Exam has no questions.");
+
+  return {
+    questions: snapshot.docs.map((questionDoc) => {
+      const question = questionDoc.data();
+      const { correctAnswer, answer, answerKey, ...safeQuestion } = question;
+      return { id: questionDoc.id, ...safeQuestion };
+    }),
+  };
+});
 
 exports.setUserRole = onCall(async (request) => {
   if (!request.auth) throw new HttpsError("unauthenticated", "Sign in required.");
