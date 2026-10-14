@@ -2,10 +2,10 @@ import { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { collection, doc, onSnapshot, orderBy, query, where } from "firebase/firestore";
 import { db } from "/firebase";
-import StatusBanner from "../components/StatusBanner";
 import { useAuth } from "../contexts/AuthContext";
 import { flushPendingSubmissions, getPendingSubmissionMap } from "../services/sessionService";
 import { startSecureExamSession } from "../services/secureExamService";
+import { useToast } from "../components/ToastProvider";
 
 const INSTRUCTIONS = [
   "Read each question carefully before you choose an answer.",
@@ -14,10 +14,23 @@ const INSTRUCTIONS = [
   "Make sure your internet connection is stable before you start.",
 ];
 
+function friendlyExamError(error) {
+  const code = String(error?.code || "");
+  const message = String(error?.message || "");
+  if (code.includes("functions/not-found") || message.toLowerCase().includes("not found") && message.toLowerCase().includes("function")) {
+    return "The secure exam service is not deployed yet. Please ask the administrator to deploy the latest Firebase Functions before starting this exam.";
+  }
+  if (code.includes("functions/internal")) {
+    return "The exam server could not verify this code. Please try again. If the problem continues, ask the administrator to check the Firebase Functions deployment.";
+  }
+  return message || "Could not start exam. Please check your exam code and try again.";
+}
+
 export default function StudentDashboard() {
   const { user } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
+  const { toast, error: toastError } = useToast();
   const [exams, setExams] = useState([]);
   const [sessions, setSessions] = useState([]);
   const [selectedExamId, setSelectedExamId] = useState("");
@@ -25,7 +38,6 @@ export default function StudentDashboard() {
   const [hasAssignedCode, setHasAssignedCode] = useState(false);
   const [startingExam, setStartingExam] = useState(false);
   const [pendingSubmissionMap, setPendingSubmissionMap] = useState({});
-  const [banner, setBanner] = useState(location.state?.message ? { tone: "success", message: location.state.message } : null);
 
   useEffect(() => {
     const examsQuery = query(collection(db, "exams"), where("status", "==", "published"), orderBy("createdAt", "desc"));
@@ -61,8 +73,11 @@ export default function StudentDashboard() {
 
   useEffect(() => {
     setExamCode("");
-    setBanner(location.state?.message ? { tone: "success", message: location.state.message } : null);
-  }, [location.state?.message, selectedExamId]);
+    if (location.state?.message) {
+      toast(location.state.message, { type: "success", duration: 7000 });
+      window.history.replaceState({}, document.title);
+    }
+  }, [location.state?.message, selectedExamId, toast]);
 
   const sessionsByExam = useMemo(() => sessions.reduce((acc, session) => { acc[session.examId] = session; return acc; }, {}), [sessions]);
   const selectedExam = exams.find((exam) => exam.id === selectedExamId) ?? null;
@@ -75,13 +90,13 @@ export default function StudentDashboard() {
   async function handleStartExam() {
     if (!selectedExam) return;
     setStartingExam(true);
-    setBanner(null);
     try {
       await startSecureExamSession(selectedExam.id, examCode);
+      toast("Exam code verified. Opening your examination…", { type: "success", duration: 4500 });
       navigate(`/exam/${selectedExam.id}`);
     } catch (error) {
       console.error(error);
-      setBanner({ tone: "error", message: error.message ?? "Could not start exam." });
+      toastError(friendlyExamError(error), { duration: 9000 });
     } finally {
       setStartingExam(false);
     }
@@ -89,7 +104,6 @@ export default function StudentDashboard() {
 
   return (
     <div className="space-y-6">
-      <StatusBanner tone={banner?.tone} message={banner?.message} onClose={() => setBanner(null)} />
       <section className="rounded-3xl bg-white p-6 shadow-sm md:p-8">
         <p className="text-sm font-medium uppercase tracking-[0.3em] text-slate-400">Available Exam</p>
         <h2 className="mt-3 text-3xl font-semibold text-slate-900">Select your paper</h2>
