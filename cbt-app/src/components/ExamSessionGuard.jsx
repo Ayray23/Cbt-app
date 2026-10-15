@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { doc, getDoc, onSnapshot, serverTimestamp, setDoc } from "firebase/firestore";
+import { doc, getDoc, serverTimestamp, setDoc } from "firebase/firestore";
 import { useNavigate, useParams } from "react-router-dom";
 import { auth, db } from "/firebase";
 import { flushPendingSubmissions, getLocalExamDraft } from "../services/sessionService";
