@@ -1,7 +1,6 @@
-import { createContext, useCallback, useMemo, useState } from "react";
-import { useToast } from "./useToast";
+import { useCallback, useMemo, useState } from "react";
+import { ToastContext } from "./useToast";
 
-const ToastContext = createContext(null);
 let nextToastId = 1;
 
 function normalizeToast(message, options = {}) {
