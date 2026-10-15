@@ -5,7 +5,7 @@ import { db } from "/firebase";
 import { useAuth } from "../contexts/AuthContext";
 import { flushPendingSubmissions, getPendingSubmissionMap } from "../services/sessionService";
 import { startSecureExamSession } from "../services/secureExamService";
-import { useToast } from "../components/useToast";
+import { useToast } from "../components/useToast.js";
 
 const INSTRUCTIONS = [
   "Read each question carefully before you choose an answer.",
