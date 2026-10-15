@@ -14,7 +14,7 @@ async function getUserProfile(uid) {
 
 async function requireRole(uid, allowedRoles) {
   const profile = await getUserProfile(uid);
-  const role = profile?.role || "student";
+  const role = profile && profile.role || "student";
   if (!allowedRoles.includes(role)) {
     throw new HttpsError("permission-denied", "You do not have access to this action.");
   }
@@ -29,7 +29,7 @@ exports.submitExamSession = examSecurity.submitExamSession;
 // remains server-side and is never sent to the candidate browser.
 exports.getExamQuestions = onCall(async (request) => {
   if (!request.auth) throw new HttpsError("unauthenticated", "Sign in required.");
-  const examId = String(request.data?.examId || "").trim();
+  const examId = String(request.data && request.data.examId || "").trim();
   if (!examId) throw new HttpsError("invalid-argument", "examId is required.");
 
   const examSnapshot = await db.collection("exams").doc(examId).get();
@@ -53,8 +53,8 @@ exports.setUserRole = onCall(async (request) => {
   if (!request.auth) throw new HttpsError("unauthenticated", "Sign in required.");
   await requireRole(request.auth.uid, ["superadmin"]);
 
-  const email = String(request.data?.email || "").trim().toLowerCase();
-  const role = String(request.data?.role || "").trim().toLowerCase();
+  const email = String(request.data && request.data.email || "").trim().toLowerCase();
+  const role = String(request.data && request.data.role || "").trim().toLowerCase();
   const allowedRoles = ["student", "admin", "superadmin"];
 
   if (!email || !allowedRoles.includes(role)) {
