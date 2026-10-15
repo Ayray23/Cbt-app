@@ -42,8 +42,10 @@ exports.getExamQuestions = onCall(async (request) => {
 
   return {
     questions: snapshot.docs.map((questionDoc) => {
-      const question = questionDoc.data();
-      const { correctAnswer, answer, answerKey, ...safeQuestion } = question;
+      const safeQuestion = { ...questionDoc.data() };
+      delete safeQuestion.correctAnswer;
+      delete safeQuestion.answer;
+      delete safeQuestion.answerKey;
       return { id: questionDoc.id, ...safeQuestion };
     }),
   };
