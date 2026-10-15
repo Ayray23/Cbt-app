@@ -21,7 +21,8 @@ import InstallAppButton from "./components/InstallAppButton";
 import NetworkStatusBanner from "./components/NetworkStatusBanner";
 import AppLogo from "./components/AppLogo";
 import ExamSessionGuard from "./components/ExamSessionGuard";
-import { ToastProvider, useToast } from "./components/ToastProvider";
+import { ToastProvider } from "./components/ToastProvider";
+import { useToast } from "./components/useToast";
 import { flushPendingSubmissions } from "./services/sessionService";
 
 function ConnectivitySync() {

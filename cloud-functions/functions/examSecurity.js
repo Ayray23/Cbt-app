@@ -65,8 +65,8 @@ async function validateExamCode(examId, uid, accessCode, exam) {
 
 exports.startExamSession = onCall(async (request) => {
   if (!request.auth) throw new HttpsError("unauthenticated", "Sign in required.");
-  const examId = String(request.data?.examId || "").trim();
-  const accessCode = request.data?.accessCode || "";
+  const examId = String(request.data && request.data.examId || "").trim();
+  const accessCode = request.data && request.data.accessCode || "";
   if (!examId) throw new HttpsError("invalid-argument", "examId is required.");
 
   const examRef = db.collection("exams").doc(examId);
@@ -144,9 +144,9 @@ exports.startExamSession = onCall(async (request) => {
 
 exports.submitExamSession = onCall(async (request) => {
   if (!request.auth) throw new HttpsError("unauthenticated", "Sign in required.");
-  const examId = String(request.data?.examId || "").trim();
+  const examId = String(request.data && request.data.examId || "").trim();
   if (!examId) throw new HttpsError("invalid-argument", "examId is required.");
-  const answers = normalizeAnswers(request.data?.answers);
+  const answers = normalizeAnswers(request.data && request.data.answers);
 
   const examSnapshot = await db.collection("exams").doc(examId).get();
   const sessionRef = db.collection("examSessions").doc(`${examId}_${request.auth.uid}`);
@@ -161,7 +161,7 @@ exports.submitExamSession = onCall(async (request) => {
   if (exam.status !== "published") throw new HttpsError("failed-precondition", "Exam is not published.");
 
   const expiresAtMs = Number(session.expiresAtMs || 0);
-  const submissionReason = String(request.data?.submissionReason || "manual");
+  const submissionReason = String(request.data && request.data.submissionReason || "manual");
   if (expiresAtMs && Date.now() > expiresAtMs + 30000 && submissionReason !== "timeout") {
     throw new HttpsError("deadline-exceeded", "The exam time has expired.");
   }
@@ -186,8 +186,8 @@ exports.submitExamSession = onCall(async (request) => {
     finalScore: total,
     status: "submitted",
     submissionReason,
-    tabSwitchCount: Number(request.data?.tabSwitchCount || session.tabSwitchCount || 0),
-    integrityWarnings: Number(request.data?.integrityWarnings || session.integrityWarnings || 0),
+    tabSwitchCount: Number(request.data && request.data.tabSwitchCount || session.tabSwitchCount || 0),
+    integrityWarnings: Number(request.data && request.data.integrityWarnings || session.integrityWarnings || 0),
     submittedAtMs: Date.now(),
     submittedAt: admin.firestore.FieldValue.serverTimestamp(),
     updatedAt: admin.firestore.FieldValue.serverTimestamp(),
