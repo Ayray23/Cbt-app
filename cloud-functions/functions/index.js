@@ -48,6 +48,26 @@ exports.submitExamSession = examSecurity.submitExamSession;
 
 // Students receive only the fields required to render an exam. The answer key
 // remains server-side and is never sent to the candidate browser.
+exports.getMyExamCodeStatus = onCall(async (request) => {
+  if (!request.auth) throw new HttpsError("unauthenticated", "Sign in required.");
+  const examId = String(request.data && request.data.examId || "").trim();
+  if (!examId) throw new HttpsError("invalid-argument", "examId is required.");
+
+  const examSnapshot = await db.collection("exams").doc(examId).get();
+  if (!examSnapshot.exists) throw new HttpsError("not-found", "Exam not found.");
+  const exam = examSnapshot.data();
+  if (!exam.individualCodesEnabled) return { hasAssignedCode: false };
+
+  const codeSnapshot = await db.collection("studentExamCodeHashes").doc(`${examId}_${request.auth.uid}`).get();
+  if (!codeSnapshot.exists) return { hasAssignedCode: false };
+  const record = codeSnapshot.data();
+  const hasAssignedCode = record.studentUid === request.auth.uid &&
+    record.examId === examId &&
+    record.status === "active" &&
+    Boolean(record.codeHash);
+  return { hasAssignedCode };
+});
+
 exports.getExamQuestions = onCall(async (request) => {
   if (!request.auth) throw new HttpsError("unauthenticated", "Sign in required.");
   const examId = String(request.data && request.data.examId || "").trim();
