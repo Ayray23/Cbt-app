@@ -1,8 +1,8 @@
 import { useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { collection, doc, getDoc, getDocs, query, where } from "firebase/firestore";
-import { db } from "/firebase";
+import { doc, getDoc } from "firebase/firestore";
 import {
+  loadExamQuestions,
   saveExamProgress,
   saveLocalExamDraft,
   startExamSession,
@@ -115,15 +115,10 @@ export default function TakeExam() {
         const examData = { id: examSnapshot.id, ...examSnapshot.data() };
         setExam(examData);
 
-        const questionsSnapshot = await getDocs(
-          query(collection(db, "questions"), where("examId", "==", examId))
-        );
-        const loadedQuestions = questionsSnapshot.docs.map((docItem) => ({
-          id: docItem.id,
-          ...docItem.data(),
-        }));
-
+        // A valid exam session must exist before the secure endpoint releases question content.
+        // Never query question documents directly from the student client: they contain answer keys.
         const startedSession = await startExamSession(examId);
+        const loadedQuestions = await loadExamQuestions(examId);
         const order = startedSession.questionOrder ?? [];
         const sortedQuestions =
           order.length > 0
