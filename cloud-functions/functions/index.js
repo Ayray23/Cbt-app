@@ -9,7 +9,7 @@ const db = admin.firestore();
 setGlobalOptions({ maxInstances: 10 });
 
 function normalizeAccessCode(value) {
-  return String(value || "").trim().replace(/\\s+/g, "").toUpperCase();
+  return String(value || "").trim().replace(/\s+/g, "").toUpperCase();
 }
 
 function hashAccessCode(value) {
