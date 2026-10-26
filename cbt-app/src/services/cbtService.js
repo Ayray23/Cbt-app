@@ -15,7 +15,7 @@ import {
 import { db } from "/firebase";
 import { generateAccessCode, hashAccessCode, normalizeAccessCode } from "../utils/accessCode";
 
-export async function createExam({ title, duration, startAt = "", endAt = "" }) {
+export async function createExam({ title, duration, className, assignmentMode = "class", assignedStudentUids = [], startAt = "", endAt = "" }) {
   const startAtMs = startAt ? new Date(startAt).getTime() : null;
   const endAtMs = endAt ? new Date(endAt).getTime() : null;
   if (startAtMs && Number.isNaN(startAtMs)) throw new Error("Enter a valid exam start time.");
@@ -23,6 +23,10 @@ export async function createExam({ title, duration, startAt = "", endAt = "" }) 
   if (startAtMs && endAtMs && endAtMs <= startAtMs) throw new Error("Exam end time must be after the start time.");
   const ref = await addDoc(collection(db, "exams"), {
     title: title.trim(), duration: Number(duration) || 0, status: "draft", questionCount: 0,
+    className: String(className || "").trim(),
+    classId: String(className || "").trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, ""),
+    assignmentMode: assignmentMode === "individual" ? "individual" : "class",
+    assignedStudentUids: assignmentMode === "individual" ? [...new Set(assignedStudentUids)] : [],
     scheduleStartAtMs: startAtMs, scheduleEndAtMs: endAtMs,
     createdAt: serverTimestamp(), publishedAt: null,
   });
