@@ -77,9 +77,10 @@ exports.migrateLegacyExamAccess = onCall(async (request) => {
       if (!latestExamSnapshot.exists) return { migrated: false, removed: 0 };
       const exam = latestExamSnapshot.data() || {};
       const access = accessSnapshot.exists ? accessSnapshot.data() || {} : {};
+      const hasLegacyExamHashField = Object.prototype.hasOwnProperty.call(exam, "accessCodeHash");
       const hasLegacyExamHash = Boolean(exam.accessCodeHash);
       const hasLegacyPlaintext = typeof access.code === "string" && access.code.length > 0;
-      if (!hasLegacyExamHash && !hasLegacyPlaintext) return { migrated: false, removed: 0 };
+      if (!hasLegacyExamHashField && !hasLegacyPlaintext) return { migrated: false, removed: 0 };
 
       const codeHash = access.codeHash || exam.accessCodeHash || (hasLegacyPlaintext ? hashAccessCode(access.code) : null);
       if (codeHash) {
@@ -102,7 +103,7 @@ exports.migrateLegacyExamAccess = onCall(async (request) => {
       }
 
       const examUpdates = {};
-      if (hasLegacyExamHash) {
+      if (hasLegacyExamHashField) {
         examUpdates.accessCodeHash = admin.firestore.FieldValue.delete();
         examUpdates.accessCodeUpdatedAt = admin.firestore.FieldValue.delete();
       }
@@ -112,7 +113,7 @@ exports.migrateLegacyExamAccess = onCall(async (request) => {
       }
       return {
         migrated: Boolean(codeHash),
-        removed: Number(hasLegacyExamHash) + Number(hasLegacyPlaintext),
+        removed: Number(hasLegacyExamHashField) + Number(hasLegacyPlaintext),
       };
     });
     if (result.migrated) migratedCount += 1;
