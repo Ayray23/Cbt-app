@@ -75,6 +75,9 @@ exports.startExamSession = onCall(async (request) => {
   if (!examSnapshot.exists) throw new HttpsError("not-found", "Exam not found.");
   const exam = examSnapshot.data();
   if (exam.status !== "published") throw new HttpsError("failed-precondition", "Exam is not published.");
+  const studentProfile = await getUserProfile(request.auth.uid);
+  if (!studentProfile.className || String(studentProfile.className).trim() !== String(exam.className || "").trim()) throw new HttpsError("permission-denied", "This exam is not assigned to your class.");
+  if (exam.assignmentMode === "individual" && !(Array.isArray(exam.assignedStudentUids) && exam.assignedStudentUids.includes(request.auth.uid))) throw new HttpsError("permission-denied", "This exam is assigned to selected students only.");
 
   const now = Date.now();
   const startAt = Number(exam.scheduleStartAtMs || 0);
@@ -93,7 +96,7 @@ exports.startExamSession = onCall(async (request) => {
   if (questionsSnapshot.empty) throw new HttpsError("failed-precondition", "Exam has no questions.");
 
   const codeRef = await validateExamCode(examId, request.auth.uid, accessCode, exam);
-  const userProfile = await getUserProfile(request.auth.uid);
+  const userProfile = studentProfile;
   const startedAtMs = now;
   const expiresAtMs = startedAtMs + Number(exam.duration || 0) * 60 * 1000;
 
@@ -159,6 +162,9 @@ exports.submitExamSession = onCall(async (request) => {
   if (session.studentUid !== request.auth.uid) throw new HttpsError("permission-denied", "This session does not belong to you.");
   if (session.status === "submitted") throw new HttpsError("failed-precondition", "This exam has already been submitted.");
   if (exam.status !== "published") throw new HttpsError("failed-precondition", "Exam is not published.");
+  const studentProfile = await getUserProfile(request.auth.uid);
+  if (!studentProfile.className || String(studentProfile.className).trim() !== String(exam.className || "").trim()) throw new HttpsError("permission-denied", "This exam is not assigned to your class.");
+  if (exam.assignmentMode === "individual" && !(Array.isArray(exam.assignedStudentUids) && exam.assignedStudentUids.includes(request.auth.uid))) throw new HttpsError("permission-denied", "This exam is assigned to selected students only.");
 
   const expiresAtMs = Number(session.expiresAtMs || 0);
   const submissionReason = String(request.data && request.data.submissionReason || "manual");
