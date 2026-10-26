@@ -75,7 +75,9 @@ async function validateExamCode(examId, uid, accessCode, exam) {
     return ref;
   }
 
-  if (!exam.accessCodeHash || hashAccessCode(provided) !== exam.accessCodeHash) {
+  const accessSnapshot = await db.collection("examAccess").doc(examId).get();
+  const accessRecord = accessSnapshot.exists ? accessSnapshot.data() : {};
+  if (!accessRecord.codeHash || hashAccessCode(provided) !== accessRecord.codeHash) {
     throw new HttpsError("permission-denied", "Incorrect exam code.");
   }
   return null;
