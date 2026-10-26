@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { collection, onSnapshot, orderBy, query } from "firebase/firestore";
+import { collection, onSnapshot, orderBy, query, where } from "firebase/firestore";
 import { db } from "/firebase";
 import ConfirmDialog from "../components/ConfirmDialog";
 import StatusBanner from "../components/StatusBanner";
@@ -9,6 +9,10 @@ import { migrateLegacyExamAccess } from "../services/secureExamService";
 export default function CreateExam() {
   const [title, setTitle] = useState("");
   const [duration, setDuration] = useState("");
+  const [className, setClassName] = useState("");
+  const [assignmentMode, setAssignmentMode] = useState("class");
+  const [students, setStudents] = useState([]);
+  const [assignedStudentUids, setAssignedStudentUids] = useState([]);
   const [startAt, setStartAt] = useState("");
   const [endAt, setEndAt] = useState("");
   const [loading, setLoading] = useState(false);
@@ -24,12 +28,20 @@ export default function CreateExam() {
   useEffect(() => {
     const examsQuery = query(collection(db, "exams"), orderBy("createdAt", "desc"));
     const accessQuery = query(collection(db, "examAccess"));
+    const studentsQuery = query(collection(db, "users"), where("role", "==", "student"));
     const unsubscribeExams = onSnapshot(examsQuery, (snapshot) => setExams(snapshot.docs.map((docItem) => ({ id: docItem.id, ...docItem.data() }))));
     const unsubscribeAccess = onSnapshot(accessQuery, (snapshot) => setAccessCodesByExam(snapshot.docs.reduce((acc, docItem) => {
       const record = docItem.data();
       acc[docItem.id] = Boolean(record.codeHash || record.code);
       return acc;
     }, {})));
+
+    const unsubscribeStudents = onSnapshot(studentsQuery, (snapshot) => {
+      const next = snapshot.docs.map((item) => ({ id: item.id, ...item.data() }));
+      setStudents(next);
+      const classes = [...new Set(next.map((student) => String(student.className || "").trim()).filter(Boolean))].sort();
+      setClassName((current) => current || classes[0] || "");
+    });
 
     // Migrate legacy password hashes/plaintext from records that were previously
     // readable by signed-in students. The callable only permits administrators.
@@ -42,16 +54,19 @@ export default function CreateExam() {
       setBanner({ tone: "error", message: "Could not secure legacy exam passwords. Confirm the latest Firebase Functions are deployed, then reopen this page." });
     });
 
-    return () => { unsubscribeExams(); unsubscribeAccess(); };
+    return () => { unsubscribeExams(); unsubscribeAccess(); unsubscribeStudents(); };
   }, []);
 
   async function handleSubmit(event) {
     event.preventDefault();
-    if (!title.trim() || !duration) { setBanner({ tone: "error", message: "Enter an exam title and duration." }); return; }
+    if (!title.trim() || !duration || !className.trim()) { setBanner({ tone: "error", message: "Enter an exam title, duration, and target class." }); return; }
+    if (assignmentMode === "individual" && assignedStudentUids.length === 0) { setBanner({ tone: "error", message: "Select at least one student for an individual-assignment exam." }); return; }
+    const selectedStudents = students.filter((student) => assignedStudentUids.includes(student.id));
+    if (assignmentMode === "individual" && selectedStudents.some((student) => String(student.className || "").trim() !== className)) { setBanner({ tone: "error", message: "All individually assigned students must belong to the selected class." }); return; }
     setLoading(true);
     try {
-      await createExam({ title, duration, startAt, endAt });
-      setTitle(""); setDuration(""); setStartAt(""); setEndAt("");
+      await createExam({ title, duration, className, assignmentMode, assignedStudentUids, startAt, endAt });
+      setTitle(""); setDuration(""); setStartAt(""); setEndAt(""); setAssignedStudentUids([]); setAssignmentMode("class");
       setBanner({ tone: "success", message: "Exam created successfully." });
     } catch (error) { setBanner({ tone: "error", message: error.message ?? "Could not create exam." }); }
     finally { setLoading(false); }
@@ -100,12 +115,15 @@ export default function CreateExam() {
         <p className="mt-2 text-sm text-slate-500">Keep exams in draft until the question bank is complete. Add an optional time window so students can only enter during the scheduled examination period.</p>
       </section>
       <section className="rounded-2xl bg-white p-6 shadow-sm">
-        <form onSubmit={handleSubmit} className="grid gap-4 md:grid-cols-2 xl:grid-cols-[2fr_1fr_1fr_1fr_auto]">
+        <form onSubmit={handleSubmit} className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           <input type="text" placeholder="Midterm Mathematics" value={title} onChange={(event) => setTitle(event.target.value)} className="rounded-xl border border-slate-300 px-4 py-3" />
           <input type="number" min="1" placeholder="Duration (minutes)" value={duration} onChange={(event) => setDuration(event.target.value)} className="rounded-xl border border-slate-300 px-4 py-3" />
+          <label className="text-xs font-medium text-slate-500">Target class<select required value={className} onChange={(event) => { setClassName(event.target.value); setAssignedStudentUids([]); }} className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900"><option value="">Choose class</option>{[...new Set(students.map((student) => String(student.className || "").trim()).filter(Boolean))].sort().map((name) => <option key={name} value={name}>{name}</option>)}</select></label>
+          <label className="text-xs font-medium text-slate-500">Assignment type<select value={assignmentMode} onChange={(event) => { setAssignmentMode(event.target.value); setAssignedStudentUids([]); }} className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900"><option value="class">Entire class</option><option value="individual">Selected students only</option></select></label>
           <label className="text-xs font-medium text-slate-500">Start<input type="datetime-local" value={startAt} onChange={(event) => setStartAt(event.target.value)} className="mt-1 w-full rounded-xl border border-slate-300 px-4 py-3 text-sm text-slate-900" /></label>
           <label className="text-xs font-medium text-slate-500">End<input type="datetime-local" value={endAt} onChange={(event) => setEndAt(event.target.value)} className="mt-1 w-full rounded-xl border border-slate-300 px-4 py-3 text-sm text-slate-900" /></label>
           <button type="submit" disabled={loading} className="rounded-xl bg-slate-900 px-5 py-3 text-sm font-medium text-white disabled:opacity-60">{loading ? "Creating..." : "Create exam"}</button>
+          {assignmentMode === "individual" && <div className="rounded-xl border border-slate-200 p-3 md:col-span-2 xl:col-span-3"><p className="mb-2 text-sm font-semibold text-slate-700">Choose students in {className || "the selected class"}</p><div className="grid max-h-48 gap-2 overflow-y-auto sm:grid-cols-2 lg:grid-cols-3">{students.filter((student) => String(student.className || "").trim() === className).map((student) => <label key={student.id} className="flex items-center gap-2 rounded-lg bg-slate-50 p-2 text-sm"><input type="checkbox" checked={assignedStudentUids.includes(student.id)} onChange={(event) => setAssignedStudentUids((current) => event.target.checked ? [...current, student.id] : current.filter((id) => id !== student.id))} /><span>{student.displayName || student.email || student.id}</span></label>)}</div></div>}
         </form>
       </section>
       <section className="grid gap-4">
@@ -115,6 +133,7 @@ export default function CreateExam() {
               <div>
                 <h3 className="text-xl font-semibold text-slate-900">{exam.title}</h3>
                 <p className="mt-1 text-sm text-slate-500">{exam.duration} minutes | {exam.questionCount ?? 0} question(s)</p>
+                <p className="mt-1 text-sm text-slate-500">Class: {exam.className || "Not assigned"} · {exam.assignmentMode === "individual" ? `${(exam.assignedStudentUids || []).length} selected student(s)` : "Entire class"}</p>
                 <p className="mt-1 text-sm text-slate-500">Status: {exam.status ?? "draft"}</p>
                 <p className="mt-1 text-sm text-slate-500">Schedule: {formatSchedule(exam)}</p>
                 <p className="mt-1 text-sm text-slate-500">Password: {accessCodesByExam[exam.id] ? "Configured" : "Not configured"}</p>
