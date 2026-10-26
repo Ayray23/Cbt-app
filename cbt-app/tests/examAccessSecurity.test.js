@@ -27,7 +27,7 @@ test("exam password hashes are stored and checked only in the protected collecti
   assert.doesNotMatch(examSecurity, /exam\.accessCodeHash/);
   assert.match(functions, /exports\.migrateLegacyExamAccess = onCall/);
   assert.match(functions, /examUpdates\.accessCodeHash = admin\.firestore\.FieldValue\.delete\(\)/);
-  assert.match(functions, /code:\s*admin\.firestore\.FieldValue\.delete\(\)/);
+  assert.match(functions, /updates\.code = admin\.firestore\.FieldValue\.delete\(\)/);
 });
 
 test("raw question documents remain administrator-only", async () => {
