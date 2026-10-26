@@ -43,7 +43,7 @@ service cloud.firestore {
     }
 
     match /exams/{examId} {
-      allow read: if isSignedIn() && (isAdmin() || resource.data.status == 'published');
+      allow read: if isSignedIn() && (isAdmin() || (resource.data.status == 'published' && userExists() && resource.data.className == get(currentUserPath()).data.className && ((resource.data.assignmentMode == 'class') || (resource.data.assignmentMode == 'individual' && request.auth.uid in resource.data.assignedStudentUids))));
       allow create, update, delete: if isAdmin();
     }
 
@@ -56,7 +56,7 @@ service cloud.firestore {
       // The secure getExamQuestions callable is available for the final client migration.
       allow read: if isSignedIn() && (
         isAdmin() ||
-        get(/databases/$(database)/documents/exams/$(resource.data.examId)).data.status == 'published'
+        (userExists() && get(/databases/$(database)/documents/exams/$(resource.data.examId)).data.status == 'published' && get(/databases/$(database)/documents/exams/$(resource.data.examId)).data.className == get(currentUserPath()).data.className && (get(/databases/$(database)/documents/exams/$(resource.data.examId)).data.assignmentMode == 'class' || (get(/databases/$(database)/documents/exams/$(resource.data.examId)).data.assignmentMode == 'individual' && request.auth.uid in get(/databases/$(database)/documents/exams/$(resource.data.examId)).data.assignedStudentUids)))
       );
       allow create, update, delete: if isAdmin();
     }
