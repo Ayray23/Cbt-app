@@ -109,6 +109,11 @@ exports.startExamSession = onCall(async (request) => {
       throw new HttpsError("permission-denied", "This exam session does not belong to your account.");
     }
     if (current.status === "submitted") throw new HttpsError("failed-precondition", "This exam has already been submitted.");
+    if (current.status !== "started") throw new HttpsError("failed-precondition", "This exam session is not active.");
+    const currentExpiry = Number(current.expiresAtMs || 0);
+    if (!currentExpiry || Date.now() > currentExpiry) {
+      throw new HttpsError("deadline-exceeded", "The exam time has expired.");
+    }
     await writeAuditLog({ action: "exam.session.resumed", uid: request.auth.uid, examId, sessionId: sessionRef.id });
     return { id: sessionSnapshot.id, ...current, startedAtMs: current.startedAtMs || toMillis(current.startedAt) };
   }
@@ -141,7 +146,15 @@ exports.startExamSession = onCall(async (request) => {
     if (latestSession.exists) return { existing: latestSession.data() };
     if (codeRef) {
       const latestCode = await transaction.get(codeRef);
-      if (!latestCode.exists || latestCode.data().status !== "active") throw new HttpsError("failed-precondition", "This exam code has already been used or revoked.");
+      const latestRecord = latestCode.exists ? latestCode.data() : {};
+      const expectedCodeHash = hashAccessCode(accessCode);
+      if (!latestCode.exists ||
+          latestRecord.status !== "active" ||
+          latestRecord.studentUid !== request.auth.uid ||
+          latestRecord.examId !== examId ||
+          latestRecord.codeHash !== expectedCodeHash) {
+        throw new HttpsError("failed-precondition", "This exam code is no longer active or has been replaced. Ask the administrator to reissue it.");
+      }
       transaction.update(codeRef, { status: "used", usedAt: admin.firestore.FieldValue.serverTimestamp(), updatedAt: admin.firestore.FieldValue.serverTimestamp() });
     }
     transaction.set(sessionRef, sessionData);
@@ -179,13 +192,16 @@ exports.submitExamSession = onCall(async (request) => {
 
   const exam = examSnapshot.data();
   const session = sessionSnapshot.data();
-  if (session.studentUid !== request.auth.uid) throw new HttpsError("permission-denied", "This session does not belong to you.");
-  if (session.status === "submitted") throw new HttpsError("failed-precondition", "This exam has already been submitted.");
+  if (session.studentUid !== request.auth.uid || session.examId !== examId) {
+    throw new HttpsError("permission-denied", "This session does not belong to this account and exam.");
+  }
+  if (session.status !== "started") throw new HttpsError("failed-precondition", "This exam session is not active or has already been submitted.");
   if (exam.status !== "published") throw new HttpsError("failed-precondition", "Exam is not published.");
 
   const expiresAtMs = Number(session.expiresAtMs || 0);
+  if (!expiresAtMs) throw new HttpsError("failed-precondition", "This session has no valid expiry time. Contact the administrator.");
   const submissionReason = String(request.data && request.data.submissionReason || "manual");
-  if (expiresAtMs && Date.now() > expiresAtMs + 30000 && submissionReason !== "timeout") {
+  if (Date.now() > expiresAtMs + 30000 && submissionReason !== "timeout") {
     throw new HttpsError("deadline-exceeded", "The exam time has expired.");
   }
 
