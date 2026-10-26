@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { collection, doc, onSnapshot, orderBy, query, where } from "firebase/firestore";
+import { collection, onSnapshot, orderBy, query, where } from "firebase/firestore";
 import { db } from "/firebase";
 import { useAuth } from "../contexts/AuthContext";
 import { flushPendingSubmissions, getPendingSubmissionMap } from "../services/sessionService";
-import { startSecureExamSession } from "../services/secureExamService";
+import { getMyExamCodeStatus, startSecureExamSession } from "../services/secureExamService";
 import { useToast } from "../components/useToast.js";
 
 const INSTRUCTIONS = [
@@ -54,12 +54,18 @@ export default function StudentDashboard() {
   }, [selectedExamId, user.uid]);
 
   useEffect(() => {
-    if (!selectedExamId || !user.uid) { setHasAssignedCode(false); return undefined; }
-    return onSnapshot(
-      doc(db, "studentExamCodeHashes", `${selectedExamId}_${user.uid}`),
-      (snapshot) => setHasAssignedCode(snapshot.exists() && snapshot.data().status !== "revoked"),
-      () => setHasAssignedCode(false)
-    );
+    let active = true;
+    if (!selectedExamId || !user.uid) {
+      setHasAssignedCode(false);
+      return () => { active = false; };
+    }
+
+    setHasAssignedCode(false);
+    getMyExamCodeStatus(selectedExamId).then((hasCode) => {
+      if (active) setHasAssignedCode(hasCode);
+    });
+
+    return () => { active = false; };
   }, [selectedExamId, user.uid]);
 
   useEffect(() => {
@@ -85,7 +91,7 @@ export default function StudentDashboard() {
   const hasPendingSubmission = Boolean(selectedExam && pendingSubmissionMap[selectedExam.id]);
   const isSubmitted = selectedSession?.status === "submitted" || hasPendingSubmission;
   const isStarted = selectedSession?.status === "started";
-  const hasAccessCode = selectedExam?.individualCodesEnabled ? hasAssignedCode : Boolean(selectedExam?.accessCodeHash);
+  const hasAccessCode = hasAssignedCode;
 
   async function handleStartExam() {
     if (!selectedExam) return;
@@ -136,9 +142,9 @@ export default function StudentDashboard() {
             </div>
             <div className="mt-6"><h4 className="text-lg font-semibold text-slate-900">Instructions</h4><div className="mt-4 space-y-3">{INSTRUCTIONS.map((instruction) => <div key={instruction} className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">{instruction}</div>)}</div></div>
             <div className="mt-8 rounded-2xl border border-slate-200 bg-slate-50 p-5">
-              <label className="block text-sm font-medium text-slate-700">Individual exam code</label>
-              <input type="text" value={examCode} onChange={(event) => setExamCode(event.target.value)} placeholder={hasAccessCode ? "Enter the exam code assigned to you" : "Your individual exam code has not been issued yet"} disabled={isSubmitted || isStarted} className="mt-3 w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm uppercase tracking-[0.2em] disabled:cursor-not-allowed disabled:bg-slate-100" />
-              <p className="mt-2 text-xs text-slate-500">{hasPendingSubmission ? "This exam is already closed and waiting for background sync." : isStarted ? "Your session is already live. Continue now and the timer will keep running." : hasAccessCode ? "Enter the correct code assigned to your student account before the exam can start." : selectedExam?.individualCodesEnabled ? "Your individual code has not been issued. Contact your administrator." : "This exam is not open yet because no exam code has been generated."}</p>
+              <label className="block text-sm font-medium text-slate-700">{selectedExam.individualCodesEnabled ? "Individual exam code" : "Exam password"}</label>
+              <input type="text" value={examCode} onChange={(event) => setExamCode(event.target.value)} placeholder={hasAccessCode ? (selectedExam.individualCodesEnabled ? "Enter the code assigned to you" : "Enter the exam password") : (selectedExam.individualCodesEnabled ? "Your individual exam code has not been issued yet" : "Exam password is not configured yet")} disabled={isSubmitted || isStarted} className="mt-3 w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm uppercase tracking-[0.2em] disabled:cursor-not-allowed disabled:bg-slate-100" />
+              <p className="mt-2 text-xs text-slate-500">{hasPendingSubmission ? "This exam is already closed and waiting for background sync." : isStarted ? "Your session is already live. Continue now and the timer will keep running." : hasAccessCode ? (selectedExam.individualCodesEnabled ? "Enter the code assigned to your student account before the exam can start." : "Enter the exam password provided by your administrator.") : selectedExam?.individualCodesEnabled ? "Your individual code has not been issued. Contact your administrator." : "The exam password is not configured yet. Contact your administrator."}</p>
             </div>
             <div className="mt-8">{!isSubmitted ? <button onClick={handleStartExam} disabled={startingExam || (!isStarted && !hasAccessCode)} className="inline-flex rounded-xl bg-emerald-600 px-5 py-3 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-60">{startingExam ? "Verifying..." : isStarted ? "Continue exam" : "Start exam"}</button> : <button disabled className="inline-flex cursor-not-allowed rounded-xl bg-slate-300 px-5 py-3 text-sm font-medium text-white">Attempted</button>}</div>
           </>}

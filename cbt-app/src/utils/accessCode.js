@@ -9,9 +9,22 @@ export function generateAccessCode(length = 8) {
   const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
   const chars = [];
 
+  if (!Number.isInteger(length) || length < 8 || length > 64) {
+    throw new Error("Access-code length must be between 8 and 64 characters.");
+  }
+
+  const randomValues = new Uint32Array(length);
+  window.crypto.getRandomValues(randomValues);
   for (let index = 0; index < length; index += 1) {
-    const nextIndex = Math.floor(Math.random() * alphabet.length);
-    chars.push(alphabet[nextIndex]);
+    // Rejection sampling avoids modulo bias while keeping codes cryptographically random.
+    const limit = Math.floor(0x100000000 / alphabet.length) * alphabet.length;
+    let value = randomValues[index];
+    while (value >= limit) {
+      const replacement = new Uint32Array(1);
+      window.crypto.getRandomValues(replacement);
+      value = replacement[0];
+    }
+    chars.push(alphabet[value % alphabet.length]);
   }
 
   return chars.join("");

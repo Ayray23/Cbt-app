@@ -3,7 +3,6 @@ import {
   collection,
   deleteDoc,
   doc,
-  getDoc,
   getCountFromServer,
   getDocs,
   query,
@@ -24,7 +23,6 @@ export async function createExam({ title, duration, startAt = "", endAt = "" }) 
   if (startAtMs && endAtMs && endAtMs <= startAtMs) throw new Error("Exam end time must be after the start time.");
   const ref = await addDoc(collection(db, "exams"), {
     title: title.trim(), duration: Number(duration) || 0, status: "draft", questionCount: 0,
-    accessCodeHash: null, accessCodeUpdatedAt: null,
     scheduleStartAtMs: startAtMs, scheduleEndAtMs: endAtMs,
     createdAt: serverTimestamp(), publishedAt: null,
   });
@@ -37,7 +35,8 @@ export async function updateExamStatus(examId, status) {
     const questionCountSnapshot = await getCountFromServer(query(collection(db, "questions"), where("examId", "==", examId)));
     const questionCount = questionCountSnapshot.data().count;
     if (questionCount <= 0) throw new Error("Add at least one question before publishing this exam.");
-    updates.publishedAt = serverTimestamp(); updates.questionCount = questionCount;
+    updates.publishedAt = serverTimestamp();
+    updates.questionCount = questionCount;
   }
   await updateDoc(doc(db, "exams", examId), updates);
 }
@@ -61,18 +60,18 @@ export async function addQuestion({ examId, question, options, correctAnswer, ma
 }
 
 export async function setExamAccessCode(examId, accessCode) {
-  const examRef = doc(db, "exams", examId);
-  const examSnapshot = await getDoc(examRef);
-  if (!examSnapshot.exists()) throw new Error("Exam not found.");
   const normalizedAccessCode = normalizeAccessCode(accessCode);
   if (!normalizedAccessCode) throw new Error("Enter an exam password before publishing.");
   if (normalizedAccessCode.length < 4) throw new Error("Use at least 4 characters for the exam password.");
-  const accessCodeHash = await hashAccessCode(normalizedAccessCode);
-  await Promise.all([
-    setDoc(doc(db, "examAccess", examId), { examId, code: normalizedAccessCode, updatedAt: serverTimestamp() }),
-    updateDoc(examRef, { accessCodeHash, accessCodeUpdatedAt: serverTimestamp(), updatedAt: serverTimestamp() }),
-  ]);
-  return normalizedAccessCode;
+  const codeHash = await hashAccessCode(normalizedAccessCode);
+  // The password hash lives only in the admin-only examAccess collection.
+  // Never place hashes or plaintext passwords on publicly readable exam docs.
+  await setDoc(doc(db, "examAccess", examId), {
+    examId,
+    codeHash,
+    updatedAt: serverTimestamp(),
+  }, { merge: true });
+  return true;
 }
 
 export async function generateStudentExamCodes(exam, students) {
@@ -80,9 +79,11 @@ export async function generateStudentExamCodes(exam, students) {
   const generated = [];
   const eligibleStudents = students.filter((student) => student?.id);
   for (let offset = 0; offset < eligibleStudents.length; offset += 200) {
-    const batch = writeBatch(db); const chunk = eligibleStudents.slice(offset, offset + 200);
+    const batch = writeBatch(db);
+    const chunk = eligibleStudents.slice(offset, offset + 200);
     for (const student of chunk) {
-      const code = generateAccessCode(10); const codeHash = await hashAccessCode(code);
+      const code = generateAccessCode(10);
+      const codeHash = await hashAccessCode(code);
       const codeId = `${exam.id}_${student.id}`;
       const printRef = doc(db, "studentExamCodePrintRecords", codeId);
       const hashRef = doc(db, "studentExamCodeHashes", codeId);

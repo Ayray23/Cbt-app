@@ -20,6 +20,28 @@ function callableError(error, fallback) {
   return error?.details || error?.message || fallback;
 }
 
+export async function migrateLegacyExamAccess() {
+  requireUser();
+  const migrate = httpsCallable(getFunctions(), "migrateLegacyExamAccess");
+  const result = await migrate({});
+  return {
+    migratedCount: Number(result.data?.migratedCount || 0),
+    removedLegacyFields: Number(result.data?.removedLegacyFields || 0),
+  };
+}
+
+export async function getMyExamCodeStatus(examId) {
+  requireUser();
+  try {
+    const checkStatus = httpsCallable(getFunctions(), "getMyExamCodeStatus");
+    const result = await checkStatus({ examId });
+    return Boolean(result.data?.hasAssignedCode);
+  } catch (error) {
+    console.error("Could not check exam code status", error);
+    return false;
+  }
+}
+
 export async function startSecureExamSession(examId, accessCode = "") {
   requireUser();
   try {

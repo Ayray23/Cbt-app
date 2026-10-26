@@ -43,7 +43,8 @@ service cloud.firestore {
     }
 
     match /exams/{examId} {
-      allow read: if isSignedIn() && (isAdmin() || resource.data.status == 'published');
+      // Block student reads of legacy exam docs until the admin migration removes exposed hashes.
+      allow read: if isSignedIn() && (isAdmin() || (resource.data.status == 'published' && !('accessCodeHash' in resource.data)));
       allow create, update, delete: if isAdmin();
     }
 
@@ -52,13 +53,10 @@ service cloud.firestore {
     }
 
     match /questions/{questionId} {
-      // Legacy client exam loading remains temporarily allowed for published exams.
-      // The secure getExamQuestions callable is available for the final client migration.
-      allow read: if isSignedIn() && (
-        isAdmin() ||
-        get(/databases/$(database)/documents/exams/$(resource.data.examId)).data.status == 'published'
-      );
-      allow create, update, delete: if isAdmin();
+      // Question documents contain correctAnswer and other grading fields.
+      // Students must use the trusted getExamQuestions callable, which strips answer keys
+      // and requires a valid started session. Only administrators may read raw documents.
+      allow read, create, update, delete: if isAdmin();
     }
 
     match /studentExamCodeHashes/{codeId} {
@@ -75,8 +73,7 @@ service cloud.firestore {
     match /examSessions/{sessionId} {
       allow read: if isSignedIn() && (
         isAdmin() ||
-        (resource != null && resource.data.studentUid == request.auth.uid) ||
-        sessionId.matches('.*_' + request.auth.uid)
+        (resource != null && resource.data.studentUid == request.auth.uid)
       );
 
       allow create: if isSignedIn() && isAdmin();
@@ -85,8 +82,11 @@ service cloud.firestore {
         isAdmin() ||
         (
           resource.data.studentUid == request.auth.uid &&
+          resource.data.examId != null &&
+          resource.data.status == 'started' &&
           request.resource.data.studentUid == resource.data.studentUid &&
           request.resource.data.examId == resource.data.examId &&
+          request.resource.data.status == resource.data.status &&
           request.resource.data.diff(resource.data).affectedKeys().hasOnly([
             'answers', 'tabSwitchCount', 'integrityWarnings', 'lastHeartbeatAtMs',
             'networkOnline', 'lastVisibilityChangeAtMs', 'lastSavedAt', 'updatedAt'

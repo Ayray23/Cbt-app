@@ -30,6 +30,24 @@ async function getUserProfile(uid) {
   return snapshot.exists ? snapshot.data() : {};
 }
 
+function assertStudentAssignedToExam(uid, profile, exam) {
+  const role = profile && profile.role || "student";
+  if (role === "admin" || role === "superadmin") return;
+
+  if (exam.assignmentMode === "individual") {
+    const assignedStudentUids = Array.isArray(exam.assignedStudentUids) ? exam.assignedStudentUids : [];
+    if (!assignedStudentUids.includes(uid)) {
+      throw new HttpsError("permission-denied", "This exam is not assigned to your student account.");
+    }
+  } else if (exam.className) {
+    const studentClass = String(profile.className || "").trim();
+    const examClass = String(exam.className || "").trim();
+    if (!studentClass || studentClass !== examClass) {
+      throw new HttpsError("permission-denied", "This exam is not assigned to your class.");
+    }
+  }
+}
+
 async function writeAuditLog({ action, uid, examId = null, sessionId = null, metadata = {} }) {
   await db.collection("auditLogs").add({
     action,
@@ -57,7 +75,9 @@ async function validateExamCode(examId, uid, accessCode, exam) {
     return ref;
   }
 
-  if (!exam.accessCodeHash || hashAccessCode(provided) !== exam.accessCodeHash) {
+  const accessSnapshot = await db.collection("examAccess").doc(examId).get();
+  const accessRecord = accessSnapshot.exists ? accessSnapshot.data() : {};
+  if (!accessRecord.codeHash || hashAccessCode(provided) !== accessRecord.codeHash) {
     throw new HttpsError("permission-denied", "Incorrect exam code.");
   }
   return null;
@@ -76,6 +96,9 @@ exports.startExamSession = onCall(async (request) => {
   const exam = examSnapshot.data();
   if (exam.status !== "published") throw new HttpsError("failed-precondition", "Exam is not published.");
 
+  const userProfile = await getUserProfile(request.auth.uid);
+  assertStudentAssignedToExam(request.auth.uid, userProfile, exam);
+
   const now = Date.now();
   const startAt = Number(exam.scheduleStartAtMs || 0);
   const endAt = Number(exam.scheduleEndAtMs || 0);
@@ -84,7 +107,15 @@ exports.startExamSession = onCall(async (request) => {
 
   if (sessionSnapshot.exists) {
     const current = sessionSnapshot.data();
+    if (current.studentUid !== request.auth.uid || current.examId !== examId) {
+      throw new HttpsError("permission-denied", "This exam session does not belong to your account.");
+    }
     if (current.status === "submitted") throw new HttpsError("failed-precondition", "This exam has already been submitted.");
+    if (current.status !== "started") throw new HttpsError("failed-precondition", "This exam session is not active.");
+    const currentExpiry = Number(current.expiresAtMs || 0);
+    if (!currentExpiry || Date.now() > currentExpiry) {
+      throw new HttpsError("deadline-exceeded", "The exam time has expired.");
+    }
     await writeAuditLog({ action: "exam.session.resumed", uid: request.auth.uid, examId, sessionId: sessionRef.id });
     return { id: sessionSnapshot.id, ...current, startedAtMs: current.startedAtMs || toMillis(current.startedAt) };
   }
@@ -93,7 +124,6 @@ exports.startExamSession = onCall(async (request) => {
   if (questionsSnapshot.empty) throw new HttpsError("failed-precondition", "Exam has no questions.");
 
   const codeRef = await validateExamCode(examId, request.auth.uid, accessCode, exam);
-  const userProfile = await getUserProfile(request.auth.uid);
   const startedAtMs = now;
   const expiresAtMs = startedAtMs + Number(exam.duration || 0) * 60 * 1000;
 
@@ -118,7 +148,15 @@ exports.startExamSession = onCall(async (request) => {
     if (latestSession.exists) return { existing: latestSession.data() };
     if (codeRef) {
       const latestCode = await transaction.get(codeRef);
-      if (!latestCode.exists || latestCode.data().status !== "active") throw new HttpsError("failed-precondition", "This exam code has already been used or revoked.");
+      const latestRecord = latestCode.exists ? latestCode.data() : {};
+      const expectedCodeHash = hashAccessCode(accessCode);
+      if (!latestCode.exists ||
+          latestRecord.status !== "active" ||
+          latestRecord.studentUid !== request.auth.uid ||
+          latestRecord.examId !== examId ||
+          latestRecord.codeHash !== expectedCodeHash) {
+        throw new HttpsError("failed-precondition", "This exam code is no longer active or has been replaced. Ask the administrator to reissue it.");
+      }
       transaction.update(codeRef, { status: "used", usedAt: admin.firestore.FieldValue.serverTimestamp(), updatedAt: admin.firestore.FieldValue.serverTimestamp() });
     }
     transaction.set(sessionRef, sessionData);
@@ -156,13 +194,16 @@ exports.submitExamSession = onCall(async (request) => {
 
   const exam = examSnapshot.data();
   const session = sessionSnapshot.data();
-  if (session.studentUid !== request.auth.uid) throw new HttpsError("permission-denied", "This session does not belong to you.");
-  if (session.status === "submitted") throw new HttpsError("failed-precondition", "This exam has already been submitted.");
+  if (session.studentUid !== request.auth.uid || session.examId !== examId) {
+    throw new HttpsError("permission-denied", "This session does not belong to this account and exam.");
+  }
+  if (session.status !== "started") throw new HttpsError("failed-precondition", "This exam session is not active or has already been submitted.");
   if (exam.status !== "published") throw new HttpsError("failed-precondition", "Exam is not published.");
 
   const expiresAtMs = Number(session.expiresAtMs || 0);
+  if (!expiresAtMs) throw new HttpsError("failed-precondition", "This session has no valid expiry time. Contact the administrator.");
   const submissionReason = String(request.data && request.data.submissionReason || "manual");
-  if (expiresAtMs && Date.now() > expiresAtMs + 30000 && submissionReason !== "timeout") {
+  if (Date.now() > expiresAtMs + 30000 && submissionReason !== "timeout") {
     throw new HttpsError("deadline-exceeded", "The exam time has expired.");
   }
 
