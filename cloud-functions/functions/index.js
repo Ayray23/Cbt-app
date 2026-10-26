@@ -22,8 +22,8 @@ async function requireRole(uid, allowedRoles) {
 }
 
 async function assertStudentAssignedToExam(uid, exam) {
-  const profile = await getUserProfile(uid);
-  const role = profile && profile.role || "student";
+  const profile = (await getUserProfile(uid)) || {};
+  const role = profile.role || "student";
   if (role === "admin" || role === "superadmin") return profile;
 
   if (exam.assignmentMode === "individual") {
@@ -71,7 +71,10 @@ exports.getExamQuestions = onCall(async (request) => {
       throw new HttpsError("permission-denied", "There is no active exam session for this account.");
     }
     const expiresAtMs = Number(session.expiresAtMs || 0);
-    if (expiresAtMs && Date.now() > expiresAtMs) {
+    if (!expiresAtMs) {
+      throw new HttpsError("failed-precondition", "This session has no valid expiry time. Contact the administrator.");
+    }
+    if (Date.now() > expiresAtMs) {
       throw new HttpsError("deadline-exceeded", "The exam time has expired.");
     }
   }
