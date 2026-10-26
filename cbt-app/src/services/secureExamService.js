@@ -20,6 +20,18 @@ function callableError(error, fallback) {
   return error?.details || error?.message || fallback;
 }
 
+export async function getMyExamCodeStatus(examId) {
+  requireUser();
+  try {
+    const checkStatus = httpsCallable(getFunctions(), "getMyExamCodeStatus");
+    const result = await checkStatus({ examId });
+    return Boolean(result.data?.hasAssignedCode);
+  } catch (error) {
+    console.error("Could not check individual exam code status", error);
+    return false;
+  }
+}
+
 export async function startSecureExamSession(examId, accessCode = "") {
   requireUser();
   try {
