@@ -20,6 +20,16 @@ function callableError(error, fallback) {
   return error?.details || error?.message || fallback;
 }
 
+export async function migrateLegacyExamAccess() {
+  requireUser();
+  const migrate = httpsCallable(getFunctions(), "migrateLegacyExamAccess");
+  const result = await migrate({});
+  return {
+    migratedCount: Number(result.data?.migratedCount || 0),
+    removedLegacyFields: Number(result.data?.removedLegacyFields || 0),
+  };
+}
+
 export async function getMyExamCodeStatus(examId) {
   requireUser();
   try {
@@ -27,7 +37,7 @@ export async function getMyExamCodeStatus(examId) {
     const result = await checkStatus({ examId });
     return Boolean(result.data?.hasAssignedCode);
   } catch (error) {
-    console.error("Could not check individual exam code status", error);
+    console.error("Could not check exam code status", error);
     return false;
   }
 }
