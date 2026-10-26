@@ -27,7 +27,7 @@ function friendlyExamError(error) {
 }
 
 export default function StudentDashboard() {
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
   const { toast, error: toastError } = useToast();
@@ -40,18 +40,24 @@ export default function StudentDashboard() {
   const [pendingSubmissionMap, setPendingSubmissionMap] = useState({});
 
   useEffect(() => {
-    const examsQuery = query(collection(db, "exams"), where("status", "==", "published"), orderBy("createdAt", "desc"));
-    const unsubscribeExams = onSnapshot(examsQuery, (snapshot) => {
-      const nextExams = snapshot.docs.map((item) => ({ id: item.id, ...item.data() }));
+    if (!profile?.className) { setExams([]); setSelectedExamId(""); return undefined; }
+    const classExamsQuery = query(collection(db, "exams"), where("status", "==", "published"), where("className", "==", profile.className), where("assignmentMode", "==", "class"), orderBy("createdAt", "desc"));
+    const individualExamsQuery = query(collection(db, "exams"), where("status", "==", "published"), where("className", "==", profile.className), where("assignmentMode", "==", "individual"), where("assignedStudentUids", "array-contains", user.uid), orderBy("createdAt", "desc"));
+    let classExams = [];
+    let individualExams = [];
+    const publish = () => {
+      const nextExams = [...classExams, ...individualExams].filter((exam, index, all) => all.findIndex((candidate) => candidate.id === exam.id) === index).sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
       setExams(nextExams);
-      if (!selectedExamId && nextExams.length > 0) setSelectedExamId(nextExams[0].id);
-    });
+      setSelectedExamId((current) => nextExams.some((exam) => exam.id === current) ? current : nextExams[0]?.id || "");
+    };
+    const unsubscribeClassExams = onSnapshot(classExamsQuery, (snapshot) => { classExams = snapshot.docs.map((item) => ({ id: item.id, ...item.data() })); publish(); });
+    const unsubscribeIndividualExams = onSnapshot(individualExamsQuery, (snapshot) => { individualExams = snapshot.docs.map((item) => ({ id: item.id, ...item.data() })); publish(); });
     const sessionsQuery = query(collection(db, "examSessions"), where("studentUid", "==", user.uid));
     const unsubscribeSessions = onSnapshot(sessionsQuery, (snapshot) => {
       setSessions(snapshot.docs.map((item) => ({ id: item.id, ...item.data() })));
     });
-    return () => { unsubscribeExams(); unsubscribeSessions(); };
-  }, [selectedExamId, user.uid]);
+    return () => { unsubscribeClassExams(); unsubscribeIndividualExams(); unsubscribeSessions(); };
+  }, [profile?.className, user.uid]);
 
   useEffect(() => {
     if (!selectedExamId || !user.uid) { setHasAssignedCode(false); return undefined; }
@@ -105,7 +111,7 @@ export default function StudentDashboard() {
   return (
     <div className="space-y-6">
       <section className="rounded-3xl bg-white p-6 shadow-sm md:p-8">
-        <p className="text-sm font-medium uppercase tracking-[0.3em] text-slate-400">Available Exam</p>
+        <p className="text-sm font-medium uppercase tracking-[0.3em] text-slate-400">Available Exams · {profile?.className || "Class not assigned"}</p>
         <h2 className="mt-3 text-3xl font-semibold text-slate-900">Select your paper</h2>
         <p className="mt-3 max-w-2xl text-sm text-slate-500">Choose the exam you are scheduled to take, read the instructions, and start only when you are ready.</p>
       </section>
