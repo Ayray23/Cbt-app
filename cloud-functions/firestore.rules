@@ -72,8 +72,7 @@ service cloud.firestore {
     match /examSessions/{sessionId} {
       allow read: if isSignedIn() && (
         isAdmin() ||
-        (resource != null && resource.data.studentUid == request.auth.uid) ||
-        sessionId.matches('.*_' + request.auth.uid)
+        (resource != null && resource.data.studentUid == request.auth.uid)
       );
 
       allow create: if isSignedIn() && isAdmin();
@@ -82,8 +81,11 @@ service cloud.firestore {
         isAdmin() ||
         (
           resource.data.studentUid == request.auth.uid &&
+          resource.data.examId != null &&
+          resource.data.status == 'started' &&
           request.resource.data.studentUid == resource.data.studentUid &&
           request.resource.data.examId == resource.data.examId &&
+          request.resource.data.status == resource.data.status &&
           request.resource.data.diff(resource.data).affectedKeys().hasOnly([
             'answers', 'tabSwitchCount', 'integrityWarnings', 'lastHeartbeatAtMs',
             'networkOnline', 'lastVisibilityChangeAtMs', 'lastSavedAt', 'updatedAt'
