@@ -132,6 +132,7 @@ exports.getMyExamCodeStatus = onCall(async (request) => {
   const examSnapshot = await db.collection("exams").doc(examId).get();
   if (!examSnapshot.exists) throw new HttpsError("not-found", "Exam not found.");
   const exam = examSnapshot.data();
+  await assertStudentAssignedToExam(request.auth.uid, exam);
 
   if (exam.individualCodesEnabled) {
     const codeSnapshot = await db.collection("studentExamCodeHashes").doc(`${examId}_${request.auth.uid}`).get();
