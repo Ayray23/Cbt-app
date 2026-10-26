@@ -37,13 +37,15 @@ export default function ExamCodes() {
   const filteredStudents = useMemo(() => {
     const term = studentSearch.trim().toLowerCase();
     return students.filter((student) => {
+      if (!selectedExam?.className || String(student.className || "").trim() !== String(selectedExam.className).trim()) return false;
+      if (selectedExam.assignmentMode === "individual" && !(selectedExam.assignedStudentUids || []).includes(student.id)) return false;
       const searchText = [student.displayName, student.email, student.studentId, student.className].join(" ").toLowerCase();
       const matchesSearch = !term || searchText.includes(term);
       const code = codeByStudent[student.id];
       const matchesStatus = statusFilter === "all" || (statusFilter === "without" ? !code : code?.status === statusFilter);
       return matchesSearch && matchesStatus;
     }).sort((a, b) => String(a.displayName || a.email || "").localeCompare(String(b.displayName || b.email || "")));
-  }, [students, studentSearch, statusFilter, codeByStudent]);
+  }, [students, studentSearch, statusFilter, codeByStudent, selectedExam]);
 
   const printableCodes = useMemo(() => examCodes.filter((code) => selectedIds.length === 0 || selectedIds.includes(code.studentUid)), [examCodes, selectedIds]);
   const visibleSelected = filteredStudents.length > 0 && filteredStudents.every((student) => selectedIds.includes(student.id));
@@ -57,7 +59,7 @@ export default function ExamCodes() {
       setBanner({ tone: "error", message: "Select an exam first." });
       return;
     }
-    const targets = students.filter((student) => selectedIds.includes(student.id));
+    const targets = students.filter((student) => selectedIds.includes(student.id) && String(student.className || "").trim() === String(selectedExam.className || "").trim() && (selectedExam.assignmentMode !== "individual" || (selectedExam.assignedStudentUids || []).includes(student.id)));
     if (!targets.length) {
       setBanner({ tone: "error", message: "Select one or more students before generating codes." });
       return;
@@ -139,7 +141,7 @@ export default function ExamCodes() {
         <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
           <div className="grid gap-4 lg:grid-cols-[minmax(220px,1fr)_minmax(240px,1.5fr)]">
             <label className="text-sm font-semibold text-slate-700">Choose exam / subject<select value={examId} onChange={(event) => { setExamId(event.target.value); setSelectedIds([]); }} className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 font-normal outline-none focus:border-indigo-400 focus:ring-4 focus:ring-indigo-50"><option value="">Select exam</option>{exams.map((exam) => <option key={exam.id} value={exam.id}>{exam.title} {exam.status === "published" ? "· Published" : "· Draft"}</option>)}</select></label>
-            <div className="rounded-xl border border-indigo-100 bg-indigo-50/70 px-4 py-3"><p className="text-sm font-semibold text-indigo-950">{selectedExam?.title || "Select an exam"}</p><p className="mt-1 text-xs leading-5 text-indigo-800/80">{selectedExam ? `${selectedExam.duration || "—"} minutes · ${selectedExam.status || "draft"} · Codes are individual to each student` : "Choose an exam to prepare student-specific codes."}</p></div>
+            <div className="rounded-xl border border-indigo-100 bg-indigo-50/70 px-4 py-3"><p className="text-sm font-semibold text-indigo-950">{selectedExam?.title || "Select an exam"}</p><p className="mt-1 text-xs leading-5 text-indigo-800/80">{selectedExam ? `${selectedExam.duration || "—"} minutes · ${selectedExam.status || "draft"} · Class: ${selectedExam.className || "not assigned"} · ${selectedExam.assignmentMode === "individual" ? "selected students only" : "entire class"}` : "Choose an exam to prepare student-specific codes."}</p></div>
           </div>
         </section>
 
