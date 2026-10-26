@@ -33,9 +33,9 @@ export default function CreateExam() {
 
     // Migrate legacy password hashes/plaintext from records that were previously
     // readable by signed-in students. The callable only permits administrators.
-    migrateLegacyExamAccess().then(({ migratedCount }) => {
-      if (migratedCount > 0) {
-        setBanner({ tone: "success", message: `Secured ${migratedCount} legacy exam password record(s).` });
+    migrateLegacyExamAccess().then(({ migratedCount, removedLegacyFields }) => {
+      if (removedLegacyFields > 0) {
+        setBanner({ tone: "success", message: `Secured ${migratedCount} legacy exam password record(s) and removed ${removedLegacyFields} exposed legacy field(s).` });
       }
     }).catch((error) => {
       console.error("Legacy exam password migration failed", error);
