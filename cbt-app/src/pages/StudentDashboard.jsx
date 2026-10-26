@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { collection, doc, onSnapshot, orderBy, query, where } from "firebase/firestore";
+import { collection, onSnapshot, orderBy, query, where } from "firebase/firestore";
 import { db } from "/firebase";
 import { useAuth } from "../contexts/AuthContext";
 import { flushPendingSubmissions, getPendingSubmissionMap } from "../services/sessionService";
-import { startSecureExamSession } from "../services/secureExamService";
+import { getMyExamCodeStatus, startSecureExamSession } from "../services/secureExamService";
 import { useToast } from "../components/useToast.js";
 
 const INSTRUCTIONS = [
@@ -54,12 +54,18 @@ export default function StudentDashboard() {
   }, [selectedExamId, user.uid]);
 
   useEffect(() => {
-    if (!selectedExamId || !user.uid) { setHasAssignedCode(false); return undefined; }
-    return onSnapshot(
-      doc(db, "studentExamCodeHashes", `${selectedExamId}_${user.uid}`),
-      (snapshot) => setHasAssignedCode(snapshot.exists() && snapshot.data().status !== "revoked"),
-      () => setHasAssignedCode(false)
-    );
+    let active = true;
+    if (!selectedExamId || !user.uid) {
+      setHasAssignedCode(false);
+      return () => { active = false; };
+    }
+
+    setHasAssignedCode(false);
+    getMyExamCodeStatus(selectedExamId).then((hasCode) => {
+      if (active) setHasAssignedCode(hasCode);
+    });
+
+    return () => { active = false; };
   }, [selectedExamId, user.uid]);
 
   useEffect(() => {
