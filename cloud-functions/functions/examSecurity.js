@@ -30,6 +30,24 @@ async function getUserProfile(uid) {
   return snapshot.exists ? snapshot.data() : {};
 }
 
+function assertStudentAssignedToExam(uid, profile, exam) {
+  const role = profile && profile.role || "student";
+  if (role === "admin" || role === "superadmin") return;
+
+  if (exam.assignmentMode === "individual") {
+    const assignedStudentUids = Array.isArray(exam.assignedStudentUids) ? exam.assignedStudentUids : [];
+    if (!assignedStudentUids.includes(uid)) {
+      throw new HttpsError("permission-denied", "This exam is not assigned to your student account.");
+    }
+  } else if (exam.className) {
+    const studentClass = String(profile.className || "").trim();
+    const examClass = String(exam.className || "").trim();
+    if (!studentClass || studentClass !== examClass) {
+      throw new HttpsError("permission-denied", "This exam is not assigned to your class.");
+    }
+  }
+}
+
 async function writeAuditLog({ action, uid, examId = null, sessionId = null, metadata = {} }) {
   await db.collection("auditLogs").add({
     action,
@@ -76,6 +94,9 @@ exports.startExamSession = onCall(async (request) => {
   const exam = examSnapshot.data();
   if (exam.status !== "published") throw new HttpsError("failed-precondition", "Exam is not published.");
 
+  const userProfile = await getUserProfile(request.auth.uid);
+  assertStudentAssignedToExam(request.auth.uid, userProfile, exam);
+
   const now = Date.now();
   const startAt = Number(exam.scheduleStartAtMs || 0);
   const endAt = Number(exam.scheduleEndAtMs || 0);
@@ -84,6 +105,9 @@ exports.startExamSession = onCall(async (request) => {
 
   if (sessionSnapshot.exists) {
     const current = sessionSnapshot.data();
+    if (current.studentUid !== request.auth.uid || current.examId !== examId) {
+      throw new HttpsError("permission-denied", "This exam session does not belong to your account.");
+    }
     if (current.status === "submitted") throw new HttpsError("failed-precondition", "This exam has already been submitted.");
     await writeAuditLog({ action: "exam.session.resumed", uid: request.auth.uid, examId, sessionId: sessionRef.id });
     return { id: sessionSnapshot.id, ...current, startedAtMs: current.startedAtMs || toMillis(current.startedAt) };
@@ -93,7 +117,6 @@ exports.startExamSession = onCall(async (request) => {
   if (questionsSnapshot.empty) throw new HttpsError("failed-precondition", "Exam has no questions.");
 
   const codeRef = await validateExamCode(examId, request.auth.uid, accessCode, exam);
-  const userProfile = await getUserProfile(request.auth.uid);
   const startedAtMs = now;
   const expiresAtMs = startedAtMs + Number(exam.duration || 0) * 60 * 1000;
 
