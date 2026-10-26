@@ -21,6 +21,27 @@ async function requireRole(uid, allowedRoles) {
   return profile;
 }
 
+async function assertStudentAssignedToExam(uid, exam) {
+  const profile = await getUserProfile(uid);
+  const role = profile && profile.role || "student";
+  if (role === "admin" || role === "superadmin") return profile;
+
+  if (exam.assignmentMode === "individual") {
+    const assignedStudentUids = Array.isArray(exam.assignedStudentUids) ? exam.assignedStudentUids : [];
+    if (!assignedStudentUids.includes(uid)) {
+      throw new HttpsError("permission-denied", "This exam is not assigned to your student account.");
+    }
+  } else if (exam.className) {
+    const studentClass = String(profile.className || "").trim();
+    const examClass = String(exam.className || "").trim();
+    if (!studentClass || studentClass !== examClass) {
+      throw new HttpsError("permission-denied", "This exam is not assigned to your class.");
+    }
+  }
+
+  return profile;
+}
+
 const examSecurity = require("./examSecurity");
 exports.startExamSession = examSecurity.startExamSession;
 exports.submitExamSession = examSecurity.submitExamSession;
@@ -36,6 +57,24 @@ exports.getExamQuestions = onCall(async (request) => {
   if (!examSnapshot.exists) throw new HttpsError("not-found", "Exam not found.");
   const exam = examSnapshot.data();
   if (exam.status !== "published") throw new HttpsError("failed-precondition", "Exam is not published.");
+
+  const profile = await assertStudentAssignedToExam(request.auth.uid, exam);
+  const role = profile && profile.role || "student";
+  if (role !== "admin" && role !== "superadmin") {
+    const sessionRef = db.collection("examSessions").doc(`${examId}_${request.auth.uid}`);
+    const sessionSnapshot = await sessionRef.get();
+    if (!sessionSnapshot.exists) {
+      throw new HttpsError("failed-precondition", "Start your assigned exam before loading its questions.");
+    }
+    const session = sessionSnapshot.data();
+    if (session.studentUid !== request.auth.uid || session.examId !== examId || session.status !== "started") {
+      throw new HttpsError("permission-denied", "There is no active exam session for this account.");
+    }
+    const expiresAtMs = Number(session.expiresAtMs || 0);
+    if (expiresAtMs && Date.now() > expiresAtMs) {
+      throw new HttpsError("deadline-exceeded", "The exam time has expired.");
+    }
+  }
 
   const snapshot = await db.collection("questions").where("examId", "==", examId).get();
   if (snapshot.empty) throw new HttpsError("failed-precondition", "Exam has no questions.");
