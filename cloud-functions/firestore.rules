@@ -52,13 +52,10 @@ service cloud.firestore {
     }
 
     match /questions/{questionId} {
-      // Legacy client exam loading remains temporarily allowed for published exams.
-      // The secure getExamQuestions callable is available for the final client migration.
-      allow read: if isSignedIn() && (
-        isAdmin() ||
-        get(/databases/$(database)/documents/exams/$(resource.data.examId)).data.status == 'published'
-      );
-      allow create, update, delete: if isAdmin();
+      // Question documents contain correctAnswer and other grading fields.
+      // Students must use the trusted getExamQuestions callable, which strips answer keys
+      // and requires a valid started session. Only administrators may read raw documents.
+      allow read, create, update, delete: if isAdmin();
     }
 
     match /studentExamCodeHashes/{codeId} {
