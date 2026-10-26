@@ -78,7 +78,6 @@ exports.migrateLegacyExamAccess = onCall(async (request) => {
       const exam = latestExamSnapshot.data() || {};
       const access = accessSnapshot.exists ? accessSnapshot.data() || {} : {};
       const hasLegacyExamHashField = Object.prototype.hasOwnProperty.call(exam, "accessCodeHash");
-      const hasLegacyExamHash = Boolean(exam.accessCodeHash);
       const hasLegacyPlaintext = typeof access.code === "string" && access.code.length > 0;
       if (!hasLegacyExamHashField && !hasLegacyPlaintext) return { migrated: false, removed: 0 };
 
