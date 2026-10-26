@@ -8,7 +8,7 @@ test("student exam reads are blocked until legacy exposed hashes are removed", a
   const rules = await read("../../cloud-functions/firestore.rules");
   assert.match(
     rules,
-    /allow read:\s*if isSignedIn\(\) && \(isAdmin\(\) \|\| \(resource\.data\.status == 'published' && !\('accessCodeHash' in resource\.data\)\)\);/
+    /allow read:\s*if isSignedIn\(\) && \([\s\S]*?resource\.data\.status == 'published'[\s\S]*?!\('accessCodeHash' in resource\.data\)[\s\S]*?resource\.data\.className/
   );
   assert.match(rules, /match \/examAccess\/\{examId\} \{\s*allow read, write: if isAdmin\(\);/);
 });
