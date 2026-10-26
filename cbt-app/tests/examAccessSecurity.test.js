@@ -22,7 +22,7 @@ test("exam password hashes are stored and checked only in the protected collecti
   assert.doesNotMatch(service, /accessCodeHash/);
   assert.doesNotMatch(service, /code:\s*normalizedAccessCode/);
   assert.doesNotMatch(dashboard, /accessCodeHash/);
-  assert.match(service, /collection\(db, "examAccess"\)/);
+  assert.match(service, /doc\(db, "examAccess", examId\)/);
   assert.match(examSecurity, /db\.collection\("examAccess"\)\.doc\(examId\)\.get\(\)/);
   assert.doesNotMatch(examSecurity, /exam\.accessCodeHash/);
   assert.match(functions, /exports\.migrateLegacyExamAccess = onCall/);
