@@ -44,7 +44,28 @@ service cloud.firestore {
 
     match /exams/{examId} {
       // Block student reads of legacy exam docs until the admin migration removes exposed hashes.
-      allow read: if isSignedIn() && (isAdmin() || (resource.data.status == 'published' && !('accessCodeHash' in resource.data)));
+      allow read: if isSignedIn() && (
+        isAdmin() ||
+        (
+          resource.data.status == 'published' &&
+          !('accessCodeHash' in resource.data) &&
+          (
+            !('className' in resource.data) ||
+            (
+              userExists() &&
+              resource.data.className == get(currentUserPath()).data.className &&
+              (
+                !('assignmentMode' in resource.data) ||
+                resource.data.assignmentMode == 'class' ||
+                (
+                  resource.data.assignmentMode == 'individual' &&
+                  request.auth.uid in resource.data.assignedStudentUids
+                )
+              )
+            )
+          )
+        )
+      );
       allow create, update, delete: if isAdmin();
     }
 
