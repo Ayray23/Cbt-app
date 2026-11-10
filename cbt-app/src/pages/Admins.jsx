@@ -55,8 +55,7 @@ export default function Admins() {
       <section className="rounded-2xl bg-white p-6 shadow-sm">
         <h2 className="text-2xl font-semibold text-slate-900">Admin access control</h2>
         <p className="mt-2 text-sm text-slate-500">
-          Promote only users who have already created an account. Role changes are handled directly
-          through secured Firestore writes in this free-plan setup.
+          Promote a provisioned account using its contact email. Only superadmins can grant or revoke admin access.
         </p>
       </section>
 

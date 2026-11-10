@@ -1,6 +1,15 @@
 import { useEffect, useMemo, useState } from "react";
 import { collection, onSnapshot } from "firebase/firestore";
 import { db } from "/firebase";
+import StatusBanner from "../components/StatusBanner";
+
+function contactState(session, now) {
+  if (session.status === "submitted") return session.requiresReview ? "Submitted - review required" : "Submitted";
+  if (session.schemaVersion !== 2) return "Legacy attempt - review";
+  if (now >= session.expiresAtMs) return "Time elapsed - awaiting upload";
+  const lastSeen = session.lastSeenAt?.seconds ? session.lastSeenAt.seconds * 1000 : session.lastActivityAtMs || session.startedAtMs;
+  return now - lastSeen > 90000 ? "No recent contact" : "In progress";
+}
 
 function MetricCard({ label, value, helper, tone = "slate" }) {
   const toneClassName =
@@ -34,12 +43,9 @@ function formatDate(value) {
 }
 
 function statusBadgeClass(status, isOfflineRisk) {
+  if (isOfflineRisk) return "bg-amber-100 text-amber-800";
   if (status === "submitted") {
     return "bg-emerald-100 text-emerald-700";
-  }
-
-  if (isOfflineRisk) {
-    return "bg-amber-100 text-amber-800";
   }
 
   if (status === "started") {
@@ -52,11 +58,21 @@ function statusBadgeClass(status, isOfflineRisk) {
 export default function Monitoring() {
   const [sessions, setSessions] = useState([]);
   const [usersById, setUsersById] = useState({});
+  const [now, setNow] = useState(Date.now);
+  const [error, setError] = useState("");
+  const [cached, setCached] = useState(false);
 
   useEffect(() => {
-    const unsubscribeSessions = onSnapshot(collection(db, "examSessions"), (snapshot) => {
+    const clock = window.setInterval(() => setNow(Date.now()), 15000);
+    return () => window.clearInterval(clock);
+  }, []);
+
+  useEffect(() => {
+    const failed = () => setError("Live monitoring is unavailable. Check your connection and administrator access.");
+    const unsubscribeSessions = onSnapshot(collection(db, "examSessions"), { includeMetadataChanges: true }, (snapshot) => {
       setSessions(snapshot.docs.map((docItem) => ({ id: docItem.id, ...docItem.data() })));
-    });
+      setCached(snapshot.metadata.fromCache);
+    }, failed);
 
     const unsubscribeUsers = onSnapshot(collection(db, "users"), (snapshot) => {
       setUsersById(
@@ -65,7 +81,7 @@ export default function Monitoring() {
           return acc;
         }, {})
       );
-    });
+    }, failed);
 
     return () => {
       unsubscribeSessions();
@@ -84,7 +100,7 @@ export default function Monitoring() {
   );
 
   const analytics = useMemo(() => {
-    const started = orderedSessions.filter((session) => session.status === "started").length;
+    const started = orderedSessions.filter((session) => contactState(session, now) === "In progress").length;
     const submitted = orderedSessions.filter((session) => session.status === "submitted").length;
     const violations = orderedSessions.filter((session) => Number(session.tabSwitchCount || 0) > 0).length;
     const forcedClosures = orderedSessions.filter((session) =>
@@ -97,15 +113,18 @@ export default function Monitoring() {
       flaggedSessions: violations,
       forcedClosures,
     };
-  }, [orderedSessions]);
+  }, [orderedSessions, now]);
 
   return (
     <div className="space-y-6">
+      <StatusBanner tone="error" message={error} />
+      <StatusBanner tone="warning" message={cached ? "Showing cached monitoring data; reconnect to receive live activity." : ""} />
       <section className="rounded-2xl bg-white p-6 shadow-sm">
         <h2 className="text-2xl font-semibold text-slate-900">Live invigilation</h2>
         <p className="mt-2 text-sm text-slate-500">
           Monitor active exams, suspicious activity, fullscreen exits, and submitted papers in real time.
         </p>
+        <p className="mt-2 text-sm text-slate-500">Active devices report about every 30 seconds. No recent contact may mean a disconnected or closed device. Offline submissions appear here only after upload.</p>
       </section>
 
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
@@ -155,21 +174,21 @@ export default function Monitoring() {
                   session.studentName ?? studentProfile.displayName ?? session.studentEmail ?? session.studentUid;
                 const accessState =
                   studentProfile.role === "student" && studentProfile.loginDisabled ? "Blocked" : "Allowed";
-                const isOfflineRisk =
-                  session.status === "submitted" && !session.submittedAt?.seconds && Boolean(session.submittedAtMs);
+                const state = contactState(session, now);
+                const isOfflineRisk = state !== "Submitted" && state !== "In progress";
 
                 return (
                   <tr key={session.id} className="border-t border-slate-200">
                     <td className="px-4 py-4 text-slate-700">
                       <p className="font-medium">{studentName}</p>
-                      <p className="mt-1 text-xs text-slate-500">{session.studentEmail ?? "-"}</p>
+                      <p className="mt-1 text-xs text-slate-500">{session.studentUsername || session.studentEmail || "-"}</p>
                     </td>
                     <td className="px-4 py-4 text-slate-500">{session.examTitle ?? session.examId}</td>
                     <td className="px-4 py-4">
                       <span
                         className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${statusBadgeClass(session.status, isOfflineRisk)}`}
                       >
-                        {isOfflineRisk ? "Waiting to sync" : session.status ?? "-"}
+                        {state}
                       </span>
                     </td>
                     <td className="px-4 py-4 text-slate-500">{Number(session.tabSwitchCount || 0)}</td>

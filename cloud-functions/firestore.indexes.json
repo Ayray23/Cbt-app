@@ -1,6 +1,14 @@
 {
   "indexes": [
     {
+      "collectionGroup": "examSessions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "studentUid", "order": "ASCENDING" },
+        { "fieldPath": "schemaVersion", "order": "ASCENDING" }
+      ]
+    },
+    {
       "collectionGroup": "exams",
       "queryScope": "COLLECTION",
       "fields": [

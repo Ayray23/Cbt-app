@@ -1,48 +1,22 @@
-/* eslint-env node */
-const admin = require("firebase-admin");
-const path = require("path");
+import { backend } from "./server/firebase-admin.mjs";
 
-const [, , emailArg, roleArg = "superadmin"] = process.argv;
-const email = (emailArg || "").trim().toLowerCase();
-const role = (roleArg || "superadmin").trim().toLowerCase();
-const allowedRoles = new Set(["student", "admin", "superadmin"]);
-
-if (!email || !allowedRoles.has(role)) {
-  console.error("Usage: node setAdmin.js <email> [student|admin|superadmin]");
+const [, , emailArg, role = "superadmin"] = process.argv;
+if (!emailArg || !["student", "admin", "superadmin"].includes(role)) {
+  console.error("Usage: node --env-file-if-exists=../.env.local setAdmin.js <auth-email> [student|admin|superadmin]");
   process.exit(1);
 }
-
-const serviceAccountPath = path.resolve(__dirname, "serviceAccountKey.json");
-const serviceAccount = require(serviceAccountPath);
-
-admin.initializeApp({
-  credential: admin.credential.cert(serviceAccount),
-});
-
-async function main() {
-  const db = admin.firestore();
-  const snapshot = await db.collection("users").where("email", "==", email).limit(1).get();
-
-  if (snapshot.empty) {
-    throw new Error(
-      "User profile not found. Ask the user to sign in first so their Firestore user record exists."
-    );
-  }
-
-  const userDoc = snapshot.docs[0];
-
-  await userDoc.ref.set(
-    {
-      role,
-      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-    },
-    { merge: true }
-  );
-
-  console.log(`Updated ${email} to role: ${role}`);
+try {
+  const { auth, db, fields } = backend();
+  const account = await auth.getUserByEmail(emailArg.trim().toLowerCase());
+  const ref = db.doc(`users/${account.uid}`);
+  const existing = await ref.get();
+  await ref.set({
+    ...(existing.exists ? {} : { email: account.email || "", displayName: account.displayName || account.email,
+      loginDisabled: false, createdAt: fields.serverTimestamp() }),
+    role, schemaVersion: 2, updatedAt: fields.serverTimestamp(),
+  }, { merge: true });
+  console.log(`Provisioned ${account.uid} with role ${role}.`);
+} catch (error) {
+  console.error(error.message);
+  process.exitCode = 1;
 }
-
-main().catch((error) => {
-  console.error(error.message || error);
-  process.exit(1);
-});

@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
-import { signInWithEmailAndPassword } from "firebase/auth";
+import { useNavigate } from "react-router-dom";
+import { signInWithEmailAndPassword, signOut } from "firebase/auth";
 import { auth } from "/firebase";
 import AppLogo from "../../components/AppLogo";
+import { callApi } from "../../services/api";
 
 export default function Login() {
   const navigate = useNavigate();
@@ -26,10 +27,14 @@ export default function Login() {
     setLoading(true);
 
     try {
-      await signInWithEmailAndPassword(auth, email, password);
+      const identifier = email.trim().toLowerCase();
+      const loginAddress = identifier.includes("@") ? identifier : `${identifier}@students.cbt.invalid`;
+      await signInWithEmailAndPassword(auth, loginAddress, password);
+      await callApi("account.verify");
       navigate("/");
-    } catch {
-      setError("Invalid email or password.");
+    } catch (loginError) {
+      await signOut(auth);
+      setError(loginError.code?.startsWith("auth/") ? "Invalid username, email or password." : loginError.message);
     } finally {
       setLoading(false);
     }
@@ -41,7 +46,7 @@ export default function Login() {
         <AppLogo size="lg" />
         <h1 className="mt-3 text-3xl font-semibold text-slate-900">Sign in</h1>
         <p className="mt-2 text-sm text-slate-500">
-          Candidates and admins use the same login. Access is routed by role after sign-in.
+          Students use the username and password issued by their school. Existing email accounts can still sign in.
         </p>
 
         {error && (
@@ -50,8 +55,11 @@ export default function Login() {
 
         <form onSubmit={handleLogin} className="mt-6 space-y-4">
           <input
-            type="email"
-            placeholder="Email address"
+            type="text"
+            autoComplete="username"
+            autoCapitalize="none"
+            aria-label="Username or email"
+            placeholder="Username or email address"
             value={email}
             onChange={(event) => setEmail(event.target.value)}
             className="w-full rounded-xl border border-slate-300 px-4 py-3"
@@ -62,6 +70,7 @@ export default function Login() {
             <input
               type={showPassword ? "text" : "password"}
               placeholder="Password"
+              autoComplete="current-password"
               value={password}
               onChange={(event) => setPassword(event.target.value)}
               className="w-full rounded-xl border border-slate-300 px-4 py-3 pr-14"
@@ -119,11 +128,7 @@ export default function Login() {
         </form>
 
         <p className="mt-6 text-sm text-slate-500">
-          New student?
-          {" "}
-          <Link to="/signup" className="font-medium text-slate-900 underline">
-            Create an account
-          </Link>
+          Need an account? Contact your school administrator.
         </p>
       </div>
     </div>

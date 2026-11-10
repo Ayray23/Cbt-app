@@ -1,290 +1,125 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { collection, onSnapshot, orderBy, query, where } from "firebase/firestore";
+import { collection, onSnapshot, query, where } from "firebase/firestore";
 import { db } from "/firebase";
 import StatusBanner from "../components/StatusBanner";
 import { useAuth } from "../contexts/AuthContext";
-import { flushPendingSubmissions, getPendingSubmissionMap, startExamSession } from "../services/sessionService";
-
-const INSTRUCTIONS = [
-  "Read each question carefully before you choose an answer.",
-  "You only have one submission for each exam.",
-  "Do not refresh or close the browser tab while the exam is running.",
-  "Make sure your internet connection is stable before you start.",
-];
+import { flushPendingSubmissions, getDeviceExamMap, startExamSession, submitExamSession } from "../services/sessionService";
 
 export default function StudentDashboard() {
   const { user } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
   const [exams, setExams] = useState([]);
+  const [assignments, setAssignments] = useState([]);
   const [sessions, setSessions] = useState([]);
-  const [selectedExamId, setSelectedExamId] = useState("");
-  const [examPassword, setExamPassword] = useState("");
-  const [startingExam, setStartingExam] = useState(false);
-  const [pendingSubmissionMap, setPendingSubmissionMap] = useState({});
-  const [banner, setBanner] = useState(
-    location.state?.message ? { tone: "success", message: location.state.message } : null
-  );
+  const [selectedId, setSelectedId] = useState("");
+  const [pin, setPin] = useState("");
+  const [starting, setStarting] = useState(false);
+  const [deviceExams, setDeviceExams] = useState(() => getDeviceExamMap(user.uid));
+  const [banner, setBanner] = useState(null);
 
   useEffect(() => {
-    const examsQuery = query(
-      collection(db, "exams"),
-      where("status", "==", "published"),
-      orderBy("createdAt", "desc")
-    );
-
-    const unsubscribeExams = onSnapshot(examsQuery, (snapshot) => {
-      const nextExams = snapshot.docs.map((docItem) => ({ id: docItem.id, ...docItem.data() }));
-      setExams(nextExams);
-
-      if (!selectedExamId && nextExams.length > 0) {
-        setSelectedExamId(nextExams[0].id);
-      }
-    });
-
-    const sessionsQuery = query(collection(db, "examSessions"), where("studentUid", "==", user.uid));
-
-    const unsubscribeSessions = onSnapshot(sessionsQuery, (snapshot) => {
-      setSessions(snapshot.docs.map((docItem) => ({ id: docItem.id, ...docItem.data() })));
-    });
-
-    return () => {
-      unsubscribeExams();
-      unsubscribeSessions();
+    const fail = () => setBanner({ tone: "error", message: "Could not load your exam assignments. Check your connection or contact your supervisor." });
+    const stops = [
+      onSnapshot(query(collection(db, "exams"), where("status", "==", "published")),
+        (snapshot) => setExams(snapshot.docs.map((item) => ({ id: item.id, ...item.data() }))), fail),
+      onSnapshot(query(collection(db, "examAssignments"), where("studentUid", "==", user.uid)),
+        (snapshot) => setAssignments(snapshot.docs.map((item) => item.data())), fail),
+      onSnapshot(query(collection(db, "examSessions"), where("studentUid", "==", user.uid), where("schemaVersion", "==", 2)),
+        (snapshot) => setSessions(snapshot.docs.map((item) => item.data())), fail),
+    ];
+    const refresh = () => {
+      try { setDeviceExams(getDeviceExamMap(user.uid)); }
+      catch { setBanner({ tone: "error", message: "Saved exam data could not be read. Contact your supervisor before clearing any browser data." }); }
     };
-  }, [selectedExamId, user.uid]);
-
-  useEffect(() => {
-    function refreshPendingState() {
-      setPendingSubmissionMap(getPendingSubmissionMap(user.uid));
-    }
-
-    refreshPendingState();
-
-    async function handleOnline() {
-      await flushPendingSubmissions();
-      refreshPendingState();
-    }
-
-    window.addEventListener("online", handleOnline);
-    window.addEventListener("storage", refreshPendingState);
-
-    return () => {
-      window.removeEventListener("online", handleOnline);
-      window.removeEventListener("storage", refreshPendingState);
-    };
+    window.addEventListener("storage", refresh);
+    window.addEventListener("cbt:exam-storage", refresh);
+    return () => { stops.forEach((stop) => stop()); window.removeEventListener("storage", refresh); window.removeEventListener("cbt:exam-storage", refresh); };
   }, [user.uid]);
 
-  useEffect(() => {
-    setExamPassword("");
-    setBanner(location.state?.message ? { tone: "success", message: location.state.message } : null);
-  }, [location.state?.message, selectedExamId]);
-
-  const sessionsByExam = useMemo(
-    () =>
-      sessions.reduce((acc, session) => {
-        acc[session.examId] = session;
-        return acc;
-      }, {}),
-    [sessions]
-  );
-
-  const selectedExam = exams.find((exam) => exam.id === selectedExamId) ?? null;
-  const selectedSession = selectedExam ? sessionsByExam[selectedExam.id] : null;
-  const hasPendingSubmission = Boolean(selectedExam && pendingSubmissionMap[selectedExam.id]);
-  const isSubmitted = selectedSession?.status === "submitted" || hasPendingSubmission;
-  const isStarted = selectedSession?.status === "started";
-  const hasPassword = Boolean(selectedExam?.accessCodeHash);
-
-  async function handleStartExam() {
-    if (!selectedExam) {
-      return;
-    }
-
-    setStartingExam(true);
-    setBanner(null);
-
-    try {
-      await startExamSession(selectedExam.id, examPassword);
-      navigate(`/exam/${selectedExam.id}`);
-    } catch (error) {
-      console.error(error);
-      setBanner({ tone: "error", message: error.message ?? "Could not start exam." });
-    } finally {
-      setStartingExam(false);
+  const assignedIds = new Set(assignments.map((item) => item.examId));
+  const available = exams.filter((exam) => assignedIds.has(exam.id));
+  // Keep locally saved active papers accessible if the device disconnects or the list has not loaded.
+  for (const packet of Object.values(deviceExams)) {
+    if (!packet.closed && packet.questions?.length && !available.some((exam) => exam.id === packet.session.examId)) {
+      available.push({ id: packet.session.examId, title: packet.session.examTitle,
+        duration: (packet.session.expiresAtMs - packet.session.startedAtMs) / 60000, questionCount: packet.questions.length });
     }
   }
+  const selected = available.find((exam) => exam.id === selectedId) || available[0];
+  const saved = selected ? deviceExams[selected.id] : null;
+  const session = selected ? sessions.find((item) => item.examId === selected.id) : null;
+  const closed = Boolean(saved?.closed || session?.status === "submitted");
+  const started = Boolean(!closed && (saved?.questions?.length || session?.status === "started"));
+  const pending = Object.values(deviceExams).filter((packet) => packet.pending);
 
-  return (
-    <div className="space-y-6">
-      <StatusBanner
-        tone={banner?.tone}
-        message={banner?.message}
-        onClose={() => setBanner(null)}
-      />
+  function selectExam(id) { setSelectedId(id); setPin(""); setBanner(null); }
 
-      <section className="rounded-3xl bg-white p-6 shadow-sm md:p-8">
-        <p className="text-sm font-medium uppercase tracking-[0.3em] text-slate-400">
-          Available Exam
-        </p>
-        <h2 className="mt-3 text-3xl font-semibold text-slate-900">Select your paper</h2>
-        <p className="mt-3 max-w-2xl text-sm text-slate-500">
-          Choose the exam you are scheduled to take, read the instructions, and start only when you
-          are ready.
-        </p>
-      </section>
+  async function begin() {
+    if (!selected || starting || closed) return;
+    setStarting(true);
+    setBanner(null);
+    try {
+      // Fullscreen must be requested inside this click, before any network await.
+      if (document.fullscreenEnabled && !document.fullscreenElement) await document.documentElement.requestFullscreen();
+      const packet = await startExamSession(selected.id, pin);
+      if (document.fullscreenEnabled && !document.fullscreenElement) {
+        submitExamSession(selected.id, packet.session.answers, { submissionReason: "fullscreen-exit" });
+        navigate("/portal", { replace: true, state: { message: "Exam closed. Your answers are saved." } });
+        return;
+      }
+      navigate(`/exam/${selected.id}`);
+    } catch (error) {
+      if (document.fullscreenElement) void document.exitFullscreen().catch(() => {});
+      setBanner({ tone: "error", message: error.message || "Could not start the exam." });
+    } finally { setStarting(false); }
+  }
 
-      <section className="grid gap-6 lg:grid-cols-[320px_1fr]">
-        <div className="rounded-3xl bg-white p-6 shadow-sm">
-          <label className="mb-2 block text-sm font-medium text-slate-700">Exam</label>
-          <select
-            value={selectedExamId}
-            onChange={(event) => setSelectedExamId(event.target.value)}
-            className="w-full rounded-xl border border-slate-300 px-4 py-3"
-          >
-            <option value="">Select exam</option>
-            {exams.map((exam) => (
-              <option key={exam.id} value={exam.id}>
-                {exam.title}
-              </option>
-            ))}
-          </select>
-
-          <div className="mt-6 space-y-3">
-            {exams.map((exam) => {
-              const session = sessionsByExam[exam.id];
-              const hasQueuedSubmission = Boolean(pendingSubmissionMap[exam.id]);
-              return (
-                <button
-                  key={exam.id}
-                  onClick={() => setSelectedExamId(exam.id)}
-                  className={[
-                    "w-full rounded-2xl border px-4 py-4 text-left transition",
-                    selectedExamId === exam.id
-                      ? "border-slate-900 bg-slate-900 text-white"
-                      : "border-slate-200 bg-slate-50 text-slate-700",
-                  ].join(" ")}
-                >
-                  <p className="font-medium">{exam.title}</p>
-                  <p className="mt-1 text-sm opacity-80">{exam.duration} minutes</p>
-                  <p className="mt-1 text-xs uppercase tracking-[0.25em] opacity-70">
-                    {hasQueuedSubmission
-                      ? "Syncing submission"
-                      : session?.status === "submitted"
-                      ? "Submitted"
-                      : session?.status === "started"
-                        ? "In progress"
-                        : "Ready"}
-                  </p>
-                </button>
-              );
-            })}
-          </div>
+  return <div className="space-y-6">
+    <StatusBanner {...banner} onClose={() => setBanner(null)} />
+    <StatusBanner tone="success" message={location.state?.message} />
+    {pending.length > 0 && <section className="rounded-2xl border border-amber-200 bg-amber-50 p-5">
+      <h3 className="font-semibold text-slate-900">Saved submissions waiting to upload: {pending.length}</h3>
+      <p className="mt-2 text-sm text-slate-600">These exams are closed. Keep this device's app data until your supervisor confirms the upload.</p>
+      {pending.map((packet) => <p key={packet.session.examId} className="mt-2 text-sm text-slate-600">
+        {packet.session.examTitle || packet.session.examId}{packet.syncError ? `: ${packet.syncError}` : ""}
+      </p>)}
+      <button onClick={() => void flushPendingSubmissions().catch((error) => setBanner({ tone: "error", message: error.message }))}
+        className="mt-3 rounded-xl border border-amber-300 px-4 py-2 text-sm">Retry upload</button>
+    </section>}
+    <section className="rounded-3xl bg-white p-6 shadow-sm">
+      <p className="text-sm uppercase tracking-[0.25em] text-slate-400">Student portal</p>
+      <h2 className="mt-2 text-3xl font-semibold text-slate-900">Your assigned exams</h2>
+      <p className="mt-3 text-sm text-slate-500">Use the exam PIN issued specifically to you by your supervisor.</p>
+    </section>
+    <section className="grid gap-6 lg:grid-cols-[280px_1fr]">
+      <div className="space-y-3 rounded-3xl bg-white p-6 shadow-sm">
+        {available.map((exam) => <button key={exam.id} disabled={starting} onClick={() => selectExam(exam.id)}
+          className={`w-full rounded-2xl border p-4 text-left ${selected?.id === exam.id ? "border-slate-900 bg-slate-900 text-white" : "border-slate-200 text-slate-700"}`}>
+          <p className="font-medium">{exam.title}</p><p className="mt-1 text-sm">{exam.duration} minutes</p>
+        </button>)}
+        {!available.length && <p className="text-sm text-slate-500">Your administrator has not assigned a published exam yet.</p>}
+      </div>
+      {selected && <div className="rounded-3xl bg-white p-6 shadow-sm md:p-8">
+        <h3 className="text-2xl font-semibold text-slate-900">{selected.title}</h3>
+        <p className="mt-2 text-sm text-slate-500">{selected.duration} minutes | {selected.questionCount || 0} questions</p>
+        <div className="mt-6 space-y-3 text-sm text-slate-600">
+          <p>One attempt per student. The timer continues if the device disconnects or the app closes.</p>
+          <p>Questions and options are shuffled. Your answers save on this device as you work.</p>
+          <p>Leaving the exam's fullscreen ends the attempt. Keep this screen open throughout your paper.</p>
+          <p>Submitting closes the paper immediately. Scores and correct answers are available only to administrators.</p>
         </div>
-
-        <div className="rounded-3xl bg-white p-6 shadow-sm md:p-8">
-          {!selectedExam && (
-            <div className="rounded-2xl border border-dashed border-slate-300 p-8 text-sm text-slate-500">
-              No published exam is available yet.
-            </div>
-          )}
-
-          {selectedExam && (
-            <>
-              <div className="flex flex-col gap-4 border-b border-slate-200 pb-6 md:flex-row md:items-start md:justify-between">
-                <div>
-                  <h3 className="text-2xl font-semibold text-slate-900">{selectedExam.title}</h3>
-                  <p className="mt-2 text-sm text-slate-500">
-                    Duration: {selectedExam.duration} minutes
-                  </p>
-                  <p className="mt-1 text-sm text-slate-500">
-                    Questions: {selectedExam.questionCount ?? "Not counted yet"}
-                  </p>
-                </div>
-
-                <div className="rounded-2xl bg-slate-100 px-4 py-3 text-sm text-slate-700">
-                  {isSubmitted ? (
-                    <>
-                      <p className="font-semibold text-slate-900">
-                        {hasPendingSubmission ? "Submission syncing" : "Submitted"}
-                      </p>
-                      <p className="mt-1">
-                        {hasPendingSubmission
-                          ? "This exam was closed offline and will sync automatically when internet returns."
-                          : "This exam has already been attempted."}
-                      </p>
-                    </>
-                  ) : (
-                    <>
-                      <p className="font-semibold text-slate-900">Attempt policy</p>
-                      <p className="mt-1">One attempt only. Timer starts immediately.</p>
-                    </>
-                  )}
-                </div>
-              </div>
-
-              <div className="mt-6">
-                <h4 className="text-lg font-semibold text-slate-900">Instructions</h4>
-                <div className="mt-4 space-y-3">
-                  {INSTRUCTIONS.map((instruction) => (
-                    <div
-                      key={instruction}
-                      className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700"
-                    >
-                      {instruction}
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              <div className="mt-8 rounded-2xl border border-slate-200 bg-slate-50 p-5">
-                <label className="block text-sm font-medium text-slate-700">Exam password</label>
-                <input
-                  type="text"
-                  value={examPassword}
-                  onChange={(event) => setExamPassword(event.target.value)}
-                  placeholder={
-                    hasPassword
-                      ? "Enter the password given by the invigilator"
-                      : "Exam password has not been generated yet"
-                  }
-                  disabled={isSubmitted || isStarted}
-                  className="mt-3 w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm uppercase tracking-[0.2em] disabled:cursor-not-allowed disabled:bg-slate-100"
-                />
-                <p className="mt-2 text-xs text-slate-500">
-                  {hasPendingSubmission
-                    ? "This exam is already closed and waiting for background sync."
-                    : isStarted
-                    ? "Your session is already live. Continue now and the timer will keep running."
-                    : hasPassword
-                      ? "You must enter the correct password before the exam can start."
-                      : "This exam is not open yet because no password has been generated."}
-                </p>
-              </div>
-
-              <div className="mt-8">
-                {!isSubmitted ? (
-                  <button
-                    onClick={handleStartExam}
-                    disabled={startingExam || (!isStarted && !hasPassword)}
-                    className="inline-flex rounded-xl bg-emerald-600 px-5 py-3 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-60"
-                  >
-                    {startingExam ? "Verifying..." : isStarted ? "Continue exam" : "Start exam"}
-                  </button>
-                ) : (
-                  <button
-                    disabled
-                    className="inline-flex cursor-not-allowed rounded-xl bg-slate-300 px-5 py-3 text-sm font-medium text-white"
-                  >
-                    Attempted
-                  </button>
-                )}
-              </div>
-            </>
-          )}
-        </div>
-      </section>
-    </div>
-  );
+        {!closed && !started && <label className="mt-6 block text-sm font-medium text-slate-700">Your exam PIN
+          <input type="password" autoComplete="off" value={pin} onChange={(event) => setPin(event.target.value)}
+            disabled={starting} className="mt-2 w-full rounded-xl border border-slate-300 px-4 py-3" placeholder="Enter your personal PIN" />
+        </label>}
+        {started && <p className="mt-5 text-sm text-slate-600">Your existing attempt will continue with its original deadline.</p>}
+        <button onClick={begin} disabled={closed || starting || (!started && !pin.trim())}
+          className="mt-6 rounded-xl bg-emerald-600 px-5 py-3 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50">
+          {closed ? "Attempted" : starting ? "Verifying..." : started ? "Continue exam" : "Start exam"}
+        </button>
+      </div>}
+    </section>
+  </div>;
 }

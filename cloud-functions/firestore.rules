@@ -2,94 +2,57 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
-    function currentUserPath() {
-      return /databases/$(database)/documents/users/$(request.auth.uid);
+    function signedIn() { return request.auth != null; }
+    function profile() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
     }
-
-    function isSignedIn() {
-      return request.auth != null;
+    function enabled() {
+      return signedIn() &&
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        profile().get('loginDisabled', false) == false;
     }
+    function isAdmin() { return enabled() && profile().role in ['admin', 'superadmin']; }
 
-    function userExists() {
-      return isSignedIn() && exists(currentUserPath());
+    match /users/{uid} {
+      allow read: if signedIn() && (request.auth.uid == uid || isAdmin());
+      // Account provisioning, access settings and role changes go through the verified API.
+      allow write: if false;
     }
-
-    function role() {
-      return userExists() ? get(currentUserPath()).data.role : null;
-    }
-
-    function isAdmin() {
-      return role() in ['admin', 'superadmin'];
-    }
-
-    function isSuperAdmin() {
-      return role() == 'superadmin';
-    }
-
-    match /users/{userId} {
-      allow read: if isSignedIn() && (
-        request.auth.uid == userId || isAdmin()
-      );
-
-      allow create: if isSignedIn() && request.auth.uid == userId;
-
-      allow update: if isSignedIn() && (
-        isSuperAdmin() ||
-        (
-          isAdmin() &&
-          resource.data.role == 'student' &&
-          request.resource.data.role == resource.data.role
-        ) ||
-        (
-          request.auth.uid == userId &&
-          request.resource.data.role == resource.data.role
-        )
-      );
-
-      allow delete: if isSuperAdmin();
-    }
-
     match /exams/{examId} {
-      allow read: if isSignedIn() && (
-        isAdmin() || resource.data.status == 'published'
-      );
-
-      allow create, update, delete: if isAdmin();
-    }
-
-    match /examAccess/{examId} {
-      allow read, write: if isAdmin();
-    }
-
-    match /questions/{questionId} {
-      allow read: if isSignedIn() && (
-        isAdmin() ||
-        get(/databases/$(database)/documents/exams/$(resource.data.examId)).data.status == 'published'
-      );
-
-      allow create, update, delete: if isAdmin();
-    }
-
-    match /examSessions/{sessionId} {
-      allow read: if isSignedIn() && (
-        isAdmin() ||
-        (resource != null && resource.data.studentUid == request.auth.uid) ||
-        sessionId.matches('.*_' + request.auth.uid)
-      );
-
-      allow create: if isSignedIn() && (
-        isAdmin() || request.resource.data.studentUid == request.auth.uid
-      );
-
-      allow update: if isSignedIn() && (
-        isAdmin() || resource.data.studentUid == request.auth.uid
-      );
-
+      allow read: if enabled() && (isAdmin() || resource.data.status == 'published');
+      allow create: if isAdmin() && request.resource.data.status == 'draft';
+      allow update: if isAdmin() &&
+        (request.resource.data.status != 'published' || resource.data.status == 'published') &&
+        request.resource.data.get('paperVersion', null) == resource.data.get('paperVersion', null);
       allow delete: if isAdmin();
     }
-
-    match /{document=**} {
-      allow read, write: if false;
+    match /questions/{questionId} {
+      // Answer keys are never readable by a student, even for a published exam.
+      allow read, write: if isAdmin();
     }
+    match /examAssignments/{assignmentId} {
+      allow read: if isAdmin() || (enabled() && resource.data.studentUid == request.auth.uid);
+      allow write: if false;
+    }
+    match /examSessions/{sessionId} {
+      allow read: if isAdmin() || (
+        enabled() && resource.data.studentUid == request.auth.uid &&
+        resource.data.schemaVersion == 2
+      );
+      // The API checks PINs, preserves deadlines and owns all session writes.
+      allow write: if false;
+    }
+    match /examResults/{sessionId} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+    match /examAccess/{examId} {
+      allow read, delete: if isAdmin();
+      allow create, update: if false;
+    }
+    match /examPins/{id} { allow read, write: if false; }
+    match /examPapers/{id} { allow read, write: if false; }
+    match /examSessionProofs/{id} { allow read, write: if false; }
+    match /{document=**} { allow read, write: if false; }
   }
 }

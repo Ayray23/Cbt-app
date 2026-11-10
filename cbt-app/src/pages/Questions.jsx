@@ -3,6 +3,7 @@ import {
   collection,
   deleteDoc,
   doc,
+  getDoc,
   onSnapshot,
   orderBy,
   query,
@@ -44,11 +45,15 @@ export default function Questions() {
       return;
     }
     try {
+      const exam = await getDoc(doc(db, "exams", questionToDelete.examId));
+      if (!exam.exists() || exam.data().status !== "draft") {
+        throw new Error("Move the exam to draft before deleting a question, then publish the updated paper.");
+      }
       await deleteDoc(doc(db, "questions", questionToDelete.id));
       setBanner({ tone: "success", message: "Question deleted." });
     } catch (error) {
       console.error(error);
-      setBanner({ tone: "error", message: "Delete failed." });
+      setBanner({ tone: "error", message: error.message || "Delete failed." });
     } finally {
       setQuestionToDelete(null);
     }

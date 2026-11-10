@@ -1,22 +1,23 @@
-import { BrowserRouter, Navigate, Outlet, Route, Routes } from "react-router-dom";
+import { BrowserRouter, Navigate, Outlet, Route, Routes, useLocation } from "react-router-dom";
 import { useAuth } from "./contexts/AuthContext";
 import Sidebar from "./components/Sidebar";
-import Dashboard from "./pages/Dashboard";
-import StudentDashboard from "./pages/StudentDashboard";
-import Students from "./pages/Students";
-import Questions from "./pages/Questions";
-import Results from "./pages/Results";
-import Admins from "./pages/Admins";
-import CreateExam from "./pages/CreateExam";
-import AddQuestion from "./pages/AddQuestion";
-import Monitoring from "./pages/Monitoring";
-import Login from "./pages/auth/Login";
-import Signup from "./pages/auth/Signup";
-import TakeExam from "./pages/TakeExam";
 import SplashScreen from "./components/SplashScreen";
 import InstallAppButton from "./components/InstallAppButton";
 import NetworkStatusBanner from "./components/NetworkStatusBanner";
 import AppLogo from "./components/AppLogo";
+
+const Dashboard = lazy(() => import("./pages/Dashboard"));
+const StudentDashboard = lazy(() => import("./pages/StudentDashboard"));
+const Students = lazy(() => import("./pages/Students"));
+const Questions = lazy(() => import("./pages/Questions"));
+const Results = lazy(() => import("./pages/Results"));
+const Admins = lazy(() => import("./pages/Admins"));
+const CreateExam = lazy(() => import("./pages/CreateExam"));
+const AddQuestion = lazy(() => import("./pages/AddQuestion"));
+const Monitoring = lazy(() => import("./pages/Monitoring"));
+const ExamPins = lazy(() => import("./pages/ExamPins"));
+const Login = lazy(() => import("./pages/auth/Login"));
+const TakeExam = lazy(() => import("./pages/TakeExam"));
 
 function LandingRedirect() {
   const { user, role, loading, isAdmin, authError } = useAuth();
@@ -81,6 +82,7 @@ function RequireRole({ allowedRoles }) {
 
 function StudentShell() {
   const { user, profile, logout } = useAuth();
+  const inExam = useLocation().pathname.startsWith("/exam/");
 
   return (
     <div className="min-h-screen bg-slate-100">
@@ -90,19 +92,21 @@ function StudentShell() {
             <AppLogo size="sm" />
             <p className="mt-3 text-xs uppercase tracking-[0.3em] text-slate-400">Student Portal</p>
             <h1 className="text-2xl font-semibold text-slate-900">
-              {profile?.displayName ?? user?.email ?? "CBT Portal"}
+              {profile?.displayName ?? profile?.username ?? "CBT Portal"}
             </h1>
           </div>
 
           <div className="flex items-center gap-3">
-            <InstallAppButton />
-            <p className="text-sm font-medium text-slate-700">{user?.email}</p>
+            {!inExam && <InstallAppButton />}
+            <p className="text-sm font-medium text-slate-700">{profile?.username || profile?.email || user?.email}</p>
+            {!inExam && (
             <button
               onClick={logout}
               className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white"
             >
               Sign out
             </button>
+            )}
           </div>
         </div>
       </header>
@@ -178,8 +182,8 @@ function AccountErrorScreen() {
             "Your account signed in successfully, but the app could not read the role/profile document needed to open the correct workspace."}
         </p>
         <div className="mt-6 rounded-2xl bg-slate-50 p-4 text-sm text-slate-600">
-          <p>Email: {user?.email ?? "Unknown user"}</p>
-          <p className="mt-2">Check that your `users/{'{uid}'}` document exists and has the correct `role` field.</p>
+          <p>Account: {user?.displayName || user?.email?.replace("@students.cbt.invalid", "") || "Unknown user"}</p>
+          <p className="mt-2">Contact your school administrator to verify this account's access.</p>
         </div>
         <div className="mt-8 flex gap-3">
           <button
@@ -197,16 +201,19 @@ function AccountErrorScreen() {
 export default function App() {
   return (
     <BrowserRouter>
+      <Suspense fallback={<SplashScreen title="Opening your workspace" message="Loading the page..." />}>
       <Routes>
         <Route path="/" element={<LandingRedirect />} />
         <Route path="/login" element={<Login />} />
-        <Route path="/signup" element={<Signup />} />
+        <Route path="/signup" element={<Navigate to="/login" replace />} />
         <Route path="/account-error" element={<AccountErrorScreen />} />
 
         <Route element={<RequireAuth />}>
           <Route element={<StudentShell />}>
+            <Route element={<RequireRole allowedRoles={["student"]} />}>
             <Route path="/portal" element={<StudentDashboard />} />
             <Route path="/exam/:examId" element={<TakeExam />} />
+            </Route>
           </Route>
 
           <Route element={<AdminShell />}>
@@ -215,6 +222,7 @@ export default function App() {
               <Route path="/monitoring" element={<Monitoring />} />
               <Route path="/students" element={<Students />} />
               <Route path="/exams/create" element={<CreateExam />} />
+              <Route path="/exam-pins" element={<ExamPins />} />
               <Route path="/questions/add" element={<AddQuestion />} />
               <Route path="/questions" element={<Questions />} />
               <Route path="/results" element={<Results />} />
@@ -228,6 +236,8 @@ export default function App() {
 
         <Route path="*" element={<LandingRedirect />} />
       </Routes>
+      </Suspense>
     </BrowserRouter>
   );
 }
+import { lazy, Suspense } from "react";

@@ -8,12 +8,11 @@ import {
   getDocs,
   query,
   serverTimestamp,
-  setDoc,
   updateDoc,
   where,
 } from "firebase/firestore";
 import { db } from "/firebase";
-import { hashAccessCode, normalizeAccessCode } from "../utils/accessCode";
+import { callApi } from "./api";
 
 export async function createExam({ title, duration }) {
   const ref = await addDoc(collection(db, "exams"), {
@@ -21,8 +20,7 @@ export async function createExam({ title, duration }) {
     duration: Number(duration) || 0,
     status: "draft",
     questionCount: 0,
-    accessCodeHash: null,
-    accessCodeUpdatedAt: null,
+    schemaVersion: 2,
     createdAt: serverTimestamp(),
     publishedAt: null,
   });
@@ -31,24 +29,11 @@ export async function createExam({ title, duration }) {
 }
 
 export async function updateExamStatus(examId, status) {
+  if (status === "published") return callApi("exams.publish", { examId });
   const updates = {
     status,
     updatedAt: serverTimestamp(),
   };
-
-  if (status === "published") {
-    const questionCountSnapshot = await getCountFromServer(
-      query(collection(db, "questions"), where("examId", "==", examId))
-    );
-    const questionCount = questionCountSnapshot.data().count;
-
-    if (questionCount <= 0) {
-      throw new Error("Add at least one question before publishing this exam.");
-    }
-
-    updates.publishedAt = serverTimestamp();
-    updates.questionCount = questionCount;
-  }
 
   await updateDoc(doc(db, "exams", examId), updates);
 }
@@ -70,6 +55,10 @@ export async function addQuestion({
   correctAnswer,
   marks = 1,
 }) {
+  const exam = await getDoc(doc(db, "exams", String(examId).trim()));
+  if (!exam.exists() || exam.data().status !== "draft") {
+    throw new Error("Move this exam to draft before changing its questions, then publish the updated paper.");
+  }
   const cleanOptions = {
     A: options?.A ?? "",
     B: options?.B ?? "",
@@ -95,40 +84,4 @@ export async function addQuestion({
     questionCount: questionCountSnapshot.data().count,
     updatedAt: serverTimestamp(),
   });
-}
-
-export async function setExamAccessCode(examId, accessCode) {
-  const examRef = doc(db, "exams", examId);
-  const examSnapshot = await getDoc(examRef);
-
-  if (!examSnapshot.exists()) {
-    throw new Error("Exam not found.");
-  }
-
-  const normalizedAccessCode = normalizeAccessCode(accessCode);
-
-  if (!normalizedAccessCode) {
-    throw new Error("Enter an exam password before publishing.");
-  }
-
-  if (normalizedAccessCode.length < 4) {
-    throw new Error("Use at least 4 characters for the exam password.");
-  }
-
-  const accessCodeHash = await hashAccessCode(normalizedAccessCode);
-
-  await Promise.all([
-    setDoc(doc(db, "examAccess", examId), {
-      examId,
-      code: normalizedAccessCode,
-      updatedAt: serverTimestamp(),
-    }),
-    updateDoc(examRef, {
-      accessCodeHash,
-      accessCodeUpdatedAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
-    }),
-  ]);
-
-  return normalizedAccessCode;
 }

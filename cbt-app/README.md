@@ -1,53 +1,35 @@
-# CBT App
+# CBT Frontend
 
-Production-ready MVP for a Firebase-backed computer-based testing platform.
+React/Vite frontend for the CBT app. Students log in using an admin-issued username and password, or an existing email login. There is no public signup. Admins create student accounts on **Students**, then issue personal exam PINs on **Exam PINs**.
 
-## What this app does
+The trusted API lives at the repository-root `api/cbt.mjs`. Publishing snapshots the paper privately, PIN validation happens on the server, and only the server can grade and finalize a result. Student packets never contain answer keys.
 
-- Students can sign up, sign in, see published exams, start one exam session, answer MCQs, and submit.
-- Admins can create exams, add questions, publish exams, and review submissions.
-- Superadmins can promote existing users to `admin` or `superadmin`.
+## Run locally
 
-## Frontend setup
-
-1. Install dependencies:
-   `npm install`
-2. Create or update `.env.local` with:
-
-```env
-VITE_FIREBASE_API_KEY=...
-VITE_FIREBASE_AUTH_DOMAIN=...
-VITE_FIREBASE_PROJECT_ID=...
-VITE_FIREBASE_STORAGE_BUCKET=...
-VITE_FIREBASE_MESSAGING_SENDER_ID=...
-VITE_FIREBASE_APP_ID=...
+```powershell
+npm install
+npm run dev
 ```
 
-3. Start the app:
-   `npm run dev`
-4. Build for production:
-   `npm run build`
+Also run `npm run dev:api` from the repository root. Vite proxies `/api` to that server. Keep frontend Firebase config in this folder's gitignored `.env.local` and server credentials only in the repository-root environment.
 
-## Auth and roles
+## Check
 
-- Every new account is created as `student`.
-- The first real `superadmin` must be bootstrapped manually after that user signs in once.
-- To bootstrap a superadmin, place a Firebase Admin SDK key at [serviceAccountKey.json](/Users/Owner/Desktop/Web projects/Cbt app/cbt-app/serviceAccountKey.json) and run:
-  `node setAdmin.js you@example.com superadmin`
+```powershell
+npm run lint
+npm run build
+```
 
-## Live MVP workflow
+Run `npm test` from the repository root for service and offline-store regression tests.
 
-1. Sign up a student or admin candidate account.
-2. Bootstrap one `superadmin`.
-3. Sign in as the superadmin and promote any needed admins.
-4. Create an exam.
-5. Add questions to that exam.
-6. Publish the exam.
-7. Sign in as a student and take the exam.
-8. Review the submission from the results screen.
+## Deployment and migration
 
-## Important deployment notes
+Read [Secure Rollout](../docs/SECURE-ROLLOUT.md). Vercel must use the repository root, not this folder, as Root Directory. Deploy API, frontend, strict Firestore rules and existing-data migration together during maintenance.
 
-- This frontend calls Firebase callable functions, so the backend in `cloud-functions/functions` must be deployed.
-- Firestore rules, indexes, and Storage rules are defined in the `cloud-functions` folder.
-- `setAdmin.js` is only for initial bootstrap or emergency recovery. Day-to-day role changes should happen from the app.
+Bootstrap an existing Firebase Auth owner using:
+
+```powershell
+node --env-file-if-exists=../.env.local setAdmin.js owner@example.com superadmin
+```
+
+Offline starts require an existing saved attempt on the same device; first login and first start need a connection. Keep pending submissions on the device until the server confirms them. Late uploads require staff review.

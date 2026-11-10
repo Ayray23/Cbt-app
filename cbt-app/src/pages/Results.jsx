@@ -2,6 +2,17 @@ import { useEffect, useMemo, useState } from "react";
 import { collection, onSnapshot, orderBy, query } from "firebase/firestore";
 import { db } from "/firebase";
 import StatusBanner from "../components/StatusBanner";
+import ConfirmDialog from "../components/ConfirmDialog";
+import { callApi } from "../services/api";
+
+function percentage(session) {
+  const max = Number(session.maxMarks);
+  return max > 0 && !session.requiresReview ? Number(session.finalScore ?? session.totalAutoScore ?? 0) / max * 100 : null;
+}
+function averagePercentage(sessions) {
+  const scores = sessions.map(percentage).filter((score) => score !== null);
+  return scores.length ? `${(scores.reduce((sum, score) => sum + score, 0) / scores.length).toFixed(1)}%` : "Not available";
+}
 
 function formatSubmittedAt(timestamp) {
   if (!timestamp?.seconds) {
@@ -187,15 +198,9 @@ function buildResultsPdfMarkup(sessions) {
 }
 
 function buildReportCardMarkup(studentName, studentEmail, sessions) {
-  const scores = sessions.map((session) => Number(session.finalScore ?? session.totalAutoScore ?? 0));
-  const averageScore = scores.length
-    ? (scores.reduce((sum, value) => sum + value, 0) / scores.length).toFixed(1)
-    : "0.0";
-  const bestSession = [...sessions].sort(
-    (first, second) =>
-      Number(second.finalScore ?? second.totalAutoScore ?? 0) -
-      Number(first.finalScore ?? first.totalAutoScore ?? 0)
-  )[0];
+  const averageScore = averagePercentage(sessions);
+  const bestSession = sessions.filter((session) => percentage(session) !== null)
+    .sort((first, second) => percentage(second) - percentage(first))[0];
 
   const rows = sessions
     .map(
@@ -223,14 +228,15 @@ function buildReportCardMarkup(studentName, studentEmail, sessions) {
         <p>${escapeHtml(studentEmail)}</p>
       </div>
       <div>
-        <strong>Average Score</strong>
+        <strong>Average Percentage</strong>
         <p>${escapeHtml(averageScore)}</p>
       </div>
     </div>
 
     <div class="card">
       <p><strong>Total papers taken:</strong> ${escapeHtml(sessions.length)}</p>
-      <p><strong>Best subject:</strong> ${escapeHtml(bestSession?.examTitle ?? "-")}</p>
+      <p><strong>Best paper:</strong> ${escapeHtml(bestSession?.examTitle ?? "-")}</p>
+      <p>Results awaiting review and unknown totals are excluded from the average.</p>
       <p><strong>Best score:</strong> ${escapeHtml(bestSession?.finalScore ?? bestSession?.totalAutoScore ?? 0)}</p>
     </div>
 
@@ -251,13 +257,26 @@ function buildReportCardMarkup(studentName, studentEmail, sessions) {
 export default function Results() {
   const [sessions, setSessions] = useState([]);
   const [banner, setBanner] = useState(null);
+  const [resultToApprove, setResultToApprove] = useState(null);
+  const [approving, setApproving] = useState(false);
+
+  async function approveResult() {
+    if (!resultToApprove || approving) return;
+    setApproving(true);
+    try {
+      await callApi("results.review", { resultId: resultToApprove.id });
+      setResultToApprove(null);
+      setBanner({ tone: "success", message: "Result approved for the performance rankings." });
+    } catch (error) { setBanner({ tone: "error", message: error.message }); setResultToApprove(null); }
+    finally { setApproving(false); }
+  }
 
   useEffect(() => {
-    const sessionsQuery = query(collection(db, "examSessions"), orderBy("submittedAt", "desc"));
+    const sessionsQuery = query(collection(db, "examResults"), orderBy("submittedAt", "desc"));
 
     return onSnapshot(sessionsQuery, (snapshot) => {
       setSessions(snapshot.docs.map((docItem) => ({ id: docItem.id, ...docItem.data() })));
-    });
+    }, () => setBanner({ tone: "error", message: "Could not load results. Check your administrator access and the database migration." }));
   }, []);
 
   const submittedSessions = useMemo(
@@ -389,6 +408,7 @@ export default function Results() {
                 <th className="px-4 py-3">Status</th>
                 <th className="px-4 py-3">Score</th>
                 <th className="px-4 py-3">Submitted</th>
+                <th className="px-4 py-3">Review</th>
                 <th className="px-4 py-3">Report</th>
               </tr>
             </thead>
@@ -404,6 +424,10 @@ export default function Results() {
                     {session.finalScore ?? session.totalAutoScore ?? 0}
                   </td>
                   <td className="px-4 py-4 text-slate-500">{formatSubmittedAt(session.submittedAt)}</td>
+                  <td className="px-4 py-4 text-amber-700">{session.requiresReview ? <>
+                    <p>Needs review (late sync or legacy result)</p>
+                    <button disabled={approving} onClick={() => setResultToApprove(session)} className="mt-2 rounded-lg border border-amber-300 px-3 py-2 text-xs disabled:opacity-50">Approve after review</button>
+                  </> : "-"}</td>
                   <td className="px-4 py-4">
                     <button
                       type="button"
@@ -424,6 +448,10 @@ export default function Results() {
         )}
       </section>
 
+      <ConfirmDialog open={Boolean(resultToApprove)} title="Approve this result?"
+        message="Confirm that you have reviewed the late or historical submission and accept its recorded score for analytics."
+        confirmLabel={approving ? "Approving..." : "Approve result"} tone="success" onConfirm={approveResult}
+        onCancel={() => { if (!approving) setResultToApprove(null); }} />
       <section className="rounded-2xl bg-white p-6 shadow-sm">
         <h3 className="text-xl font-semibold text-slate-900">Report cards</h3>
         <p className="mt-2 text-sm text-slate-500">
@@ -432,19 +460,14 @@ export default function Results() {
 
         <div className="mt-6 grid gap-4 md:grid-cols-2">
           {studentCards.map(([studentKey, student]) => {
-            const averageScore = (
-              student.sessions.reduce(
-                (sum, session) => sum + Number(session.finalScore ?? session.totalAutoScore ?? 0),
-                0
-              ) / student.sessions.length
-            ).toFixed(1);
+            const averageScore = averagePercentage(student.sessions);
 
             return (
               <article key={studentKey} className="rounded-2xl border border-slate-200 p-5">
                 <h4 className="text-lg font-semibold text-slate-900">{student.studentName}</h4>
                 <p className="mt-1 text-sm text-slate-500">{student.studentEmail}</p>
                 <p className="mt-3 text-sm text-slate-600">
-                  Papers taken: {student.sessions.length} | Average score: {averageScore}
+                  Papers taken: {student.sessions.length} | Average: {averageScore}
                 </p>
                 <button
                   type="button"

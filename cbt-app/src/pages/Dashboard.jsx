@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { collection, onSnapshot } from "firebase/firestore";
 import { db } from "/firebase";
+import StatusBanner from "../components/StatusBanner";
 
 function MetricCard({ label, value, helper }) {
   return (
@@ -27,30 +28,26 @@ function getStudentLabel(session) {
 export default function Dashboard() {
   const [users, setUsers] = useState([]);
   const [exams, setExams] = useState([]);
-  const [questions, setQuestions] = useState([]);
   const [sessions, setSessions] = useState([]);
+  const [error, setError] = useState("");
 
   useEffect(() => {
+    const failed = () => setError("Some dashboard data could not be loaded. Check your connection, administrator access and migration status.");
     const unsubscribeUsers = onSnapshot(collection(db, "users"), (snapshot) => {
       setUsers(snapshot.docs.map((docItem) => ({ id: docItem.id, ...docItem.data() })));
-    });
+    }, failed);
 
     const unsubscribeExams = onSnapshot(collection(db, "exams"), (snapshot) => {
       setExams(snapshot.docs.map((docItem) => ({ id: docItem.id, ...docItem.data() })));
-    });
+    }, failed);
 
-    const unsubscribeQuestions = onSnapshot(collection(db, "questions"), (snapshot) => {
-      setQuestions(snapshot.docs.map((docItem) => ({ id: docItem.id, ...docItem.data() })));
-    });
-
-    const unsubscribeSessions = onSnapshot(collection(db, "examSessions"), (snapshot) => {
+    const unsubscribeSessions = onSnapshot(collection(db, "examResults"), (snapshot) => {
       setSessions(snapshot.docs.map((docItem) => ({ id: docItem.id, ...docItem.data() })));
-    });
+    }, failed);
 
     return () => {
       unsubscribeUsers();
       unsubscribeExams();
-      unsubscribeQuestions();
       unsubscribeSessions();
     };
   }, []);
@@ -58,16 +55,6 @@ export default function Dashboard() {
   const submittedSessions = useMemo(
     () => sessions.filter((session) => session.status === "submitted"),
     [sessions]
-  );
-
-  const examTotalsById = useMemo(
-    () =>
-      questions.reduce((acc, question) => {
-        const examId = question.examId;
-        acc[examId] = (acc[examId] || 0) + Number(question.marks || 1);
-        return acc;
-      }, {}),
-    [questions]
   );
 
   const examTitleById = useMemo(
@@ -90,9 +77,10 @@ export default function Dashboard() {
     const subjects = {};
     const studentStats = {};
 
-    submittedSessions.forEach((session) => {
+    const scoredSessions = submittedSessions.filter((session) => Number(session.maxMarks) > 0 && !session.requiresReview);
+    scoredSessions.forEach((session) => {
       const examId = session.examId;
-      const maxMarks = Number(examTotalsById[examId] || 0);
+      const maxMarks = Number(session.maxMarks);
       const score = Number(session.finalScore ?? session.totalAutoScore ?? 0);
       const percent = maxMarks > 0 ? (score / maxMarks) * 100 : 0;
       const examTitle = examTitleById[examId] || session.examTitle || examId;
@@ -156,16 +144,17 @@ export default function Dashboard() {
       examCount: exams.length,
       publishedCount,
       totalSubmissions,
-      overallAveragePercent: totalSubmissions ? totalPercent / totalSubmissions : 0,
-      passRate: totalSubmissions ? (passCount / totalSubmissions) * 100 : 0,
+      overallAveragePercent: scoredSessions.length ? totalPercent / scoredSessions.length : 0,
+      passRate: scoredSessions.length ? (passCount / scoredSessions.length) * 100 : 0,
       bestSubject: subjectAverages[0] ?? null,
       worstSubject: subjectAverages.at(-1) ?? null,
       topStudents: rankedStudents.slice(0, 10),
     };
-  }, [examTitleById, examTotalsById, exams, submittedSessions, users]);
+  }, [examTitleById, exams, submittedSessions, users]);
 
   return (
     <div className="space-y-6">
+      <StatusBanner tone="error" message={error} />
       <section className="rounded-2xl bg-white p-6 shadow-sm">
         <h2 className="text-2xl font-semibold text-slate-900">Operations and analytics hub</h2>
         <p className="mt-2 max-w-3xl text-sm text-slate-500">
@@ -185,7 +174,7 @@ export default function Dashboard() {
         <MetricCard
           label="Overall Performance"
           value={formatPercent(analytics.overallAveragePercent)}
-          helper="Average score percentage across submitted exams"
+          helper="Average percentage; results awaiting review are excluded"
         />
         <MetricCard
           label="Pass Rate"

@@ -2,8 +2,7 @@ import { initializeApp } from "firebase/app";
 import { getAuth } from "firebase/auth";
 import {
   initializeFirestore,
-  persistentLocalCache,
-  persistentMultipleTabManager,
+  memoryLocalCache,
 } from "firebase/firestore";
 import { getStorage } from "firebase/storage";
 
@@ -29,8 +28,8 @@ const app = initializeApp(firebaseConfig);
 
 export const auth = getAuth(app);
 export const db = initializeFirestore(app, {
-  localCache: persistentLocalCache({
-    tabManager: persistentMultipleTabManager(),
-  }),
+  // Keep admin answer keys and results out of shared devices' persistent Firestore cache.
+  // Student exam packets are saved separately and never contain an answer key.
+  localCache: memoryLocalCache(),
 });
 export const storage = getStorage(app);

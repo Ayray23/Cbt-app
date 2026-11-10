@@ -17,6 +17,7 @@ export default function Sidebar() {
     { to: "/monitoring", label: "Monitoring" },
     { to: "/students", label: "Students" },
     { to: "/exams/create", label: "Exams" },
+    { to: "/exam-pins", label: "Exam PINs" },
     { to: "/questions/add", label: "Add Questions" },
     { to: "/questions", label: "Question Bank" },
     { to: "/results", label: "Results" },
