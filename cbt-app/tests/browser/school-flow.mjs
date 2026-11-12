@@ -18,8 +18,8 @@ async function ready(url) { const deadline = Date.now() + 20000; while (Date.now
 try {
   await ready('http://127.0.0.1:5173');
   browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || undefined, headless: true, args: ['--no-sandbox'] });
-  const page = await browser.newPage(); const errors = []; page.on('pageerror', e => errors.push(e.message));
-  async function login(identifier) { await page.goto('http://127.0.0.1:5173/login'); await page.getByLabel('Username or email').fill(identifier); await page.getByPlaceholder('Password', { exact: true }).fill(password); await page.getByRole('button', { name: 'Sign in', exact: true }).click(); }
+  const page = await browser.newPage(); const errors = []; page.on('pageerror', e => { errors.push(e.message); console.error('BROWSER ERROR:', e.stack); }); page.on('console', message => { if (message.type() === 'error') console.error('BROWSER CONSOLE:', message.text()); });
+  async function login(identifier) { await page.goto('http://127.0.0.1:5173/login'); console.log('LOGIN PAGE:', await page.title(), await page.locator('body').innerText()); await page.getByLabel('Username or email').fill(identifier); await page.getByPlaceholder('Password', { exact: true }).fill(password); await page.getByRole('button', { name: 'Sign in', exact: true }).click(); }
   await login('owner@example.test'); await page.waitForURL('**/dashboard');
   await page.getByRole('link', { name: 'School setup', exact: true }).click(); await page.getByLabel(/^name$/i).fill('Pilot Secondary School'); await page.getByRole('button', { name: 'Save school settings' }).click(); await page.getByText('School settings saved.', { exact: false }).waitFor();
   await page.getByRole('link', { name: 'Students', exact: true }).click();
