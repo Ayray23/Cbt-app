@@ -1,4 +1,10 @@
 {
+  "private": true,
+  "scripts": {
+    "dev:api": "node --env-file-if-exists=.env.local server/dev.mjs",
+    "test": "node --test tests/*.test.mjs",
+    "migrate:secure": "node --env-file-if-exists=.env.local scripts/migrate-secure.mjs"
+  },
   "dependencies": {
     "@capacitor/app": "8.1.0",
     "@capacitor/cli": "8.3.0",
@@ -11,5 +17,8 @@
   },
   "devDependencies": {
     "baseline-browser-mapping": "^2.10.9"
+  },
+  "engines": {
+    "node": ">=22"
   }
 }

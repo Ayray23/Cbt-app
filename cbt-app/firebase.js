@@ -1,9 +1,9 @@
 import { initializeApp } from "firebase/app";
-import { getAuth } from "firebase/auth";
+import { getAuth, connectAuthEmulator } from "firebase/auth";
 import {
   initializeFirestore,
-  persistentLocalCache,
-  persistentMultipleTabManager,
+  connectFirestoreEmulator,
+  memoryLocalCache,
 } from "firebase/firestore";
 import { getStorage } from "firebase/storage";
 
@@ -29,8 +29,14 @@ const app = initializeApp(firebaseConfig);
 
 export const auth = getAuth(app);
 export const db = initializeFirestore(app, {
-  localCache: persistentLocalCache({
-    tabManager: persistentMultipleTabManager(),
-  }),
+  // Keep admin answer keys and results out of shared devices' persistent Firestore cache.
+  // Student exam packets are saved separately and never contain an answer key.
+  localCache: memoryLocalCache(),
 });
 export const storage = getStorage(app);
+
+if (import.meta.env.VITE_USE_EMULATORS === 'true') {
+  if (!firebaseConfig.projectId.startsWith('demo-')) throw new Error('Emulators require a demo project ID.');
+  connectAuthEmulator(auth, 'http://127.0.0.1:9099', { disableWarnings: true });
+  connectFirestoreEmulator(db, '127.0.0.1', 8080);
+}

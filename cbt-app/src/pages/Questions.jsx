@@ -1,17 +1,24 @@
+import { useAuth } from "../contexts/AuthContext";
 import { useEffect, useState } from "react";
 import {
   collection,
   deleteDoc,
   doc,
+  getDoc,
   onSnapshot,
   orderBy,
   query,
+  where,
 } from "firebase/firestore";
 import { db } from "/firebase";
+import { callApi } from "../services/api";
 import ConfirmDialog from "../components/ConfirmDialog";
 import StatusBanner from "../components/StatusBanner";
 
 export default function Questions() {
+  const { role, user } = useAuth();
+  const [targetExam, setTargetExam] = useState("");
+  const [search, setSearch] = useState("");
   const [questions, setQuestions] = useState([]);
   const [examsById, setExamsById] = useState({});
   const [banner, setBanner] = useState(null);
@@ -19,16 +26,16 @@ export default function Questions() {
 
   useEffect(() => {
     const unsubscribeQuestions = onSnapshot(
-      query(collection(db, "questions"), orderBy("createdAt", "desc")),
+      query(collection(db, "questions"), ...(role === "teacher" ? [where("createdBy", "==", user.uid)] : []), orderBy("createdAt", "desc")),
       (snapshot) => {
         setQuestions(snapshot.docs.map((docItem) => ({ id: docItem.id, ...docItem.data() })));
       }
     );
 
-    const unsubscribeExams = onSnapshot(collection(db, "exams"), (snapshot) => {
+    const unsubscribeExams = onSnapshot(query(collection(db, "exams"), ...(role === "teacher" ? [where("createdBy", "==", user.uid)] : [])), (snapshot) => {
       const nextExams = {};
       snapshot.docs.forEach((docItem) => {
-        nextExams[docItem.id] = docItem.data().title;
+        nextExams[docItem.id] = docItem.data();
       });
       setExamsById(nextExams);
     });
@@ -37,18 +44,22 @@ export default function Questions() {
       unsubscribeQuestions();
       unsubscribeExams();
     };
-  }, []);
+  }, [role, user.uid]);
 
   async function handleDelete() {
     if (!questionToDelete) {
       return;
     }
     try {
+      const exam = await getDoc(doc(db, "exams", questionToDelete.examId));
+      if (!exam.exists() || exam.data().status !== "draft") {
+        throw new Error("Move the exam to draft before deleting a question, then publish the updated paper.");
+      }
       await deleteDoc(doc(db, "questions", questionToDelete.id));
       setBanner({ tone: "success", message: "Question deleted." });
     } catch (error) {
       console.error(error);
-      setBanner({ tone: "error", message: "Delete failed." });
+      setBanner({ tone: "error", message: error.message || "Delete failed." });
     } finally {
       setQuestionToDelete(null);
     }
@@ -69,6 +80,7 @@ export default function Questions() {
         </p>
       </section>
 
+      <section className="bg-white p-6 rounded-2xl space-y-3"><input placeholder="Search question bank" value={search} onChange={e => setSearch(e.target.value)} className="border p-3 rounded-xl w-full" /><label>Copy target (draft paper)<select value={targetExam} onChange={e => setTargetExam(e.target.value)} className="block border p-3 rounded-xl"><option value="">Select draft</option>{Object.entries(examsById).filter(([, e]) => e.status === 'draft').map(([id, e]) => <option value={id} key={id}>{e.title}</option>)}</select></label></section>
       <section className="overflow-hidden rounded-2xl bg-white shadow-sm">
         <div className="overflow-x-auto">
           <table className="min-w-full text-left text-sm">
@@ -82,17 +94,17 @@ export default function Questions() {
               </tr>
             </thead>
             <tbody>
-              {questions.map((question) => (
+              {questions.filter(q => `${q.text} ${examsById[q.examId]?.title}`.toLowerCase().includes(search.toLowerCase())).map((question) => (
                 <tr key={question.id} className="border-t border-slate-200">
                   <td className="px-4 py-4 text-slate-700">
-                    {question.text ?? question.question ?? "-"}
+                    <p className="whitespace-pre-wrap">{question.text ?? question.question ?? "-"}</p>{question.image && <img src={question.image} alt={question.imageAlt || 'Question diagram'} className="max-h-40" />}<details><summary>Preview options</summary>{Object.entries(question.options || {}).map(([k,v]) => <p key={k}>{k}. {v}</p>)}</details>
                   </td>
                   <td className="px-4 py-4 text-slate-500">
-                    {examsById[question.examId] ?? question.examId ?? "-"}
+                    {examsById[question.examId]?.title ?? question.examId ?? "-"}
                   </td>
                   <td className="px-4 py-4 text-slate-500">{question.correctAnswer ?? "-"}</td>
                   <td className="px-4 py-4 text-slate-500">{question.marks ?? 1}</td>
-                  <td className="px-4 py-4">
+                  <td className="px-4 py-4"><button disabled={!targetExam} className="mr-3 underline disabled:opacity-40" onClick={async () => { try { await callApi('questions.copy', { questionId: question.id, examId: targetExam }); setBanner({ tone: 'success', message: 'Question copied to draft paper.' }); } catch (e) { setBanner({ tone: 'error', message: e.message }); } }}>Copy to draft</button>
                     <button
                       onClick={() => setQuestionToDelete(question)}
                       className="rounded-lg bg-red-600 px-3 py-2 text-xs font-medium text-white"
