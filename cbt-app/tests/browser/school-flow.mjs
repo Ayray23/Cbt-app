@@ -21,7 +21,7 @@ try {
   const page = await browser.newPage(); const errors = []; page.on('pageerror', e => errors.push(e.message));
   async function login(identifier) { await page.goto('http://127.0.0.1:5173/login'); await page.getByLabel('Username or email').fill(identifier); await page.getByPlaceholder('Password', { exact: true }).fill(password); await page.getByRole('button', { name: 'Sign in', exact: true }).click(); }
   await login('owner@example.test'); await page.waitForURL('**/dashboard');
-  await page.getByRole('link', { name: 'School setup', exact: true }).click(); await page.getByLabel('Name', { exact: true }).fill('Pilot Secondary School'); await page.getByRole('button', { name: 'Save school settings' }).click(); await page.getByText('School settings saved.', { exact: false }).waitFor();
+  await page.getByRole('link', { name: 'School setup', exact: true }).click(); await page.getByLabel(/^name$/i).fill('Pilot Secondary School'); await page.getByRole('button', { name: 'Save school settings' }).click(); await page.getByText('School settings saved.', { exact: false }).waitFor();
   await page.getByRole('link', { name: 'Students', exact: true }).click();
   await page.getByLabel('Full name', { exact: true }).fill('Alice Student'); await page.getByLabel('Permanent username').fill('alice-school'); await page.getByLabel('Temporary password').fill(password); await page.getByLabel('Class', { exact: true }).selectOption('JSS1 A'); await page.getByLabel('Mathematics', { exact: true }).check();
   await page.getByRole('button', { name: 'Create student', exact: true }).click(); await page.getByText('Student created.', { exact: false }).waitFor();
