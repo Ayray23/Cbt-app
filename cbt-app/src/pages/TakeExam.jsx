@@ -39,7 +39,6 @@ export default function TakeExam() {
   const [warningCount, setWarningCount] = useState(0);
   const hydratedAnswersRef = useRef(false);
   const hasEnteredFullscreenRef = useRef(false);
-  const autosaveTimeoutRef = useRef(null);
   const lastSavedAnswersRef = useRef("");
   const answersRef = useRef({});
   const warningCountRef = useRef(0);
@@ -206,31 +205,47 @@ export default function TakeExam() {
       console.error("Could not save the local exam draft", draftError);
     }
 
-    if (autosaveTimeoutRef.current) {
-      window.clearTimeout(autosaveTimeoutRef.current);
+    // Network writes run on a fixed interval instead of on each answer click.
+    // A fast answer selection only updates React state and the local draft.
+    return undefined;
+  }, [answers, examId, sessionStatus, submitting]);
+
+  useEffect(() => {
+    if (!hydratedAnswersRef.current || !sessionStatus || sessionStatus === "submitted") {
+      return undefined;
     }
 
-    autosaveTimeoutRef.current = window.setTimeout(async () => {
+    let active = true;
+    let inFlight = false;
+    async function flushProgress() {
+      if (!active || inFlight || !window.navigator.onLine) return;
+      const snapshot = JSON.stringify(answersRef.current);
+      if (snapshot === lastSavedAnswersRef.current) return;
+      inFlight = true;
       try {
         setSaving(true);
-        await saveExamProgress(examId, answers, {
+        const result = await saveExamProgress(examId, answersRef.current, {
           tabSwitchCount: warningCountRef.current,
           integrityWarnings: warningCountRef.current,
         });
-        lastSavedAnswersRef.current = serializedAnswers;
+        if (!result.offline) lastSavedAnswersRef.current = snapshot;
       } catch (saveError) {
-        console.error(saveError);
+        console.error("Progress sync failed; local draft retained", saveError);
       } finally {
-        setSaving(false);
+        inFlight = false;
+        if (active) setSaving(false);
       }
-    }, 1500);
+    }
 
+    const intervalId = window.setInterval(() => void flushProgress(), 30000);
+    const handleOnline = () => void flushProgress();
+    window.addEventListener("online", handleOnline);
     return () => {
-      if (autosaveTimeoutRef.current) {
-        window.clearTimeout(autosaveTimeoutRef.current);
-      }
+      active = false;
+      window.clearInterval(intervalId);
+      window.removeEventListener("online", handleOnline);
     };
-  }, [answers, examId, sessionStatus, submitting]);
+  }, [examId, sessionStatus]);
 
   useEffect(() => {
     if (!sessionStatus || sessionStatus === "submitted") {
