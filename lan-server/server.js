@@ -40,7 +40,11 @@ function validRecord(item) {
     && typeof item.examId === "string" && item.examId.length <= 120
     && typeof item.uid === "string" && item.uid.length <= 120
     && item.answers && typeof item.answers === "object" && !Array.isArray(item.answers)
-    && Object.keys(item.answers).length <= 500;
+    && Object.keys(item.answers).length <= 500
+    && Object.entries(item.answers).every(([key, answer]) =>
+      /^[a-zA-Z0-9_-]{1,120}$/.test(key) && ["A", "B", "C", "D"].includes(answer))
+    && Number.isSafeInteger(item.revision) && item.revision >= 0
+    && ["active", "submitted"].includes(item.status);
 }
 const server = createServer(async (req, res) => {
   if (req.url === "/health" && req.method === "GET") return send(res, 200, { ok: true });
@@ -53,8 +57,9 @@ const server = createServer(async (req, res) => {
       raw += chunk;
       if (raw.length > 1_000_000) return send(res, 413, { error: "Batch too large" });
     }
-    const payload = JSON.parse(raw);
-    if (!Array.isArray(payload.records) || payload.records.length > 100 || !payload.records.every(validRecord))
+    let payload;
+    try { payload = JSON.parse(raw); } catch { return send(res, 400, { error: "Invalid JSON" }); }
+    if (!payload || !Array.isArray(payload.records) || payload.records.length > 100 || !payload.records.every(validRecord))
       return send(res, 400, { error: "Invalid batch" });
     const response = await (writeChain = writeChain.catch(() => {}).then(async () => {
       const next = new Map(records);
@@ -66,8 +71,7 @@ const server = createServer(async (req, res) => {
           accepted.push(item.id);
           continue;
         }
-        const revision = Number(item.revision);
-        if (!Number.isSafeInteger(revision) || revision < 0) throw new Error("Invalid revision");
+        const revision = item.revision;
         if (!previous || revision >= previous.revision) {
           next.set(item.id, { id: item.id, examId: item.examId, uid: item.uid,
             answers: item.answers, status: item.status === "submitted" ? "submitted" : "active",
@@ -82,7 +86,8 @@ const server = createServer(async (req, res) => {
     }));
     return send(res, 200, { accepted: response });
   } catch (error) {
-    return send(res, error.message === "Invalid revision" ? 400 : 500, { error: error.message === "Invalid revision" ? error.message : "Write failed" });
+    console.error("LAN batch write failed", error);
+    return send(res, 500, { error: "Write failed" });
   }
 });
 server.listen(PORT, HOST, () => console.log(`CBT LAN collector listening at http://${HOST}:${PORT}`));
