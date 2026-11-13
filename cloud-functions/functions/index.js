@@ -208,16 +208,28 @@ exports.setUserRole = onCall(async (request) => {
     throw new HttpsError("invalid-argument", "Provide a valid email and role.");
   }
 
-  const usersSnapshot = await db.collection("users").where("email", "==", email).limit(1).get();
-  if (usersSnapshot.empty) {
+  // Resolve the account through Firebase Auth rather than the users.email field,
+  // so the role can only land on the account that really owns this email.
+  let authUser;
+  try {
+    authUser = await admin.auth().getUserByEmail(email);
+  } catch (error) {
+    if (error && error.code === "auth/user-not-found") {
+      throw new HttpsError("not-found", "No account exists for this email.");
+    }
+    throw new HttpsError("internal", "Could not look up this account.");
+  }
+
+  const targetRef = db.collection("users").doc(authUser.uid);
+  const targetSnapshot = await targetRef.get();
+  if (!targetSnapshot.exists) {
     throw new HttpsError("not-found", "User profile not found. The user must sign in at least once before role changes.");
   }
 
-  const targetUser = usersSnapshot.docs[0];
-  await targetUser.ref.set({
+  await targetRef.set({
     role,
     updatedAt: admin.firestore.FieldValue.serverTimestamp(),
   }, { merge: true });
 
-  return { ok: true, uid: targetUser.id, role, email };
+  return { ok: true, uid: authUser.uid, role, email };
 });
