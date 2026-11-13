@@ -11,6 +11,7 @@ import {
 } from "firebase/firestore";
 import { getFunctions, httpsCallable } from "firebase/functions";
 import { auth, db } from "/firebase";
+import { offlineStore, examRecordKey, submissionRecordKey } from "./offlineStore";
 
 const EXAM_DRAFT_PREFIX = "cbt_exam_draft_v3";
 const EXAM_BUNDLE_PREFIX = "cbt_exam_bundle_v1";
@@ -112,17 +113,26 @@ export function saveLocalExamDraft(examId, answers, metadata = {}) {
     updatedAtMs: Date.now(),
     ...metadata,
   };
+  // Keep the synchronous local draft for immediate refresh recovery, and also
+  // mirror to IndexedDB for durable structured offline storage.
   window.localStorage.setItem(draftStorageKey(currentUser.uid, examId), JSON.stringify(draft));
+  void offlineStore.put(examRecordKey(currentUser.uid, examId), draft)
+    .catch((error) => console.error("IndexedDB draft write failed", error));
   return draft;
 }
 
 export function clearLocalExamDraft(examId, uid = auth.currentUser?.uid) {
-  if (uid) window.localStorage.removeItem(draftStorageKey(uid, examId));
+  if (uid) {
+    window.localStorage.removeItem(draftStorageKey(uid, examId));
+    void offlineStore.delete(examRecordKey(uid, examId)).catch(console.error);
+  }
 }
 
 async function queuePendingSubmission(uid, examId, payload) {
   const currentQueue = readPendingSubmissions().filter((item) => !(item.uid === uid && item.examId === examId));
   currentQueue.push({ uid, examId, payload, queuedAtMs: Date.now() });
+  // Await IndexedDB durability before reporting an offline submission as queued.
+  await offlineStore.put(submissionRecordKey(uid, examId), currentQueue[currentQueue.length - 1]);
   writePendingSubmissions(currentQueue);
 }
 
@@ -148,6 +158,7 @@ export async function flushPendingSubmissions() {
         tabSwitchCount: Number(item.payload.tabSwitchCount || 0),
         integrityWarnings: Number(item.payload.integrityWarnings || 0),
       });
+      await offlineStore.delete(submissionRecordKey(item.uid, item.examId));
       clearLocalExamDraft(item.examId, item.uid);
       synced += 1;
     } catch (error) {
@@ -177,7 +188,9 @@ export async function startExamSession(examId, accessCode = "") {
   try {
     const result = await startExam({ examId, accessCode: String(accessCode || "").trim().toUpperCase() });
     const session = result.data || {};
-    const localDraft = getLocalExamDraft(currentUser.uid, examId);
+    const indexedDraft = await offlineStore.get(examRecordKey(currentUser.uid, examId)).catch(() => null);
+    const localDraft = indexedDraft?.updatedAtMs > (getLocalExamDraft(currentUser.uid, examId)?.updatedAtMs || 0)
+      ? indexedDraft : getLocalExamDraft(currentUser.uid, examId);
     return {
       ...session,
       answers: { ...(session.answers || {}), ...(localDraft?.answers || {}) },
