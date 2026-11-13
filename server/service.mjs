@@ -830,7 +830,14 @@ export function createService({ db, auth, fields, now = Date.now }) {
         409,
         "Exam answer key unavailable. Contact your administrator.",
       );
-      const answers = cleanAnswers(input.answers, paper.data().questions);
+      // Client-provided reasons and timestamps must not bypass the authoritative deadline.
+      // Late uploads are preserved as evidence, but only answers saved to the server
+      // before expiry can contribute to automatic scoring.
+      const lateSync = now() > session.expiresAtMs + 30000;
+      const reportedAnswers = cleanAnswers(input.answers, paper.data().questions);
+      const answers = lateSync
+        ? cleanAnswers(session.answers || {}, paper.data().questions)
+        : reportedAnswers;
       const marks = grade(paper.data().questions, answers);
       const submissionReason = [
         "manual",
@@ -845,7 +852,6 @@ export function createService({ db, auth, fields, now = Date.now }) {
         Math.min(1000, Number(input.tabSwitchCount) || 0),
       );
       // Offline client timestamps are evidence for staff, never a trusted server deadline.
-      const lateSync = now() > session.expiresAtMs + 30000;
       const closed = {
         answers,
         status: "submitted",
@@ -855,6 +861,7 @@ export function createService({ db, auth, fields, now = Date.now }) {
         submittedAtMs: now(),
         clientReportedSubmittedAtMs: Number(input.closedAtMs) || null,
         lateSync,
+        ...(lateSync ? { lateReportedAnswers: reportedAnswers } : {}),
         requiresReview:
           lateSync ||
           Boolean(session.legacySession) ||
