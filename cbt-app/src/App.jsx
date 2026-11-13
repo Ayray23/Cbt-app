@@ -7,6 +7,8 @@ import InstallAppButton from "./components/InstallAppButton";
 import NetworkStatusBanner from "./components/NetworkStatusBanner";
 import AppLogo from "./components/AppLogo";
 
+const TeacherSignup = lazy(() => import("./pages/auth/TeacherSignup"));
+const TeacherAccess = lazy(() => import("./pages/auth/TeacherAccess"));
 const StudentAccount = lazy(() => import("./pages/StudentAccount"));
 const StudentResults = lazy(() => import("./pages/StudentResults"));
 const SchoolSettings = lazy(() => import("./pages/SchoolSettings"));
@@ -25,7 +27,7 @@ const Login = lazy(() => import("./pages/auth/Login"));
 const TakeExam = lazy(() => import("./pages/TakeExam"));
 
 function LandingRedirect() {
-  const { user, role, loading, isAdmin, authError } = useAuth();
+  const { user, role, profile, loading, isAdmin, authError } = useAuth();
 
   if (loading) {
     return (
@@ -44,7 +46,8 @@ function LandingRedirect() {
     return <Navigate to="/account-error" replace />;
   }
 
-  if (role === "teacher") return <Navigate to="/exams/create" replace />;
+  if (profile?.approvalStatus && profile.approvalStatus !== "approved") return <Navigate to="/teacher-access" replace />;
+  if (["teacher", "teacher_admin"].includes(role)) return <Navigate to="/exams/create" replace />;
   if (role === "invigilator") return <Navigate to="/monitoring" replace />;
   if (role === "examofficer") return <Navigate to="/exams/create" replace />;
   if (role === "superadmin" || role === "admin" || isAdmin) {
@@ -55,7 +58,7 @@ function LandingRedirect() {
 }
 
 function RequireAuth() {
-  const { user, loading, authError } = useAuth();
+  const { user, profile, loading, authError } = useAuth();
 
   if (loading) {
     return (
@@ -74,6 +77,7 @@ function RequireAuth() {
     return <Navigate to="/account-error" replace />;
   }
 
+  if (profile?.approvalStatus && profile.approvalStatus !== "approved") return <Navigate to="/teacher-access" replace />;
   return <Outlet />;
 }
 
@@ -213,7 +217,8 @@ export default function App() {
       <Routes>
         <Route path="/" element={<LandingRedirect />} />
         <Route path="/login" element={<Login />} />
-        <Route path="/signup" element={<Navigate to="/login" replace />} />
+        <Route path="/signup" element={<TeacherSignup />} />
+        <Route path="/teacher-access" element={<TeacherAccess />} />
         <Route path="/account-error" element={<AccountErrorScreen />} />
 
         <Route element={<RequireAuth />}>
@@ -227,7 +232,7 @@ export default function App() {
           </Route>
 
           <Route element={<AdminShell />}>
-            <Route element={<RequireRole allowedRoles={["admin", "superadmin", "teacher", "examofficer"]} />}><Route path="/exams/create" element={<CreateExam />} /><Route path="/questions/add" element={<AddQuestion />} /><Route path="/questions" element={<Questions />} /></Route>
+            <Route element={<RequireRole allowedRoles={["admin", "superadmin", "teacher", "teacher_admin", "examofficer"]} />}><Route path="/teacher-account" element={<StudentAccount />} /><Route path="/exams/create" element={<CreateExam />} /><Route path="/questions/add" element={<AddQuestion />} /><Route path="/questions" element={<Questions />} /></Route>
             <Route element={<RequireRole allowedRoles={["admin", "superadmin", "examofficer", "invigilator"]} />}><Route path="/monitoring" element={<Monitoring />} /></Route>
             <Route element={<RequireRole allowedRoles={["admin", "superadmin", "examofficer"]} />}><Route path="/exam-pins" element={<ExamPins />} /><Route path="/results" element={<Results />} /><Route path="/audit" element={<AuditLogs />} /></Route>
             <Route element={<RequireRole allowedRoles={["admin", "superadmin"]} />}>

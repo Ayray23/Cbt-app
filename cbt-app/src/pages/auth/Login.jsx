@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { signInWithEmailAndPassword, signOut } from "firebase/auth";
 import { auth } from "/firebase";
 import AppLogo from "../../components/AppLogo";
@@ -33,6 +33,7 @@ export default function Login() {
       await callApi("account.verify");
       navigate("/");
     } catch (loginError) {
+      if (loginError.status === 403 && loginError.message.includes("has not been created")) { navigate("/signup"); return; }
       await signOut(auth);
       setError(loginError.code?.startsWith("auth/") ? "Invalid username, email or password." : loginError.message);
     } finally {
@@ -128,7 +129,7 @@ export default function Login() {
         </form>
 
         <p className="mt-6 text-sm text-slate-500">
-          Need an account? Contact your school administrator.
+          Teacher? <Link to="/signup" className="font-semibold underline">Create your teacher account</Link>. Students should contact the school administrator.
         </p>
       </div>
     </div>

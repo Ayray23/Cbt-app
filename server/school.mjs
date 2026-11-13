@@ -1,3 +1,4 @@
+import { teacherRole } from './teachers.mjs';
 import { assert, documentId } from './domain.mjs';
 
 export const LEVELS = ['JSS1', 'JSS2', 'JSS3', 'SS1', 'SS2', 'SS3'];
@@ -25,7 +26,7 @@ export function eligible(profile, exam) {
 export function schoolActions({ db, auth, fields, now, admin, examiner, author, invigilate }) {
   const stamp = () => fields.serverTimestamp();
   const audit = (tx, user, action, target, details) => tx.create(db.collection('auditLogs').doc(), {
-    actorUid: user.uid, action, target, details, createdAt: stamp(), createdAtMs: now(),
+    actorUid: user.uid, workspaceUid: action === 'staff.assign' ? target : user.uid, action, target, details, createdAt: stamp(), createdAtMs: now(),
   });
   const reason = (input) => {
     const value = String(input.reason || '').trim();
@@ -38,9 +39,10 @@ export function schoolActions({ db, auth, fields, now, admin, examiner, author, 
       return db.runTransaction(async tx => {
         const source = await tx.get(db.doc(`questions/${id}`)); const target = await tx.get(db.doc(`exams/${examId}`));
         assert(source.exists && target.exists && target.data().status === 'draft', 400, 'Select a question and a draft target paper.');
-        if (user.role === 'teacher') assert(source.data().createdBy === user.uid && target.data().createdBy === user.uid && (user.assignedClasses || []).includes(target.data().className) && (user.assignedSubjects || []).includes(target.data().subject), 403, 'Only your assigned draft papers are editable.');
+        if (user.role !== 'superadmin') assert(source.data().createdBy === user.uid && target.data().createdBy === user.uid && (!teacherRole(user.role) || ((user.assignedClasses || []).includes(target.data().className) && (user.assignedSubjects || []).includes(target.data().subject))), 403, 'Only your assigned draft papers are editable.');
         const ref = db.collection('questions').doc();
-        tx.create(ref, { ...source.data(), examId, createdBy: user.uid, createdAt: stamp(), copiedFrom: id });
+        tx.create(ref, { ...source.data(), examId, createdBy: target.data().createdBy || user.uid, editedBy: user.uid, createdAt: stamp(), copiedFrom: id });
+        tx.create(db.collection('auditLogs').doc(), { actorUid: user.uid, workspaceUid: target.data().createdBy || user.uid, action: 'questions.copy', target: ref.id, details: { sourceId: id, examId }, createdAt: stamp(), createdAtMs: now() });
         return { ok: true };
       });
     },
@@ -56,11 +58,11 @@ export function schoolActions({ db, auth, fields, now, admin, examiner, author, 
       });
     },
     'staff.assign': async (user, input) => {
-      admin(user); const uid = documentId(input.uid);
+      assert(user.role === 'superadmin', 403, 'Only the superadmin can assign teaching access.'); const uid = documentId(input.uid);
       assert(Array.isArray(input.classes) && Array.isArray(input.subjects), 400, 'Select classes and subjects.');
       return db.runTransaction(async tx => {
         const ref = db.doc(`users/${uid}`); const profile = await tx.get(ref); const settings = await tx.get(db.doc('school/settings'));
-        assert(profile.exists && profile.data().role === 'teacher' && settings.exists, 400, 'Select a teacher and configure the school first.');
+        assert(profile.exists && teacherRole(profile.data().role) && settings.exists, 400, 'Select a teacher and configure the school first.');
         assert(input.classes.every(c => settings.data().classes.includes(c)) && input.subjects.every(s => settings.data().subjects.includes(s)), 400, 'Choose configured classes and subjects.');
         tx.update(ref, { assignedClasses: [...new Set(input.classes)], assignedSubjects: [...new Set(input.subjects)], updatedAt: stamp() });
         audit(tx, user, 'staff.assign', uid, { classes: input.classes, subjects: input.subjects }); return { ok: true };
@@ -70,13 +72,14 @@ export function schoolActions({ db, auth, fields, now, admin, examiner, author, 
       author(user); const academic = schoolFields(input);
       const settings = await db.doc('school/settings').get();
       assert(settings.exists && settings.data().classes.includes(academic.className) && settings.data().subjects.includes(academic.subject), 400, 'Configure the class and subject in School setup first.');
-      if (user.role === 'teacher') assert((user.assignedClasses || []).includes(academic.className) && (user.assignedSubjects || []).includes(academic.subject), 403, 'This class and subject are not assigned to you.');
+      if (teacherRole(user.role)) assert((user.assignedClasses || []).includes(academic.className) && (user.assignedSubjects || []).includes(academic.subject), 403, 'This class and subject are not assigned to you.');
       const duration = Number(input.duration); const title = String(input.title || '').trim();
       assert(title.length > 0 && title.length <= 160 && Number.isInteger(duration) && duration >= 1 && duration <= 480, 400, 'Enter a title and duration of 1-480 minutes.');
       const scheduleStartAtMs = Number(input.scheduleStartAtMs || 0); const scheduleEndAtMs = Number(input.scheduleEndAtMs || 0);
       assert(Number.isFinite(scheduleStartAtMs) && Number.isFinite(scheduleEndAtMs) && scheduleStartAtMs >= 0 && scheduleEndAtMs >= 0 && (!scheduleEndAtMs || scheduleEndAtMs > scheduleStartAtMs), 400, 'Invalid exam entry window.');
       const ref = db.collection('exams').doc();
       await ref.create({ ...academic, title, duration, allowCalculator: input.allowCalculator === true, instructions: String(input.instructions || '').slice(0, 4000), scheduleStartAtMs, scheduleEndAtMs, status: 'draft', schemaVersion: 2, questionCount: 0, createdAt: stamp(), createdBy: user.uid });
+      await db.collection('auditLogs').doc().create({ actorUid: user.uid, workspaceUid: user.uid, action: 'exams.create', target: ref.id, details: { title, className: academic.className, subject: academic.subject }, createdAt: stamp(), createdAtMs: now() });
       return { id: ref.id };
     },
     'exams.archive': async (user, input) => {

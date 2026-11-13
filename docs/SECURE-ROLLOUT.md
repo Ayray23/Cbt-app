@@ -124,3 +124,14 @@ The unused legacy import-server dependencies were removed from `cloud-functions/
 - Rollback requires a compatible API/rules/schema combination. Do not restore permissive legacy rules or client grading to resolve an outage. Keep maintenance active, retain pending device queues, and restore the verified secure release/data backup before reopening.
 
 Theory, automated essay marking, multi-school tenancy and a standalone LAN deployment are outside this objective release.
+
+
+## Private teacher-admin accounts
+
+Teachers can register at `/signup` with a personal email/password, verify that email, and wait at `/teacher-access`. Only the superadmin can approve/reject/suspend a request and assign classes/subjects. Registration ignores caller-supplied roles and always creates a pending `teacher_admin`; it never grants the existing school-wide `admin` role. Existing school account credentials remain valid. Students still cannot self-provision.
+
+A teacher admin manages their own draft papers/question bank and password. Paper publication, candidate PINs and result release retain the examination-officer/superadmin workflow. These are private authoring workspaces, not unrestricted school administrators. Teachers cannot see peer profiles, papers or questions. The superadmin can inspect work and answer keys under Teacher oversight. Passwords are managed by Firebase Auth and are never displayed to the superadmin.
+
+Question create/copy/delete and paper creation/publication record server-authored audit entries. Direct question writes are denied, including by privileged browser clients, to avoid silent bypass of activity recording. The oversight page shows up to 200 exams, questions and recent events per selected staff member; deleted questions leave activity records, not a recoverable version history. Historical actions before this feature have no retroactive audit entries. Only the superadmin retains unrestricted question reads; other legacy admin/officer accounts now query their own question banks.
+
+Deploy the frontend/API and rules together in maintenance; the new audit query also needs the `workspaceUid + createdAtMs` index. Test verification-email delivery and authorized domains in staging. The automated browser fixture verifies the Auth emulator identity programmatically; it does not prove real inbox delivery. Legacy questions lacking `createdBy` remain visible to the superadmin and need verified ownership assignment before appearing in a teacher's bank. Do not infer ownership from class or subject alone.

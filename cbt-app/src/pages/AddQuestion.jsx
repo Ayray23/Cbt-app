@@ -109,7 +109,7 @@ export default function AddQuestion() {
   useEffect(() => {
     const examsQuery = query(
       collection(db, "exams"),
-      ...(role === "teacher" ? [where("createdBy", "==", user.uid)] : [where("status", "in", ["draft", "published"])])
+      ...(role !== "superadmin" ? [where("createdBy", "==", user.uid)] : [where("status", "in", ["draft", "published"])])
     );
 
     return onSnapshot(examsQuery, (snapshot) => {

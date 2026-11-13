@@ -1,12 +1,9 @@
 import {
-  addDoc,
-  collection,
   doc,
-  getDoc,
   serverTimestamp,
   updateDoc,
 } from "firebase/firestore";
-import { auth, db } from "/firebase";
+import { db } from "/firebase";
 import { callApi } from "./api";
 
 export async function createExam(input) {
@@ -27,35 +24,6 @@ export async function deleteExam(examId) {
   return callApi("exams.archive", { examId });
 }
 
-export async function addQuestion({
-  examId,
-  question,
-  options,
-  correctAnswer,
-  marks = 1,
-  image = "",
-  imageAlt = "",
-}) {
-  const exam = await getDoc(doc(db, "exams", String(examId).trim()));
-  if (!exam.exists() || exam.data().status !== "draft") {
-    throw new Error("Move this exam to draft before changing its questions, then publish the updated paper.");
-  }
-  const cleanOptions = {
-    A: options?.A ?? "",
-    B: options?.B ?? "",
-    C: options?.C ?? "",
-    D: options?.D ?? "",
-  };
-
-  await addDoc(collection(db, "questions"), {
-    examId: String(examId).trim(),
-    text: String(question).trim(),
-    options: cleanOptions,
-    correctAnswer: String(correctAnswer).trim().toUpperCase(),
-    marks: Number(marks) || 1,
-    image, imageAlt, createdBy: auth.currentUser.uid,
-    type: "mcq",
-    createdAt: serverTimestamp(),
-  });
-
+export async function addQuestion(input) {
+  return callApi("questions.create", input);
 }
