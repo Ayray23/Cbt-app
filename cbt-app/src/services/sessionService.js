@@ -136,39 +136,69 @@ async function queuePendingSubmission(uid, examId, payload) {
   writePendingSubmissions(currentQueue);
 }
 
-export async function flushPendingSubmissions() {
-  const currentUser = auth.currentUser;
-  if (!currentUser || !window.navigator.onLine) return { synced: 0, remaining: readPendingSubmissions().length };
+let pendingFlushPromise = null;
 
-  const queue = readPendingSubmissions();
-  const remaining = [];
-  let synced = 0;
-  const submitExam = httpsCallable(getFunctions(), "submitExamSession");
-
-  for (const item of queue) {
-    if (item.uid !== currentUser.uid) {
-      remaining.push(item);
-      continue;
+async function readDurableSubmissionQueue() {
+  const legacy = readPendingSubmissions();
+  const combined = new Map(legacy.map((item) => [submissionRecordKey(item.uid, item.examId), item]));
+  try {
+    const keys = await offlineStore.keys();
+    for (const key of keys) {
+      if (typeof key !== "string" || !key.startsWith("submission:")) continue;
+      const item = await offlineStore.get(key);
+      if (item?.uid && item?.examId && item?.payload) {
+        const previous = combined.get(key);
+        if (!previous || Number(item.queuedAtMs || 0) >= Number(previous.queuedAtMs || 0)) {
+          combined.set(key, item);
+        }
+      }
     }
-    try {
-      await submitExam({
-        examId: item.examId,
-        answers: item.payload.answers,
-        submissionReason: item.payload.submissionReason || "offline-sync",
-        tabSwitchCount: Number(item.payload.tabSwitchCount || 0),
-        integrityWarnings: Number(item.payload.integrityWarnings || 0),
-      });
-      await offlineStore.delete(submissionRecordKey(item.uid, item.examId));
-      clearLocalExamDraft(item.examId, item.uid);
-      synced += 1;
-    } catch (error) {
-      console.error("Failed to sync queued submission", error);
-      remaining.push(item);
-    }
+  } catch (error) {
+    console.error("Could not inspect IndexedDB submission queue", error);
   }
+  return [...combined.values()];
+}
 
-  writePendingSubmissions(remaining);
-  return { synced, remaining: remaining.length };
+export async function flushPendingSubmissions() {
+  if (pendingFlushPromise) return pendingFlushPromise;
+  pendingFlushPromise = (async () => {
+    const currentUser = auth.currentUser;
+    const queue = await readDurableSubmissionQueue();
+    if (!currentUser || !window.navigator.onLine) return { synced: 0, remaining: queue.length };
+
+    const remaining = [];
+    let synced = 0;
+    const submitExam = httpsCallable(getFunctions(), "submitExamSession");
+    for (const item of queue) {
+      if (item.uid !== currentUser.uid) {
+        remaining.push(item);
+        continue;
+      }
+      try {
+        await submitExam({
+          examId: item.examId,
+          answers: item.payload.answers,
+          submissionReason: item.payload.submissionReason || "offline-sync",
+          tabSwitchCount: Number(item.payload.tabSwitchCount || 0),
+          integrityWarnings: Number(item.payload.integrityWarnings || 0),
+        });
+        // Remove only after the server acknowledges the final submission.
+        await offlineStore.delete(submissionRecordKey(item.uid, item.examId));
+        clearLocalExamDraft(item.examId, item.uid);
+        synced += 1;
+      } catch (error) {
+        console.error("Failed to sync queued submission", error);
+        remaining.push(item);
+      }
+    }
+    writePendingSubmissions(remaining);
+    return { synced, remaining: remaining.length };
+  })();
+  try {
+    return await pendingFlushPromise;
+  } finally {
+    pendingFlushPromise = null;
+  }
 }
 
 export async function loadExamQuestions(examId) {
