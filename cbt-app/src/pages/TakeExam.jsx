@@ -38,12 +38,16 @@ export default function TakeExam() {
       setError("This browser cannot safely reserve an exam tab. Use a current Chrome, Edge or Firefox browser over HTTPS.");
       return undefined;
     }
-    void navigator.locks.request(`cbt-attempt-${user.uid}-${examId}`, { ifAvailable: true }, async lock => {
+    // React StrictMode replays effects; cancelled mounts must never compete for this lock.
+    queueMicrotask(() => {
+      if (cancelled) return;
+      void navigator.locks.request(`cbt-attempt-${user.uid}-${examId}`, { ifAvailable: true }, async lock => {
       if (cancelled) return;
       if (!lock) { setError("This exam is already open in another tab. Close that tab, then reload this page."); return; }
       setOwnsTab(true);
       await new Promise(resolve => { release = resolve; });
     }).catch(() => { if (!cancelled) setError("Could not reserve this exam tab. Reload or contact your supervisor."); });
+    });
     return () => { cancelled = true; release?.(); };
   }, [examId, user.uid]);
 

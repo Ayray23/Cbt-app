@@ -52,4 +52,7 @@ try {
   assert.equal(result?.finalScore, 1); assert.equal(result?.released, false); assert.equal(errors.length, 0, errors.join('\n'));
   await page.screenshot({ path: '/tmp/cbt-school-student.png', fullPage: true });
   console.log('PASS: browser admin setup → student provision → exam author/publish → PIN → student start → answer → refresh → submit → server score');
+} catch (error) {
+  for (const context of browser?.contexts() || []) for (const page of context.pages()) console.error('FAILED PAGE:', page.url(), await page.locator('body').innerText().catch(() => 'Unavailable'));
+  throw error;
 } finally { await browser?.close(); api.kill(); web.kill(); await deleteApp(app); }
