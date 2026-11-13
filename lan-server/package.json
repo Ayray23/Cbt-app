@@ -1,0 +1,13 @@
+{
+  "name": "cbt-lan-server",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test tests/*.test.js",
+    "manage": "node manage.js"
+  },
+  "engines": {
+    "node": ">=24"
+  }
+}

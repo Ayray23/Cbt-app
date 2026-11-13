@@ -1,119 +1,384 @@
-import { useEffect, useMemo, useState } from "react";
-import { collection, doc, onSnapshot, query, serverTimestamp, where } from "firebase/firestore";
-import { deleteApp, getApp, initializeApp } from "firebase/app";
-import { createUserWithEmailAndPassword, getAuth } from "firebase/auth";
-import { auth, db } from "/firebase";
-import { setStudentLoginAccess } from "../services/sessionService";
+import { useState } from "react";
+import { useRecords } from "../hooks/useRecords";
+import RecordPager from "../components/RecordPager";
+import { callApi } from "../services/api";
+import { useSchool } from "../hooks/useSchool";
+import { parseCsv, downloadCsv } from "../utils/csv";
 import StatusBanner from "../components/StatusBanner";
-
-const field = "mt-2 w-full rounded-xl border border-slate-200 bg-white px-3.5 py-3 text-sm text-slate-800 outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-50";
-
-function makeStudentId(className) {
-  const prefix = String(className || "STD").trim().toUpperCase().replace(/[^A-Z0-9]+/g, "").slice(0, 8) || "STD";
-  return `${prefix}-${Math.floor(10000 + Math.random() * 90000)}`;
-}
-
-function internalStudentEmail(studentId) {
-  return `${studentId.toLowerCase().replace(/[^a-z0-9-]/g, "-")}@student.cbt.local`;
-}
-
+const empty = {
+  displayName: "",
+  username: "",
+  email: "",
+  password: "",
+  className: "",
+  admissionNumber: "",
+  subjects: [],
+};
+const field = "block w-full mt-1 rounded-xl border p-3";
 export default function Students() {
-  const [students, setStudents] = useState([]);
+  const { school } = useSchool();
+  const records = useRecords("users", [["role", "==", "student"]]);
+  const students = records.rows;
+  const [form, setForm] = useState(empty);
+  const [editing, setEditing] = useState(null);
   const [search, setSearch] = useState("");
-  const [classFilter, setClassFilter] = useState("all");
-  const [showAdd, setShowAdd] = useState(false);
-  const [saving, setSaving] = useState(false);
   const [banner, setBanner] = useState(null);
-  const [form, setForm] = useState({ name: "", className: "", password: "" });
+  const [busy, setBusy] = useState(false);
+  const [imports, setImports] = useState([]);
 
-  useEffect(() => onSnapshot(query(collection(db, "users"), where("role", "==", "student")), (snapshot) => {
-    setStudents(snapshot.docs.map((item) => ({ id: item.id, ...item.data() })));
-  }, (error) => setBanner({ tone: "error", message: error.message || "Could not load students." })), []);
-
-  const classes = useMemo(() => [...new Set(students.map((student) => String(student.className || "").trim()).filter(Boolean))].sort(), [students]);
-  const filtered = useMemo(() => {
-    const term = search.trim().toLowerCase();
-    return students.filter((student) => {
-      const text = `${student.displayName || ""} ${student.studentId || ""} ${student.className || ""}`.toLowerCase();
-      return (!term || text.includes(term)) && (classFilter === "all" || student.className === classFilter);
-    }).sort((a, b) => String(a.displayName || "").localeCompare(String(b.displayName || "")));
-  }, [students, search, classFilter]);
-
-  async function createStudent(event) {
-    event.preventDefault();
-    const name = form.name.trim();
-    const className = form.className.trim();
-    if (!name || !className || form.password.length < 6) {
-      setBanner({ tone: "error", message: "Enter the student's name, class and a password of at least 6 characters." });
-      return;
-    }
-
-    setSaving(true);
-    let secondaryApp;
+  async function act(action, data, message) {
+    setBusy(true);
     try {
-      let studentId = makeStudentId(className);
-      for (let attempt = 0; attempt < 5; attempt += 1) {
-        const existing = await import("firebase/firestore").then(({ getDocs }) => getDocs(query(collection(db, "users"), where("studentId", "==", studentId))));
-        if (existing.empty) break;
-        studentId = makeStudentId(className);
-      }
-      const email = internalStudentEmail(studentId);
-      secondaryApp = initializeApp(getApp().options, `student-provision-${Date.now()}`);
-      const credential = await createUserWithEmailAndPassword(getAuth(secondaryApp), email, form.password);
-      await import("firebase/firestore").then(({ setDoc }) => setDoc(doc(db, "users", credential.user.uid), {
-        email,
-        displayName: name,
-        studentId,
-        className,
-        role: "student",
-        loginDisabled: false,
-        createdBy: auth.currentUser?.uid || "",
-        createdAt: serverTimestamp(),
-        lastLoginAt: null,
-      }));
-      setBanner({ tone: "success", message: `${name} was created. Student ID: ${studentId}` });
-      setForm({ name: "", className: "", password: "" });
-      setShowAdd(false);
-    } catch (error) {
-      setBanner({ tone: "error", message: error.message || "Could not create the student." });
+      const result = await callApi(action, data);
+      setBanner({ tone: "success", message });
+      return result;
+    } catch (e) {
+      setBanner({ tone: "error", message: e.message });
+      return null;
     } finally {
-      if (secondaryApp) await deleteApp(secondaryApp).catch(() => null);
-      setSaving(false);
+      setBusy(false);
     }
   }
-
-  async function toggleStudent(student) {
+  async function save(e) {
+    e.preventDefault();
+    if (!school) return;
+    const ok = await act(
+      editing ? "students.update" : "students.create",
+      { ...form, studentId: editing, academicSession: school.academicSession },
+      editing
+        ? "Student updated. Historical exam records are unchanged."
+        : "Student created. Give the student their username and temporary password securely.",
+    );
+    if (ok) {
+      setForm(empty);
+      setEditing(null);
+    }
+  }
+  async function readImport(e) {
     try {
-      await setStudentLoginAccess(student.id, !student.loginDisabled);
-      setBanner({ tone: "success", message: `${student.displayName} is now ${student.loginDisabled ? "active" : "blocked"}.` });
-    } catch (error) {
-      setBanner({ tone: "error", message: error.message || "Could not update student access." });
+      const file = e.target.files[0];
+      if (!file) return;
+      if (file.size > 500000)
+        throw new Error("Use a CSV file smaller than 500 KB.");
+      const rows = parseCsv(await file.text());
+      if (rows.length > 200)
+        throw new Error("Import at most 200 students per file.");
+      const seen = new Set(students.map((s) => s.username));
+      setImports(
+        rows.map((r, i) => {
+          const username = (r.username || "").toLowerCase();
+          const subjects = (r.subjects || "")
+            .split("|")
+            .map((s) => s.trim())
+            .filter(Boolean);
+          const errors = [];
+          if (!r.displayName || !/^[a-z0-9][a-z0-9._-]{2,39}$/.test(username))
+            errors.push("Name/username invalid");
+          if (seen.has(username)) errors.push("Duplicate username");
+          seen.add(username);
+          if ((r.password || "").length < 8)
+            errors.push("Password needs 8 characters");
+          if (!school?.classes.includes(r.className))
+            errors.push("Unknown class");
+          if (
+            !subjects.length ||
+            subjects.some((s) => !school?.subjects.includes(s))
+          )
+            errors.push("Unknown/missing subject");
+          return {
+            ...r,
+            username,
+            subjects,
+            row: i + 2,
+            error: errors.join("; "),
+            state: "ready",
+          };
+        }),
+      );
+    } catch (e) {
+      setBanner({ tone: "error", message: e.message });
     }
   }
-
+  async function importStudents() {
+    setBusy(true);
+    const updated = [...imports];
+    for (let i = 0; i < updated.length; i++) {
+      if (updated[i].error || updated[i].state === "created") continue;
+      try {
+        await callApi("students.create", {
+          ...updated[i],
+          academicSession: school.academicSession,
+        });
+        updated[i] = { ...updated[i], password: "", state: "created" };
+      } catch (e) {
+        updated[i] = { ...updated[i], error: e.message, state: "failed" };
+      }
+      setImports([...updated]);
+    }
+    setBusy(false);
+    setBanner({
+      tone: "success",
+      message:
+        "Import finished. Check every row status; failed rows were not reported as successful. Clear the preview after reviewing.",
+    });
+  }
+  const filtered = students.filter((s) =>
+    `${s.displayName} ${s.username} ${s.className} ${s.admissionNumber}`
+      .toLowerCase()
+      .includes(search.toLowerCase()),
+  );
   return (
     <div className="space-y-6">
-      <StatusBanner tone={banner?.tone} message={banner?.message} onClose={() => setBanner(null)} />
-      <section className="rounded-3xl bg-slate-950 p-6 text-white md:p-8">
-        <div className="flex flex-col gap-5 md:flex-row md:items-end md:justify-between">
-          <div><p className="text-xs font-semibold uppercase tracking-[0.25em] text-indigo-300">Students</p><h2 className="mt-2 text-3xl font-bold">Your students</h2><p className="mt-2 max-w-xl text-sm text-slate-300">Create simple school accounts. Every student gets a permanent Student ID and never needs a personal email.</p></div>
-          <button onClick={() => setShowAdd(true)} className="rounded-xl bg-white px-5 py-3 text-sm font-bold text-slate-950">+ Add student</button>
+      <StatusBanner {...banner} />
+      {!school && (
+        <p className="bg-amber-50 p-4">Complete School setup first.</p>
+      )}
+      <form onSubmit={save} className="bg-white rounded-2xl p-6 space-y-4">
+        <h2 className="text-2xl font-semibold">
+          {editing ? "Edit student / promote class" : "Create student"}
+        </h2>
+        <p>
+          Enrolment session: {school?.academicSession}. Username remains
+          permanent when the class changes.
+        </p>
+        <div className="grid md:grid-cols-2 gap-4">
+          {["displayName", "username", "admissionNumber", "email"].map(
+            (key) => (
+              <label key={key}>
+                {
+                  {
+                    displayName: "Full name",
+                    username: "Permanent username",
+                    admissionNumber: "Admission number",
+                    email: "Contact email (optional)",
+                  }[key]
+                }
+                <input
+                  className={field}
+                  required={["displayName", "username"].includes(key)}
+                  disabled={editing && key === "username"}
+                  type={key === "email" ? "email" : "text"}
+                  value={form[key]}
+                  onChange={(e) => setForm({ ...form, [key]: e.target.value })}
+                />
+              </label>
+            ),
+          )}
+          {!editing && (
+            <label>
+              Temporary password
+              <input
+                className={field}
+                type="password"
+                minLength={8}
+                required
+                autoComplete="new-password"
+                value={form.password}
+                onChange={(e) => setForm({ ...form, password: e.target.value })}
+              />
+            </label>
+          )}
+          <label>
+            Class
+            <select
+              required
+              className={field}
+              value={form.className}
+              onChange={(e) => setForm({ ...form, className: e.target.value })}
+            >
+              <option value="">Select class</option>
+              {school?.classes.map((c) => (
+                <option key={c}>{c}</option>
+              ))}
+            </select>
+          </label>
         </div>
+        <fieldset>
+          <legend>Enrolled subjects</legend>
+          <div className="flex flex-wrap gap-4 mt-2">
+            {school?.subjects.map((s) => (
+              <label key={s}>
+                <input
+                  type="checkbox"
+                  checked={form.subjects.includes(s)}
+                  onChange={(e) =>
+                    setForm({
+                      ...form,
+                      subjects: e.target.checked
+                        ? [...form.subjects, s]
+                        : form.subjects.filter((v) => v !== s),
+                    })
+                  }
+                />{" "}
+                {s}
+              </label>
+            ))}
+          </div>
+        </fieldset>
+        <button
+          disabled={busy || !school || !form.subjects.length}
+          className="bg-slate-900 rounded-xl text-white p-3 disabled:opacity-50"
+        >
+          {busy ? "Saving…" : editing ? "Save changes" : "Create student"}
+        </button>
+        {editing && (
+          <button
+            type="button"
+            onClick={() => {
+              setEditing(null);
+              setForm(empty);
+            }}
+            className="ml-3"
+          >
+            Cancel edit
+          </button>
+        )}
+      </form>
+      <section className="bg-white rounded-2xl p-6 space-y-4">
+        <h3 className="text-xl font-semibold">Bulk enrolment</h3>
+        <p>
+          Save your Excel sheet as CSV. Subjects are separated with |. Passwords
+          stay in memory during preview and are not saved in Firestore.
+        </p>
+        <button
+          className="underline"
+          onClick={() =>
+            downloadCsv("student-template.csv", [
+              [
+                "displayName",
+                "username",
+                "admissionNumber",
+                "className",
+                "subjects",
+                "password",
+                "email",
+              ],
+              [
+                "Example Student",
+                "student001",
+                "SCH001",
+                school?.classes[0] || "JSS1 A",
+                school?.subjects.join("|") || "Mathematics",
+                "ReplaceThisPassword",
+                "",
+              ],
+            ])
+          }
+        >
+          Download template
+        </button>
+        <input
+          aria-label="Import students CSV"
+          type="file"
+          accept=".csv"
+          disabled={busy || !school}
+          onChange={readImport}
+        />
+        {!!imports.length && (
+          <>
+            <div className="max-h-64 overflow-auto">
+              {imports.map((r) => (
+                <p key={r.row}>
+                  Row {r.row}: {r.displayName} — {r.error || r.state}
+                </p>
+              ))}
+            </div>
+            <button
+              disabled={busy || imports.some((r) => r.error)}
+              onClick={importStudents}
+              className="bg-slate-900 text-white rounded-xl p-3"
+            >
+              {busy ? "Importing…" : "Import valid preview"}
+            </button>
+            <button
+              disabled={busy}
+              onClick={() => setImports([])}
+              className="ml-4"
+            >
+              Clear preview
+            </button>
+          </>
+        )}
       </section>
-
-      <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-        <div className="grid gap-3 md:grid-cols-[1fr_180px]">
-          <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search by name or Student ID" className="rounded-xl border border-slate-200 px-4 py-3 text-sm outline-none focus:border-indigo-500" />
-          <select value={classFilter} onChange={(event) => setClassFilter(event.target.value)} className="rounded-xl border border-slate-200 px-4 py-3 text-sm"><option value="all">All classes</option>{classes.map((item) => <option key={item} value={item}>{item}</option>)}</select>
-        </div>
+      <section className="bg-white rounded-2xl p-6 space-y-4">
+        <h3 className="text-xl font-semibold">
+          Student register ({filtered.length})
+        </h3>
+        <input
+          className={field}
+          placeholder="Search name, username, admission number or class"
+          value={search}
+          onChange={(e) => {
+            setSearch(e.target.value);
+          }}
+        />
+        {filtered.map((s) => (
+          <article
+            key={s.id}
+            className="border-b py-4 flex flex-wrap justify-between gap-3"
+          >
+            <div>
+              <strong>{s.displayName}</strong>
+              <p>
+                {s.username || s.email} · {s.className || "Class not assigned"}{" "}
+                · {s.academicSession} · {s.loginDisabled ? "Blocked" : "Active"}
+              </p>
+            </div>
+            <div className="flex gap-3 flex-wrap">
+              <button
+                disabled={busy}
+                onClick={() => {
+                  setEditing(s.id);
+                  setForm({
+                    ...empty,
+                    ...s,
+                    username: s.username || s.studentId || "",
+                    subjects: s.subjects || [],
+                  });
+                  window.scrollTo(0, 0);
+                }}
+              >
+                Edit / promote
+              </button>
+              <button
+                disabled={busy}
+                onClick={() =>
+                  act(
+                    "students.access",
+                    { studentId: s.id, loginDisabled: !s.loginDisabled },
+                    "Access updated.",
+                  )
+                }
+              >
+                {s.loginDisabled ? "Restore" : "Block"}
+              </button>
+              <button
+                disabled={busy}
+                onClick={async () => {
+                  const password = window.prompt(
+                    "New temporary password (8+ characters)",
+                  );
+                  if (!password) return;
+                  const reason = window.prompt("Reason for password reset");
+                  if (reason)
+                    await act(
+                      "students.password",
+                      { studentId: s.id, password, reason },
+                      "Password reset and existing refresh tokens revoked.",
+                    );
+                }}
+              >
+                Reset password
+              </button>
+            </div>
+          </article>
+        ))}
+        <p>
+          Search covers this page. Duplicate usernames are also rejected by the
+          server.
+        </p>
+        <RecordPager records={records} />
       </section>
-
-      <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-        <div className="border-b border-slate-200 px-5 py-4"><p className="font-semibold text-slate-900">{filtered.length} student{filtered.length === 1 ? "" : "s"}</p></div>
-        {filtered.length === 0 ? <div className="p-10 text-center text-sm text-slate-500">No students found. Add your first student to get started.</div> : <div className="divide-y divide-slate-100">{filtered.map((student) => <div key={student.id} className="flex flex-col gap-4 px-5 py-4 md:flex-row md:items-center md:justify-between"><div className="flex items-center gap-4"><div className="grid h-11 w-11 place-items-center rounded-full bg-indigo-50 font-bold text-indigo-700">{String(student.displayName || "S").charAt(0).toUpperCase()}</div><div><p className="font-semibold text-slate-900">{student.displayName}</p><p className="text-sm text-slate-500">{student.studentId || "No Student ID"} · {student.className || "No class"}</p></div></div><div className="flex items-center gap-3"><span className={`rounded-full px-3 py-1 text-xs font-semibold ${student.loginDisabled ? "bg-red-50 text-red-700" : "bg-emerald-50 text-emerald-700"}`}>{student.loginDisabled ? "Blocked" : "Active"}</span><button onClick={() => toggleStudent(student)} className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700">{student.loginDisabled ? "Allow login" : "Block login"}</button></div></div>)}</div>}
-      </section>
-
-      {showAdd && <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/50 p-4"><form onSubmit={createStudent} className="w-full max-w-lg rounded-3xl bg-white p-6 shadow-2xl"><div className="flex items-start justify-between"><div><h3 className="text-2xl font-bold text-slate-950">Add student</h3><p className="mt-1 text-sm text-slate-500">The system creates the permanent Student ID automatically.</p></div><button type="button" onClick={() => setShowAdd(false)} className="text-slate-400">✕</button></div><div className="mt-6 space-y-4"><label className="block text-sm font-semibold text-slate-700">Full name<input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} className={field} placeholder="Student full name" required /></label><label className="block text-sm font-semibold text-slate-700">Class<input value={form.className} onChange={(event) => setForm({ ...form, className: event.target.value })} className={field} placeholder="e.g. JS1" required /></label><label className="block text-sm font-semibold text-slate-700">Initial password<input type="password" value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} className={field} placeholder="At least 6 characters" minLength={6} required /></label></div><div className="mt-6 rounded-2xl bg-indigo-50 p-4 text-sm text-indigo-900">The student will log in with their Student ID and this password. No personal email is required.</div><div className="mt-6 flex justify-end gap-3"><button type="button" onClick={() => setShowAdd(false)} className="rounded-xl border border-slate-200 px-4 py-3 text-sm font-semibold">Cancel</button><button disabled={saving} className="rounded-xl bg-slate-950 px-5 py-3 text-sm font-semibold text-white disabled:opacity-60">{saving ? "Creating…" : "Create student"}</button></div></form></div>}
     </div>
   );
 }

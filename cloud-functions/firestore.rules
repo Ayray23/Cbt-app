@@ -1,130 +1,40 @@
 rules_version = '2';
-
 service cloud.firestore {
   match /databases/{database}/documents {
-    function currentUserPath() {
-      return /databases/$(database)/documents/users/$(request.auth.uid);
+    function signedIn() { return request.auth != null; }
+    function profile() { return get(/databases/$(database)/documents/users/$(request.auth.uid)).data; }
+    function enabled() { return signedIn() && exists(/databases/$(database)/documents/users/$(request.auth.uid)) && profile().get('loginDisabled', false) == false && profile().get('approvalStatus', 'approved') == 'approved'; }
+    function admin() { return enabled() && profile().role in ['admin', 'superadmin']; }
+    function examiner() { return enabled() && profile().role in ['admin', 'superadmin', 'examofficer']; }
+    function invigilator() { return enabled() && profile().role in ['admin', 'superadmin', 'examofficer', 'invigilator']; }
+    function teacher() { return enabled() && profile().role in ['teacher', 'teacher_admin']; }
+    function draftOwner(examId) {
+      let exam = get(/databases/$(database)/documents/exams/$(examId)).data;
+      return exam.status == 'draft' && (examiner() || (teacher() && exam.createdBy == request.auth.uid && exam.className in profile().assignedClasses && exam.subject in profile().assignedSubjects));
     }
-
-    function isSignedIn() {
-      return request.auth != null;
-    }
-
-    function userExists() {
-      return isSignedIn() && exists(currentUserPath());
-    }
-
-    function role() {
-      return userExists() ? get(currentUserPath()).data.role : null;
-    }
-
-    function isAdmin() {
-      return role() in ['admin', 'superadmin'];
-    }
-
-    function isSuperAdmin() {
-      return role() == 'superadmin';
-    }
-
-    match /users/{userId} {
-      allow read: if isSignedIn() && (request.auth.uid == userId || isAdmin());
-      allow create: if isSignedIn() && (
-        (request.auth.uid == userId && (!('role' in request.resource.data) || request.resource.data.role == 'student')) ||
-        (isAdmin() && request.resource.data.role == 'student')
-      );
-      allow update: if isSignedIn() && (
-        isSuperAdmin() ||
-        (isAdmin() && resource.data.role == 'student' && request.resource.data.role == resource.data.role) ||
-        (request.auth.uid == userId && request.resource.data.role == resource.data.role && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-          'displayName', 'photoURL', 'photoUrl', 'phone', 'preferences', 'lastLoginAt', 'lastLogin', 'lastSeen', 'updatedAt'
-        ]))
-      );
-      allow delete: if isSuperAdmin();
-    }
-
-    match /exams/{examId} {
-      // Block student reads of legacy exam docs until the admin migration removes exposed hashes.
-      allow read: if isSignedIn() && (
-        isAdmin() ||
-        (
-          resource.data.status == 'published' &&
-          !('accessCodeHash' in resource.data) &&
-          (
-            !('className' in resource.data) ||
-            (
-              userExists() &&
-              resource.data.className == get(currentUserPath()).data.className &&
-              (
-                !('assignmentMode' in resource.data) ||
-                resource.data.assignmentMode == 'class' ||
-                (
-                  resource.data.assignmentMode == 'individual' &&
-                  request.auth.uid in resource.data.assignedStudentUids
-                )
-              )
-            )
-          )
-        )
-      );
-      allow create, update, delete: if isAdmin();
-    }
-
-    match /examAccess/{examId} {
-      allow read, write: if isAdmin();
-    }
-
-    match /questions/{questionId} {
-      // Question documents contain correctAnswer and other grading fields.
-      // Students must use the trusted getExamQuestions callable, which strips answer keys
-      // and requires a valid started session. Only administrators may read raw documents.
-      allow read, create, update, delete: if isAdmin();
-    }
-
-    match /studentExamCodeHashes/{codeId} {
-      allow get: if isSignedIn() && isAdmin();
-      allow list: if isAdmin();
-      allow create, delete: if isAdmin();
-      allow update: if isAdmin();
-    }
-
-    match /studentExamCodePrintRecords/{codeId} {
-      allow read, write: if isAdmin();
-    }
-
-    match /examSessions/{sessionId} {
-      allow read: if isSignedIn() && (
-        isAdmin() ||
-        (resource != null && resource.data.studentUid == request.auth.uid)
-      );
-
-      allow create: if isSignedIn() && isAdmin();
-
-      allow update: if isSignedIn() && (
-        isAdmin() ||
-        (
-          resource.data.studentUid == request.auth.uid &&
-          resource.data.examId != null &&
-          resource.data.status == 'started' &&
-          request.resource.data.studentUid == resource.data.studentUid &&
-          request.resource.data.examId == resource.data.examId &&
-          request.resource.data.status == resource.data.status &&
-          request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-            'answers', 'tabSwitchCount', 'integrityWarnings', 'lastHeartbeatAtMs',
-            'networkOnline', 'lastVisibilityChangeAtMs', 'lastSavedAt', 'updatedAt'
-          ])
-        )
-      );
-
-      allow delete: if isAdmin();
-    }
-
-    match /auditLogs/{logId} {
-      allow read: if isAdmin();
+    match /users/{uid} {
+      allow read: if signedIn() && (request.auth.uid == uid || (enabled() && profile().role == 'superadmin') || (invigilator() && resource.data.role == 'student'));
       allow write: if false;
     }
-
-    match /{document=**} {
-      allow read, write: if false;
+    match /exams/{id} {
+      allow read: if enabled() && (invigilator() || (teacher() && resource.data.createdBy == request.auth.uid) || (profile().role == 'student' && resource.data.status == 'published'));
+      allow create, delete: if false;
+      allow update: if false;
     }
+    match /questions/{id} {
+      allow read: if enabled() && (profile().role == 'superadmin' || (profile().role in ['teacher', 'teacher_admin', 'admin', 'examofficer'] && resource.data.createdBy == request.auth.uid));
+      // All question mutations use the authenticated API to guarantee an audit entry.
+      allow write: if false;
+    }
+    match /examAssignments/{id} { allow read: if invigilator() || (enabled() && resource.data.studentUid == request.auth.uid); allow write: if false; }
+    match /examSessions/{id} { allow read: if invigilator() || (enabled() && resource.data.studentUid == request.auth.uid && resource.data.schemaVersion == 2); allow write: if false; }
+    match /examResults/{id} { allow read: if examiner() || (enabled() && resource.data.studentUid == request.auth.uid && resource.data.get('released', false) == true); allow write: if false; }
+    match /school/{id} { allow read: if enabled(); allow write: if false; }
+    match /auditLogs/{id} { allow read: if examiner(); allow write: if false; }
+    match /examAccess/{id} { allow read, delete: if admin(); allow create, update: if false; }
+    match /examPins/{id} { allow read, write: if false; }
+    match /examPapers/{id} { allow read, write: if false; }
+    match /examSessionProofs/{id} { allow read, write: if false; }
+    match /{document=**} { allow read, write: if false; }
   }
 }

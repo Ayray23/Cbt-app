@@ -1,113 +1,410 @@
-import { useEffect, useState } from "react";
-import { collection, onSnapshot, query, where } from "firebase/firestore";
+import { useEffect, useState, useRef } from "react";
+import {
+  collection,
+  query,
+  where,
+  onSnapshot,
+  orderBy,
+  limit,
+  startAfter,
+  documentId,
+} from "firebase/firestore";
 import { db } from "/firebase";
+import { callApi } from "../services/api";
+import { useSchool } from "../hooks/useSchool";
 import StatusBanner from "../components/StatusBanner";
-import { setUserRole } from "../services/sessionService";
-
+const initial = {
+  displayName: "",
+  username: "",
+  email: "",
+  password: "",
+  role: "teacher",
+};
 export default function Admins() {
-  const [admins, setAdmins] = useState([]);
-  const [email, setEmail] = useState("");
-  const [loading, setLoading] = useState(false);
+  const staffRequest = useRef(null);
+  const { school } = useSchool();
+  const [staff, setStaff] = useState([]);
+  const [form, setForm] = useState(initial);
+  const [selected, setSelected] = useState(null);
   const [banner, setBanner] = useState(null);
-
+  const [busy, setBusy] = useState(false);
+  const [workPage, setWorkPage] = useState(0);
+  const cursorRef = useRef({});
+  const [more, setMore] = useState({});
+  const [inspect, setInspect] = useState(null);
+  const [work, setWork] = useState({ exams: [], questions: [], events: [] });
   useEffect(() => {
-    const usersQuery = query(
-      collection(db, "users"),
-      where("role", "in", ["admin", "superadmin"])
-    );
-
-    return onSnapshot(usersQuery, (snapshot) => {
-      setAdmins(snapshot.docs.map((docItem) => ({ id: docItem.id, ...docItem.data() })));
+    if (!inspect) return undefined;
+    const fail = (e) => setBanner({ tone: "error", message: e.message });
+    const stops = [
+      ["exams", "exams", "createdBy"],
+      ["questions", "questions", "createdBy"],
+      ["events", "auditLogs", "workspaceUid"],
+    ].map(([key, name, field]) => {
+      if (workPage > 0 && !cursorRef.current[key]?.[workPage]) {
+        setWork((w) => ({ ...w, [key]: [] }));
+        setMore((m) => ({ ...m, [key]: false }));
+        return () => {};
+      }
+      return onSnapshot(
+        query(
+          collection(db, name),
+          where(field, "==", inspect.id),
+          ...(key === "events"
+            ? [orderBy("createdAtMs", "desc")]
+            : [orderBy(documentId())]),
+          ...(cursorRef.current[key]?.[workPage]
+            ? [startAfter(cursorRef.current[key][workPage])]
+            : []),
+          limit(201),
+        ),
+        (rows) => {
+          setMore((m) => ({ ...m, [key]: rows.docs.length > 200 }));
+          const list = [...(cursorRef.current[key] || [])];
+          list[workPage + 1] = rows.docs[199] || null;
+          cursorRef.current[key] = list;
+          setWork((current) => ({
+            ...current,
+            [key]: rows.docs
+              .slice(0, 200)
+              .map((d) => ({ id: d.id, ...d.data() })),
+          }));
+        },
+        fail,
+      );
     });
-  }, []);
-
-  async function updateRole(nextRole) {
-    if (!email.trim()) {
-      setBanner({ tone: "error", message: "Enter the user's email address." });
-      return;
-    }
-
-    setLoading(true);
-
+    return () => stops.forEach((stop) => stop());
+  }, [inspect, workPage]);
+  useEffect(
+    () =>
+      onSnapshot(
+        query(
+          collection(db, "users"),
+          where("role", "in", [
+            "admin",
+            "superadmin",
+            "teacher",
+            "teacher_admin",
+            "examofficer",
+            "invigilator",
+          ]),
+        ),
+        (s) => setStaff(s.docs.map((d) => ({ id: d.id, ...d.data() }))),
+        (e) => setBanner({ tone: "error", message: e.message }),
+      ),
+    [],
+  );
+  async function run(action, input) {
+    setBusy(true);
     try {
-      await setUserRole(email.trim(), nextRole);
-      setEmail("");
-      setBanner({
-        tone: "success",
-        message: nextRole === "admin" ? "User promoted to admin." : "Admin access revoked.",
-      });
-    } catch (error) {
-      console.error(error);
-      setBanner({ tone: "error", message: error.message ?? "Could not update role." });
+      await callApi(action, input);
+      setBanner({ tone: "success", message: "Staff record saved." });
+      return true;
+    } catch (e) {
+      setBanner({ tone: "error", message: e.message });
+      return false;
     } finally {
-      setLoading(false);
+      setBusy(false);
     }
   }
-
   return (
-    <div className="space-y-6">
-      <StatusBanner
-        tone={banner?.tone}
-        message={banner?.message}
-        onClose={() => setBanner(null)}
-      />
-
-      <section className="rounded-2xl bg-white p-6 shadow-sm">
-        <h2 className="text-2xl font-semibold text-slate-900">Admin access control</h2>
-        <p className="mt-2 text-sm text-slate-500">
-          Promote only users who have already created an account. Role changes are handled directly
-          through secured Firestore writes in this free-plan setup.
+    <div className="space-y-5">
+      <StatusBanner {...banner} />
+      <form
+        className="bg-white rounded-2xl p-6 space-y-4"
+        onSubmit={async (e) => {
+          e.preventDefault();
+          staffRequest.current ||= crypto.randomUUID();
+          if (
+            await run("staff.create", {
+              ...form,
+              requestId: staffRequest.current,
+            })
+          ) {
+            staffRequest.current = null;
+            setForm(initial);
+          }
+        }}
+      >
+        <h2 className="text-2xl font-semibold">Staff access</h2>
+        <p>
+          Teacher admins register independently, verify their email and request
+          approval. Their workspaces are private; only the superadmin has
+          unrestricted question access. Teachers author their assigned papers.
+          The superadmin reviews and publishes teacher papers. Examination
+          officers publish their own papers, assign PINs and review results.
+          Invigilators monitor and record interventions. Administrators manage
+          school accounts and settings.
         </p>
-      </section>
-
-      <section className="rounded-2xl bg-white p-6 shadow-sm">
-        <div className="flex flex-col gap-4 md:flex-row">
-          <input
-            type="email"
-            placeholder="existing-user@example.com"
-            value={email}
-            onChange={(event) => setEmail(event.target.value)}
-            className="flex-1 rounded-xl border border-slate-300 px-4 py-3"
-          />
-
-          <button
-            onClick={() => updateRole("admin")}
-            disabled={loading}
-            className="rounded-xl bg-slate-900 px-5 py-3 text-sm font-medium text-white disabled:opacity-60"
+        {["displayName", "username", "email", "password"].map((key) => (
+          <label className="block" key={key}>
+            {
+              {
+                displayName: "Full name",
+                username: "Login username",
+                email: "Contact email",
+                password: "Temporary password",
+              }[key]
+            }
+            <input
+              required
+              type={
+                key === "password"
+                  ? "password"
+                  : key === "email"
+                    ? "email"
+                    : "text"
+              }
+              minLength={key === "password" ? 8 : undefined}
+              value={form[key]}
+              onChange={(e) => setForm({ ...form, [key]: e.target.value })}
+              className="block border rounded-xl w-full p-3"
+            />
+          </label>
+        ))}
+        <label>
+          Role
+          <select
+            className="block border p-3 rounded-xl"
+            value={form.role}
+            onChange={(e) => setForm({ ...form, role: e.target.value })}
           >
-            Make admin
-          </button>
-
-          <button
-            onClick={() => updateRole("student")}
-            disabled={loading}
-            className="rounded-xl border border-slate-300 px-5 py-3 text-sm font-medium text-slate-700 disabled:opacity-60"
-          >
-            Revoke admin
-          </button>
-        </div>
-      </section>
-
-      <section className="rounded-2xl bg-white p-6 shadow-sm">
-        <h3 className="text-lg font-semibold text-slate-900">Current admins</h3>
-        <div className="mt-4 space-y-3">
-          {admins.map((admin) => (
-            <div
-              key={admin.id}
-              className="flex items-center justify-between rounded-xl bg-slate-50 px-4 py-3"
+            {[
+              "teacher",
+              "teacher_admin",
+              "examofficer",
+              "invigilator",
+              "admin",
+            ].map((r) => (
+              <option key={r}>{r}</option>
+            ))}
+          </select>
+        </label>
+        <button
+          disabled={busy}
+          className="bg-slate-900 text-white p-3 rounded-xl"
+        >
+          Create staff account
+        </button>
+      </form>
+      <section className="bg-white rounded-2xl p-6 space-y-4">
+        <h3 className="text-xl font-semibold">Staff register</h3>
+        {staff.map((s) => (
+          <article className="border-b py-3" key={s.id}>
+            <strong>{s.displayName || s.email}</strong>
+            <p>
+              {s.username || s.email} ·{" "}
+              {s.role === "teacher_admin" ? "Teacher admin" : s.role} ·{" "}
+              {s.approvalStatus || "approved"}
+            </p>
+            <button
+              disabled={s.role === "superadmin"}
+              className="underline mr-4"
+              onClick={async () => {
+                const password = window.prompt(
+                  "New temporary password (8+ characters)",
+                );
+                if (!password) return;
+                const reason = window.prompt("Reason for staff password reset");
+                if (reason)
+                  await run("staff.password", { uid: s.id, password, reason });
+              }}
             >
-              <span className="text-sm text-slate-700">{admin.email}</span>
-              <span className="text-xs font-semibold uppercase tracking-[0.25em] text-slate-400">
-                {admin.role}
-              </span>
-            </div>
-          ))}
-
-          {admins.length === 0 && (
-            <p className="text-sm text-slate-500">No admin accounts found yet.</p>
-          )}
-        </div>
+              Reset staff password
+            </button>
+            <button
+              className="underline mr-4"
+              onClick={() => {
+                setWorkPage(0);
+                cursorRef.current = {};
+                setInspect(s);
+                setWork({ exams: [], questions: [], events: [] });
+              }}
+            >
+              Inspect work
+            </button>
+            {["teacher", "teacher_admin"].includes(s.role) && (
+              <button
+                className="underline"
+                onClick={() =>
+                  setSelected({
+                    ...s,
+                    classes: s.assignedClasses || [],
+                    subjects: s.assignedSubjects || [],
+                  })
+                }
+              >
+                Review access / teaching assignments
+              </button>
+            )}
+          </article>
+        ))}
       </section>
+      {selected && (
+        <form
+          className="bg-white p-6 rounded-2xl space-y-4"
+          onSubmit={async (e) => {
+            e.preventDefault();
+            if (
+              await run(
+                selected.approvalStatus ? "teachers.review" : "staff.assign",
+                {
+                  uid: selected.id,
+                  classes: selected.classes,
+                  subjects: selected.subjects,
+                  decision: selected.decision || "approve",
+                  reason: selected.reason || "",
+                },
+              )
+            )
+              setSelected(null);
+          }}
+        >
+          <h3>Teacher access — {selected.displayName}</h3>
+          {selected.approvalStatus && (
+            <>
+              <label className="block">
+                Decision
+                <select
+                  aria-label="Teacher access decision"
+                  className="block border p-3"
+                  value={selected.decision || "approve"}
+                  onChange={(e) =>
+                    setSelected({ ...selected, decision: e.target.value })
+                  }
+                >
+                  <option value="approve">Approve / restore access</option>
+                  <option value="reject">Reject application</option>
+                  <option value="suspend">Suspend access</option>
+                </select>
+              </label>
+              <label className="block">
+                Reason
+                <input
+                  required
+                  minLength={5}
+                  maxLength={500}
+                  className="block border p-3 w-full"
+                  value={selected.reason || ""}
+                  onChange={(e) =>
+                    setSelected({ ...selected, reason: e.target.value })
+                  }
+                />
+              </label>
+              <p>
+                Email verification and at least one class and subject are
+                required for approval.
+              </p>
+            </>
+          )}
+          {["classes", "subjects"].map((key) => (
+            <fieldset key={key}>
+              <legend className="capitalize">{key}</legend>
+              <div className="flex flex-wrap gap-4">
+                {school?.[key].map((v) => (
+                  <label key={v}>
+                    <input
+                      type="checkbox"
+                      checked={selected[key].includes(v)}
+                      onChange={(e) =>
+                        setSelected({
+                          ...selected,
+                          [key]: e.target.checked
+                            ? [...selected[key], v]
+                            : selected[key].filter((x) => x !== v),
+                        })
+                      }
+                    />{" "}
+                    {v}
+                  </label>
+                ))}
+              </div>
+            </fieldset>
+          ))}
+          <button
+            disabled={busy}
+            className="bg-slate-900 text-white p-3 rounded-xl"
+          >
+            Save teacher access
+          </button>
+          <button
+            type="button"
+            className="ml-4"
+            onClick={() => setSelected(null)}
+          >
+            Cancel
+          </button>
+        </form>
+      )}
+      {inspect && (
+        <section className="bg-white rounded-2xl p-6 space-y-4">
+          <h3 className="text-2xl font-semibold">
+            Work by {inspect.displayName || inspect.email}
+          </h3>
+          <p>
+            {inspect.email} · Last sign-in:{" "}
+            {inspect.lastLoginAt?.seconds
+              ? new Date(inspect.lastLoginAt.seconds * 1000).toLocaleString()
+              : "Not recorded"}
+          </p>
+          <p>
+            Page {workPage + 1}, up to 200 records per list. Exams:{" "}
+            {work.exams.length}; questions: {work.questions.length}.
+          </p>
+          <div className="flex gap-4">
+            <button
+              disabled={!workPage}
+              onClick={() => setWorkPage((p) => p - 1)}
+            >
+              Previous work page
+            </button>
+            <button
+              disabled={!Object.values(more).some(Boolean)}
+              onClick={() => setWorkPage((p) => p + 1)}
+            >
+              Next work page
+            </button>
+          </div>
+          <h4 className="font-semibold">Exams</h4>
+          {work.exams.map((e) => (
+            <p key={e.id}>
+              {e.title} · {e.className} · {e.subject} · {e.status}
+            </p>
+          ))}
+          <h4 className="font-semibold">Questions and answers</h4>
+          {work.questions.map((q) => (
+            <details key={q.id} className="border p-3 rounded-xl">
+              <summary>{q.text}</summary>
+              {q.image && (
+                <img
+                  src={q.image}
+                  alt={q.imageAlt || "Question diagram"}
+                  className="max-h-48"
+                />
+              )}
+              {Object.entries(q.options || {}).map(([k, v]) => (
+                <p key={k}>
+                  {k}. {v}
+                </p>
+              ))}
+              <p>
+                Correct answer: {q.correctAnswer} · {q.marks} mark(s) · Paper:{" "}
+                {q.examId}
+              </p>
+            </details>
+          ))}
+          <h4 className="font-semibold">Recent work and access history</h4>
+          {work.events.map((e) => (
+            <p key={e.id}>
+              {new Date(e.createdAtMs).toLocaleString()} · {e.action} ·{" "}
+              {e.target} · Actor: {e.actorUid}
+            </p>
+          ))}
+          <button className="underline" onClick={() => setInspect(null)}>
+            Close work view
+          </button>
+        </section>
+      )}
     </div>
   );
 }

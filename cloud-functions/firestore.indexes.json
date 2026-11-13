@@ -1,6 +1,20 @@
 {
   "indexes": [
     {
+      "collectionGroup": "examSessions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "studentUid",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "schemaVersion",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
       "collectionGroup": "exams",
       "queryScope": "COLLECTION",
       "fields": [
@@ -19,15 +33,7 @@
       "queryScope": "COLLECTION",
       "fields": [
         {
-          "fieldPath": "status",
-          "order": "ASCENDING"
-        },
-        {
-          "fieldPath": "className",
-          "order": "ASCENDING"
-        },
-        {
-          "fieldPath": "assignmentMode",
+          "fieldPath": "createdBy",
           "order": "ASCENDING"
         },
         {
@@ -37,11 +43,187 @@
       ]
     },
     {
-      "collectionGroup": "exams",
+      "collectionGroup": "questions",
       "queryScope": "COLLECTION",
       "fields": [
         {
-          "fieldPath": "status",
+          "fieldPath": "createdBy",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "createdAt",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "examResults",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "studentUid",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "released",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "auditLogs",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "workspaceUid",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "createdAtMs",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "users",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "role",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "className",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "examResults",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "academicSession",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "term",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "examResults",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "academicSession",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "className",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "examResults",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "academicSession",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "subject",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "examResults",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "term",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "className",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "examResults",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "term",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "subject",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "examResults",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "className",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "subject",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "examResults",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "academicSession",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "term",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "className",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "examResults",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "academicSession",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "term",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "subject",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "examResults",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "academicSession",
           "order": "ASCENDING"
         },
         {
@@ -49,16 +231,48 @@
           "order": "ASCENDING"
         },
         {
-          "fieldPath": "assignmentMode",
+          "fieldPath": "subject",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "examResults",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "term",
           "order": "ASCENDING"
         },
         {
-          "fieldPath": "assignedStudentUids",
-          "arrayConfig": "CONTAINS"
+          "fieldPath": "className",
+          "order": "ASCENDING"
         },
         {
-          "fieldPath": "createdAt",
-          "order": "DESCENDING"
+          "fieldPath": "subject",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "examResults",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "academicSession",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "term",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "className",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "subject",
+          "order": "ASCENDING"
         }
       ]
     }

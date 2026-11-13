@@ -1,12 +1,8 @@
 {
-  "name": "cbt-functions",
-  "engines": { "node": "18" },
-  "dependencies": {
-    "firebase-admin": "^11.11.0",
-    "firebase-functions": "^4.4.0",
-    "xlsx": "^0.18.5",
-    "mammoth": "^1.4.18",
-    "pdf-parse": "^1.1.1",
-    "express": "^4.18.2"
+  "name": "cbt-retired-functions",
+  "private": true,
+  "description": "Retired entry point; Firebase deployment uses functions/package.json. The active exam API is api/cbt.mjs.",
+  "engines": {
+    "node": "24"
   }
 }

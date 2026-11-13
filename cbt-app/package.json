@@ -4,23 +4,30 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
+    "predev": "node ../scripts/build-icons.mjs",
+    "prebuild": "node ../scripts/build-icons.mjs",
     "dev": "vite",
     "build": "vite build",
     "lint": "eslint .",
-    "test": "node --test tests/*.test.js",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test:rules": "firebase emulators:exec --config ../cloud-functions/firebase.json --project demo-cbt-school --only firestore \"node --test tests/emulator/*.test.mjs\"",
+    "test:browser": "firebase emulators:exec --config ../cloud-functions/firebase.json --project demo-cbt-school --only auth,firestore \"node tests/browser/school-flow.mjs\"",
+    "test:api": "firebase emulators:exec --config ../cloud-functions/firebase.json --project demo-cbt-school --only auth,firestore \"node --test tests/api/*.test.mjs\"",
+    "test:lan-browser": "firebase emulators:exec --config ../cloud-functions/firebase.json --project demo-cbt-school --only firestore \"node tests/browser/lan-flow.mjs\""
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.1.17",
     "firebase": "^12.6.0",
-    "firebase-admin": "^13.6.0",
+    "firebase-admin": "^14.5.0",
     "mammoth": "^1.11.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
-    "react-router-dom": "^6.14.1"
+    "react-router-dom": "^7.18.5"
   },
   "devDependencies": {
-    "@eslint/js": "^9.39.0",
+    "@eslint/js": "^9.39.1",
+    "@firebase/rules-unit-testing": "^5.0.2",
+    "@playwright/test": "^1.65.0",
     "@types/react": "^19.2.2",
     "@types/react-dom": "^19.2.2",
     "@vitejs/plugin-react": "^5.1.0",
@@ -28,9 +35,21 @@
     "eslint": "^9.39.1",
     "eslint-plugin-react-hooks": "^5.2.0",
     "eslint-plugin-react-refresh": "^0.4.24",
+    "firebase-tools": "^15.36.0",
     "globals": "^16.5.0",
     "postcss": "^8.4.21",
     "tailwindcss": "^3.4.18",
     "vite": "^7.2.2"
+  },
+  "overrides": {
+    "@grpc/grpc-js": "^1.14.7",
+    "firebase-tools": {
+      "glob": "^14.0.6",
+      "@opentelemetry/core": "^2.8.0",
+      "uuid": "^11.1.1"
+    }
+  },
+  "engines": {
+    "node": ">=22"
   }
 }

@@ -1,276 +1,216 @@
-import {
-  collection,
-  doc,
-  getDoc,
-  getDocs,
-  limit,
-  query,
-  serverTimestamp,
-  updateDoc,
-  where,
-} from "firebase/firestore";
-import { getFunctions, httpsCallable } from "firebase/functions";
-import { auth, db } from "/firebase";
+import { offlineStore, examRecordKey } from "./offlineStore";
+import { auth } from "/firebase";
+import { callApi } from "./api";
+import { deviceExamStore } from "./examStore";
 
-const EXAM_DRAFT_PREFIX = "cbt_exam_draft_v3";
-const EXAM_BUNDLE_PREFIX = "cbt_exam_bundle_v1";
-const PENDING_SUBMISSIONS_KEY = "cbt_pending_submissions_v3";
-
-function requireUser() {
-  const currentUser = auth.currentUser;
-  if (!currentUser) throw new Error("Please sign in to continue.");
-  return currentUser;
-}
-
-function normalizeAnswers(answers) {
-  if (!answers || typeof answers !== "object") return {};
-  return Object.entries(answers).reduce((acc, [questionId, answer]) => {
-    acc[questionId] = String(answer || "").trim().toUpperCase();
-    return acc;
-  }, {});
-}
-
-function draftStorageKey(uid, examId) {
-  return `${EXAM_DRAFT_PREFIX}:${uid}:${examId}`;
-}
-
-function bundleStorageKey(uid, examId) {
-  return `${EXAM_BUNDLE_PREFIX}:${uid}:${examId}`;
-}
-
-function readPendingSubmissions() {
-  try {
-    return JSON.parse(window.localStorage.getItem(PENDING_SUBMISSIONS_KEY) || "[]");
-  } catch {
-    return [];
+const syncing = new Map();
+export function deviceId() {
+  let value = window.localStorage.getItem("cbt_device_id");
+  if (!value) {
+    value = window.crypto.randomUUID();
+    window.localStorage.setItem("cbt_device_id", value);
   }
+  return value;
 }
 
-function writePendingSubmissions(items) {
-  window.localStorage.setItem(PENDING_SUBMISSIONS_KEY, JSON.stringify(items));
-}
-
-function friendlyCallableError(error, fallback) {
-  const code = String(error?.code || "");
-  if (code.includes("functions/permission-denied")) return error?.details || error?.message || "You are not allowed to perform this exam action.";
-  if (code.includes("functions/failed-precondition")) return error?.details || error?.message || fallback;
-  if (code.includes("functions/deadline-exceeded")) return error?.details || "The exam time has expired.";
-  if (code.includes("functions/not-found")) return "The secure exam service is not deployed yet. Please contact the administrator.";
-  if (code.includes("functions/unavailable")) return "The exam service is temporarily unavailable. Check your connection and try again.";
-  if (code.includes("functions/internal")) return "The exam server could not complete this request. Please try again or contact the administrator.";
-  return error?.details || error?.message || fallback;
+function currentUid() {
+  if (!auth.currentUser) throw new Error("Please sign in to continue.");
+  return auth.currentUser.uid;
 }
 
 export function getPendingSubmissionMap(uid) {
-  return readPendingSubmissions()
-    .filter((item) => item.uid === uid)
-    .reduce((acc, item) => {
-      acc[item.examId] = item;
-      return acc;
-    }, {});
+  importLegacyQueue(uid);
+  return Object.fromEntries(
+    deviceExamStore()
+      .list(uid)
+      .filter((packet) => packet.pending)
+      .map((packet) => [
+        packet.session.examId,
+        { ...packet.pending, syncError: packet.syncError },
+      ]),
+  );
 }
 
-export function getLocalExamDraft(uid, examId) {
-  try {
-    return JSON.parse(window.localStorage.getItem(draftStorageKey(uid, examId)) || "null");
-  } catch {
-    return null;
-  }
-}
-
-export function getLocalExamBundle(uid, examId) {
-  try {
-    return JSON.parse(window.localStorage.getItem(bundleStorageKey(uid, examId)) || "null");
-  } catch {
-    return null;
-  }
-}
-
-export function cacheExamBundle(examId, exam, questions, session) {
-  const currentUser = requireUser();
-  const bundle = {
-    uid: currentUser.uid,
-    examId,
-    exam,
-    questions,
-    session: {
-      ...session,
-      answers: normalizeAnswers(session?.answers || {}),
-      cachedAtMs: Date.now(),
-    },
-  };
-  window.localStorage.setItem(bundleStorageKey(currentUser.uid, examId), JSON.stringify(bundle));
-  return bundle;
+export function getDeviceExamMap(uid) {
+  importLegacyQueue(uid);
+  return Object.fromEntries(
+    deviceExamStore()
+      .list(uid)
+      .map((packet) => [packet.session.examId, packet]),
+  );
 }
 
 export function saveLocalExamDraft(examId, answers, metadata = {}) {
-  const currentUser = requireUser();
-  const draft = {
-    uid: currentUser.uid,
-    examId,
-    answers: normalizeAnswers(answers),
-    updatedAtMs: Date.now(),
-    ...metadata,
-  };
-  window.localStorage.setItem(draftStorageKey(currentUser.uid, examId), JSON.stringify(draft));
-  return draft;
+  return deviceExamStore().save(currentUid(), examId, answers, metadata);
 }
 
-export function clearLocalExamDraft(examId, uid = auth.currentUser?.uid) {
-  if (uid) window.localStorage.removeItem(draftStorageKey(uid, examId));
-}
-
-async function queuePendingSubmission(uid, examId, payload) {
-  const currentQueue = readPendingSubmissions().filter((item) => !(item.uid === uid && item.examId === examId));
-  currentQueue.push({ uid, examId, payload, queuedAtMs: Date.now() });
-  writePendingSubmissions(currentQueue);
-}
-
-export async function flushPendingSubmissions() {
-  const currentUser = auth.currentUser;
-  if (!currentUser || !window.navigator.onLine) return { synced: 0, remaining: readPendingSubmissions().length };
-
-  const queue = readPendingSubmissions();
-  const remaining = [];
-  let synced = 0;
-  const submitExam = httpsCallable(getFunctions(), "submitExamSession");
-
-  for (const item of queue) {
-    if (item.uid !== currentUser.uid) {
-      remaining.push(item);
-      continue;
-    }
+export async function recoverDevicePackets(uid) {
+  for (const key of await offlineStore.keys()) {
+    if (typeof key !== "string" || !key.startsWith(`exam:${uid}:`)) continue;
+    const value = await offlineStore.get(key);
+    if (!value?.session?.examId || value.session.studentUid !== uid) continue;
+    const store = deviceExamStore();
+    let current;
     try {
-      await submitExam({
-        examId: item.examId,
-        answers: item.payload.answers,
-        submissionReason: item.payload.submissionReason || "offline-sync",
-        tabSwitchCount: Number(item.payload.tabSwitchCount || 0),
-        integrityWarnings: Number(item.payload.integrityWarnings || 0),
-      });
-      clearLocalExamDraft(item.examId, item.uid);
-      synced += 1;
-    } catch (error) {
-      console.error("Failed to sync queued submission", error);
-      remaining.push(item);
+      current = store.read(uid, value.session.examId);
+    } catch {
+      current = null;
     }
-  }
-
-  writePendingSubmissions(remaining);
-  return { synced, remaining: remaining.length };
-}
-
-export async function loadExamQuestions(examId) {
-  requireUser();
-  const getQuestions = httpsCallable(getFunctions(), "getExamQuestions");
-  try {
-    const result = await getQuestions({ examId });
-    return Array.isArray(result.data?.questions) ? result.data.questions : [];
-  } catch (error) {
-    throw new Error(friendlyCallableError(error, "Could not load the exam questions."));
+    if (
+      !current ||
+      (value.closed && !current.closed) ||
+      (!current.closed && (value.revision || 0) > (current.revision || 0))
+    )
+      store.restore(uid, value.session.examId, value);
   }
 }
-
-export async function startExamSession(examId, accessCode = "") {
-  const currentUser = requireUser();
-  const startExam = httpsCallable(getFunctions(), "startExamSession");
-  try {
-    const result = await startExam({ examId, accessCode: String(accessCode || "").trim().toUpperCase() });
-    const session = result.data || {};
-    const localDraft = getLocalExamDraft(currentUser.uid, examId);
+export async function startExamSession(examId, pin = "") {
+  const uid = currentUid();
+  await recoverDevicePackets(uid);
+  importLegacyQueue(uid);
+  const store = deviceExamStore();
+  const cached = store.read(uid, examId);
+  if (cached?.closed) throw new Error("This exam has already been submitted.");
+  if (!window.navigator.onLine) {
+    if (!cached?.questions?.length)
+      throw new Error(
+        "Connect to the internet to start this exam for the first time.",
+      );
     return {
-      ...session,
-      answers: { ...(session.answers || {}), ...(localDraft?.answers || {}) },
-      startedAtMs: session.startedAtMs || Date.now(),
-      expiresAtMs: session.expiresAtMs || Date.now(),
-      optionOrderByQuestion: session.optionOrderByQuestion || {},
-      tabSwitchCount: Number(session.tabSwitchCount || 0),
-      integrityWarnings: Number(session.integrityWarnings || 0),
+      ...cached,
+      session: { ...cached.session, answers: cached.answers || {} },
     };
+  }
+  try {
+    const packet = await callApi("exam.start", {
+      examId,
+      pin,
+      deviceId: deviceId(),
+    });
+    const saved = store.putPacket(uid, examId, {
+      ...packet,
+      offsetMs: packet.serverNowMs - Date.now(),
+    });
+    if (saved.closed) throw new Error("This exam has already been submitted.");
+    return { ...saved, session: { ...saved.session, answers: saved.answers } };
   } catch (error) {
-    throw new Error(friendlyCallableError(error, "Could not start the exam."));
+    if (cached?.questions?.length && (!error.status || error.status >= 500))
+      return {
+        ...cached,
+        session: { ...cached.session, answers: cached.answers },
+      };
+    throw error;
   }
 }
 
 export async function saveExamProgress(examId, answers, metadata = {}) {
-  const currentUser = requireUser();
-  const normalizedAnswers = normalizeAnswers(answers);
-  const draft = saveLocalExamDraft(examId, normalizedAnswers, metadata);
+  const packet = saveLocalExamDraft(examId, answers, metadata);
+  if (packet?.closed) return { closed: true };
+  if (!window.navigator.onLine) return { localOnly: true };
+  const result = await callApi("exam.progress", {
+    examId,
+    answers,
+    deviceId: deviceId(),
+    revision: packet.revision,
+    deviceEpoch: packet.session.deviceEpoch || 0,
+    tabSwitchCount: metadata.tabSwitchCount || 0,
+  });
+  if (result.expiresAtMs)
+    deviceExamStore().deadline(currentUid(), examId, result.expiresAtMs);
+  return result;
+}
 
-  if (!window.navigator.onLine) {
-    return { id: `${examId}_${currentUser.uid}`, answers: normalizedAnswers, ...metadata, offline: true, draft };
-  }
-
-  const sessionRef = doc(db, "examSessions", `${examId}_${currentUser.uid}`);
-  try {
-    const sessionSnapshot = await getDoc(sessionRef);
-    if (!sessionSnapshot.exists()) throw new Error("Exam session not found.");
-    if (sessionSnapshot.data().status === "submitted") return { id: sessionSnapshot.id, ...sessionSnapshot.data() };
-
-    await updateDoc(sessionRef, {
-      answers: normalizedAnswers,
-      ...metadata,
-      lastSavedAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
+function importLegacyQueue(uid) {
+  const raw = window.localStorage.getItem("cbt_pending_submissions_v1");
+  if (!raw) return;
+  const old = JSON.parse(raw);
+  for (const item of old.filter((entry) => entry.uid === uid)) {
+    const store = deviceExamStore();
+    if (store.read(uid, item.examId)) continue;
+    store.putPacket(uid, item.examId, {
+      session: { examId: item.examId, studentUid: uid, status: "started" },
+      questions: [],
     });
-    return { id: sessionSnapshot.id, ...sessionSnapshot.data(), answers: normalizedAnswers, ...metadata, offline: false };
-  } catch (error) {
-    console.error("Cloud answer save failed; keeping local draft", error);
-    return { id: sessionRef.id, answers: normalizedAnswers, ...metadata, offline: true, draft };
+    store.close(uid, item.examId, {
+      examId: item.examId,
+      answers: item.payload?.answers || {},
+      submissionReason: item.payload?.submissionReason || "manual",
+      closedAtMs: item.payload?.submittedAtMs || item.queuedAtMs,
+      submissionId: `legacy-${item.examId}-${uid}`,
+    });
   }
+}
+
+export function flushPendingSubmissions() {
+  const uid = auth.currentUser?.uid;
+  if (!uid || !window.navigator.onLine) return Promise.resolve({ synced: 0 });
+  if (syncing.has(uid)) return syncing.get(uid);
+  const task = (async () => {
+    await recoverDevicePackets(uid);
+    importLegacyQueue(uid);
+    let synced = 0;
+    for (const packet of deviceExamStore()
+      .list(uid)
+      .filter((entry) => entry.pending)) {
+      if (auth.currentUser?.uid !== uid) break;
+      const payload = packet.pending;
+      try {
+        await callApi("exam.submit", payload);
+        deviceExamStore().acknowledge(
+          uid,
+          payload.examId,
+          payload.submissionId,
+        );
+        const legacyRaw = window.localStorage.getItem(
+          "cbt_pending_submissions_v1",
+        );
+        if (legacyRaw)
+          window.localStorage.setItem(
+            "cbt_pending_submissions_v1",
+            JSON.stringify(
+              JSON.parse(legacyRaw).filter(
+                (item) => item.uid !== uid || item.examId !== payload.examId,
+              ),
+            ),
+          );
+        synced++;
+      } catch (error) {
+        deviceExamStore().syncError(
+          uid,
+          payload.examId,
+          error.message || "Waiting to reconnect.",
+        );
+      }
+    }
+    return { synced };
+  })().finally(() => syncing.delete(uid));
+  syncing.set(uid, task);
+  return task;
 }
 
 export async function submitExamSession(examId, answers, metadata = {}) {
-  const currentUser = requireUser();
-  const normalizedAnswers = normalizeAnswers(answers);
   const payload = {
-    answers: normalizedAnswers,
+    examId,
+    answers,
+    deviceEpoch:
+      deviceExamStore().read(currentUid(), examId)?.session?.deviceEpoch || 0,
+    deviceId: deviceId(),
     submissionReason: metadata.submissionReason || "manual",
     tabSwitchCount: Number(metadata.tabSwitchCount || 0),
-    integrityWarnings: Number(metadata.integrityWarnings || 0),
+    closedAtMs: Date.now(),
+    submissionId: window.crypto.randomUUID(),
   };
-
-  saveLocalExamDraft(examId, normalizedAnswers, payload);
-
-  if (!window.navigator.onLine) {
-    await queuePendingSubmission(currentUser.uid, examId, payload);
-    return { id: `${examId}_${currentUser.uid}`, status: "pending-sync", pendingSync: true, answers: normalizedAnswers, ...payload };
-  }
-
-  try {
-    const submitExam = httpsCallable(getFunctions(), "submitExamSession");
-    const result = await submitExam({ examId, ...payload });
-    clearLocalExamDraft(examId, currentUser.uid);
-    return { ...(result.data || {}), pendingSync: false };
-  } catch (error) {
-    if (!window.navigator.onLine) {
-      await queuePendingSubmission(currentUser.uid, examId, payload);
-      return { id: `${examId}_${currentUser.uid}`, status: "pending-sync", pendingSync: true, answers: normalizedAnswers, ...payload };
-    }
-    throw new Error(friendlyCallableError(error, "Submission failed."));
-  }
+  const uid = currentUid();
+  const closed = deviceExamStore().close(uid, examId, payload);
+  await offlineStore.put(examRecordKey(uid, examId), closed);
+  // Persist the final answers before authentication refresh, network reads or writes.
+  void flushPendingSubmissions().catch((error) =>
+    console.error("Submission retry deferred", error),
+  );
+  return { pendingSync: true };
 }
 
-export async function setUserRole(email, role) {
-  const normalizedEmail = String(email || "").trim().toLowerCase();
-  const normalizedRole = String(role || "").trim().toLowerCase();
-  if (!normalizedEmail || !normalizedRole) throw new Error("Email and role are required.");
-  const snapshot = await getDocs(query(collection(db, "users"), where("email", "==", normalizedEmail), limit(1)));
-  if (snapshot.empty) throw new Error("User profile not found. Ask the user to sign in first.");
-  await updateDoc(snapshot.docs[0].ref, { role: normalizedRole, updatedAt: serverTimestamp() });
-  return { ok: true, uid: snapshot.docs[0].id, email: normalizedEmail, role: normalizedRole };
-}
-
-export async function setStudentLoginAccess(studentId, loginDisabled) {
-  const studentRef = doc(db, "users", studentId);
-  const studentSnapshot = await getDoc(studentRef);
-  if (!studentSnapshot.exists()) throw new Error("Student profile not found.");
-  const student = studentSnapshot.data();
-  if (student.role !== "student") throw new Error("Only student accounts can be blocked from this page.");
-  await updateDoc(studentRef, {
-    loginDisabled,
-    updatedAt: serverTimestamp(),
-    disabledAt: loginDisabled ? serverTimestamp() : null,
-  });
-  return { ok: true, id: studentId, loginDisabled };
-}
+export const setUserRole = (email, role) =>
+  callApi("users.role", { email, role });
+export const setStudentLoginAccess = (studentId, loginDisabled) =>
+  callApi("students.access", { studentId, loginDisabled });

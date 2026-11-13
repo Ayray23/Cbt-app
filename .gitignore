@@ -1,0 +1,11 @@
+node_modules/
+.env*
+!.env.example
+.vercel/
+**/serviceAccountKey.json
+**/*service-account*.json
+
+lan-server/data/
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
