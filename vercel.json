@@ -1,11 +1,16 @@
 {
-  "buildCommand": "cd cbt-app && npm install && npm run build",
+  "installCommand": "npm install --prefix cbt-app",
+  "buildCommand": "npm run build --prefix cbt-app",
   "outputDirectory": "cbt-app/dist",
   "framework": "vite",
   "rewrites": [
     {
-      "source": "/(.*)",
+      "source": "/((?!api/).*)",
       "destination": "/index.html"
     }
+  ],
+  "headers": [
+    { "source": "/sw.js", "headers": [{ "key": "Cache-Control", "value": "no-cache, no-store, must-revalidate" }] },
+    { "source": "/api/(.*)", "headers": [{ "key": "Cache-Control", "value": "no-store" }] }
   ]
 }

@@ -1,10 +1,9 @@
+import { useAuth } from "../contexts/AuthContext";
 import { useEffect, useRef, useState } from "react";
-import mammoth from "mammoth";
 import { collection, onSnapshot, query, where } from "firebase/firestore";
 import { db } from "/firebase";
 import StatusBanner from "../components/StatusBanner";
 import { addQuestion } from "../services/cbtService";
-import { useNavigate } from "react-router-dom";
 
 function normalizeLine(line) {
   return line.replace(/\u00a0/g, " ").trim();
@@ -92,6 +91,10 @@ function buildBlocksFromText(text) {
 }
 
 export default function AddQuestion() {
+  const { role, user } = useAuth();
+  const [preview, setPreview] = useState([]);
+  const [image, setImage] = useState("");
+  const [imageAlt, setImageAlt] = useState("");
   const [exams, setExams] = useState([]);
   const [examId, setExamId] = useState("");
   const [question, setQuestion] = useState("");
@@ -101,30 +104,18 @@ export default function AddQuestion() {
   const [wordFile, setWordFile] = useState(null);
   const [loading, setLoading] = useState(false);
   const [banner, setBanner] = useState(null);
-  const [uploadModal, setUploadModal] = useState(null);
-  const navigate = useNavigate();
   const wordFileInputRef = useRef(null);
-
-  useEffect(() => {
-    if (uploadModal?.type !== "success") return undefined;
-
-    const redirectTimer = window.setTimeout(() => {
-      navigate("/dashboard", { replace: true });
-    }, 2200);
-
-    return () => window.clearTimeout(redirectTimer);
-  }, [uploadModal, navigate]);
 
   useEffect(() => {
     const examsQuery = query(
       collection(db, "exams"),
-      where("status", "in", ["draft", "published"])
+      ...(role === "teacher" ? [where("createdBy", "==", user.uid)] : [where("status", "in", ["draft", "published"])])
     );
 
     return onSnapshot(examsQuery, (snapshot) => {
       setExams(snapshot.docs.map((docItem) => ({ id: docItem.id, ...docItem.data() })));
     });
-  }, []);
+  }, [role, user.uid]);
 
   function validate(payload) {
     if (!payload.examId) {
@@ -136,8 +127,8 @@ export default function AddQuestion() {
     }
 
     const filledOptions = Object.values(payload.options).filter((option) => option.trim());
-    if (filledOptions.length < 2) {
-      return "At least two options are required.";
+    if (filledOptions.length < 4) {
+      return "All four options are required.";
     }
 
     if (!payload.correctAnswer || !payload.options[payload.correctAnswer]?.trim()) {
@@ -152,11 +143,11 @@ export default function AddQuestion() {
   }
 
   async function handleManualSave() {
-    const payload = { examId, question, options, correctAnswer, marks };
+    const payload = { examId, question, options, correctAnswer, marks, image, imageAlt };
     const validationError = validate(payload);
 
     if (validationError) {
-      setUploadModal({ type: "error", title: "Check the question details", message: validationError });
+      setBanner({ tone: "error", message: validationError });
       return;
     }
 
@@ -164,23 +155,14 @@ export default function AddQuestion() {
 
     try {
       await addQuestion(payload);
-      setQuestion("");
+      setQuestion(""); setImage(""); setImageAlt("");
       setOptions({ A: "", B: "", C: "", D: "" });
       setCorrectAnswer("");
       setMarks(1);
-      setBanner(null);
-      setUploadModal({
-        type: "success",
-        title: "Question saved successfully",
-        message: "Your question has been added. Taking you back to the admin overview…",
-      });
+      setBanner({ tone: "success", message: "Question saved successfully." });
     } catch (error) {
       console.error(error);
-      setUploadModal({
-        type: "error",
-        title: "Question was not saved",
-        message: "The question could not be saved. Check your connection and try again. Your entries have been kept on this page.",
-      });
+      setBanner({ tone: "error", message: "Could not save question." });
     } finally {
       setLoading(false);
     }
@@ -188,24 +170,26 @@ export default function AddQuestion() {
 
   async function handleWordUpload() {
     if (!examId) {
-      setUploadModal({ type: "error", title: "Select an exam", message: "Choose the exam you want to add questions to, then try again." });
+      setBanner({ tone: "error", message: "Select an exam first." });
       return;
     }
 
     if (!wordFile) {
-      setUploadModal({ type: "error", title: "Choose a Word document", message: "Select a .doc or .docx file before uploading." });
+      setBanner({ tone: "error", message: "Choose a Word document." });
       return;
     }
 
     setLoading(true);
 
     try {
+      if (!wordFile.name.toLowerCase().endsWith(".docx") || wordFile.size > 2000000) throw new Error("Choose a DOCX file smaller than 2 MB.");
       const arrayBuffer = await wordFile.arrayBuffer();
+      const { default: mammoth } = await import("mammoth");
       const result = await mammoth.extractRawText({ arrayBuffer });
       const blocks = buildBlocksFromText(result.value);
 
-      let saved = 0;
-      let skipped = 0;
+      const parsed = [];
+      const seen = new Set();
 
       for (const block of blocks) {
         const lines = block.map(normalizeLine).filter(Boolean);
@@ -230,47 +214,36 @@ export default function AddQuestion() {
           marks: extractMarks(lines),
         };
 
-        if (validate(payload)) {
-          skipped += 1;
-          continue;
-        }
-
-        await addQuestion(payload);
-        saved += 1;
+        const key = payload.question.toLowerCase().trim();
+        parsed.push({ ...payload, error: validate(payload) || (seen.has(key) ? 'Duplicate question in this file.' : ''), saved: false });
+        seen.add(key);
       }
-
-      if (saved > 0 && skipped === 0) {
-        setBanner(null);
-        setUploadModal({
-          type: "success",
-          title: "Questions uploaded successfully",
-          message: `${saved} question(s) were added to the selected exam. Taking you back to the admin overview…`,
-        });
-        setWordFile(null);
-        if (wordFileInputRef.current) {
-          wordFileInputRef.current.value = "";
-        }
-      } else {
-        setUploadModal({
-          type: "error",
-          title: saved > 0 ? "Upload partly completed" : "Upload failed",
-          message: saved > 0
-            ? `${saved} question(s) were saved, but ${skipped} block(s) were skipped. You are still on this page. Fix the skipped questions and upload only those questions to avoid duplicates.`
-            : `No questions were uploaded; ${skipped} block(s) were skipped. Check the Word format and try again. You are still on this page.`,
-        });
+      setPreview(parsed);
+      setBanner({ tone: 'info', message: 'Review every question and answer before saving. Invalid rows are listed below.' });
+      setWordFile(null);
+      if (wordFileInputRef.current) {
+        wordFileInputRef.current.value = "";
       }
     } catch (error) {
       console.error(error);
-      setUploadModal({
-        type: "error",
-        title: "Word upload failed",
-        message: "The document could not be processed or fully saved. Check your connection and file format. If the upload stopped unexpectedly, review the question list before retrying the whole file so you do not create duplicates. You are still on this page.",
-      });
+      setBanner({ tone: "error", message: error.message || "Word preview failed." });
     } finally {
       setLoading(false);
     }
   }
 
+  async function savePreview() {
+    setLoading(true);
+    const rows = [...preview];
+    try { for (let i = 0; i < rows.length; i++) { if (rows[i].saved || rows[i].error) continue; await addQuestion(rows[i]); rows[i] = { ...rows[i], saved: true }; setPreview([...rows]); } setBanner({ tone: 'success', message: 'Preview questions saved.' }); }
+    catch (e) { setBanner({ tone: 'error', message: `Import stopped: ${e.message}. Saved rows are marked; retry will skip them.` }); }
+    finally { setLoading(false); }
+  }
+  async function chooseImage(event) {
+    const file = event.target.files?.[0]; if (!file) return;
+    if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type) || file.size > 100000) { setBanner({ tone: 'error', message: 'Use PNG, JPEG or WebP up to 100 KB. Large papers must be split.' }); return; }
+    const reader = new FileReader(); reader.onload = () => setImage(String(reader.result)); reader.readAsDataURL(file);
+  }
   function handleCancelWordUpload() {
     setWordFile(null);
     if (wordFileInputRef.current) {
@@ -287,38 +260,6 @@ export default function AddQuestion() {
         onClose={() => setBanner(null)}
       />
 
-      {uploadModal && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="upload-result-title"
-        >
-          <div className="w-full max-w-md rounded-3xl bg-white p-7 shadow-2xl">
-            <div className={`mx-auto flex h-14 w-14 items-center justify-center rounded-full text-2xl font-bold ${uploadModal.type === "success" ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-700"}`}>
-              {uploadModal.type === "success" ? "✓" : "!"}
-            </div>
-            <h2 id="upload-result-title" className="mt-5 text-center text-xl font-semibold text-slate-900">
-              {uploadModal.title}
-            </h2>
-            <p className="mt-3 text-center text-sm leading-6 text-slate-600">
-              {uploadModal.message}
-            </p>
-            {uploadModal.type === "success" ? (
-              <p className="mt-4 text-center text-xs text-slate-400">Redirecting in a moment…</p>
-            ) : (
-              <button
-                type="button"
-                onClick={() => setUploadModal(null)}
-                className="mt-6 w-full rounded-xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white"
-              >
-                Stay here and try again
-              </button>
-            )}
-          </div>
-        </div>
-      )}
-
       <section className="rounded-2xl bg-white p-6 shadow-sm">
         <h2 className="text-2xl font-semibold text-slate-900">Add questions</h2>
         <p className="mt-2 text-sm text-slate-500">
@@ -330,7 +271,7 @@ export default function AddQuestion() {
         <label className="mb-2 block text-sm font-medium text-slate-700">Exam</label>
         <select
           value={examId}
-          onChange={(event) => setExamId(event.target.value)}
+          onChange={(event) => { setExamId(event.target.value); setPreview([]); }}
           className="w-full rounded-xl border border-slate-300 px-4 py-3"
         >
           <option value="">Select exam</option>
@@ -353,6 +294,9 @@ export default function AddQuestion() {
             className="min-h-32 w-full rounded-xl border border-slate-300 px-4 py-3"
           />
 
+          <label className="block">Question diagram (optional; PNG/JPEG/WebP, 100 KB maximum)<input type="file" accept="image/png,image/jpeg,image/webp" onChange={chooseImage} /></label>
+          {image && <><img src={image} alt={imageAlt || 'Question diagram preview'} className="max-h-60" /><input placeholder="Describe the diagram for accessibility" value={imageAlt} onChange={e => setImageAlt(e.target.value)} className="border p-3 rounded-xl w-full" /><button onClick={() => setImage('')}>Remove image</button></>}
+          <p className="text-sm text-slate-500">Use line breaks for passages and Unicode for language accents, fractions and scientific symbols. DOCX import extracts text; add diagrams separately.</p>
           <div className="grid gap-4 md:grid-cols-2">
             {["A", "B", "C", "D"].map((optionKey) => (
               <input
@@ -412,7 +356,7 @@ export default function AddQuestion() {
           <input
             ref={wordFileInputRef}
             type="file"
-            accept=".doc,.docx"
+            accept=".docx"
             onChange={(event) => setWordFile(event.target.files?.[0] ?? null)}
             className="flex-1 text-sm"
           />
@@ -423,7 +367,7 @@ export default function AddQuestion() {
               disabled={loading || !wordFile}
               className="rounded-xl bg-emerald-600 px-5 py-3 text-sm font-medium text-white disabled:opacity-60"
             >
-              {loading ? "Uploading..." : "Upload questions"}
+              {loading ? "Uploading..." : "Preview questions"}
             </button>
 
             <button
@@ -436,6 +380,7 @@ export default function AddQuestion() {
           </div>
         </div>
 
+        {!!preview.length && <div className="mt-5 space-y-4"><h4 className="font-semibold">Import preview ({preview.length})</h4>{preview.map((r, i) => <article key={i} className="border rounded-xl p-4"><p className="whitespace-pre-wrap">{i + 1}. {r.question}</p>{Object.entries(r.options).map(([k, v]) => <p key={k}>{k}. {v}</p>)}<p>Answer: {r.correctAnswer} · Marks: {r.marks} · {r.saved ? 'Saved' : r.error || 'Ready'}</p></article>)}<button disabled={loading || preview.some(r => r.error)} onClick={savePreview} className="bg-slate-900 text-white p-3 rounded-xl">Confirm and save preview</button><button disabled={loading} onClick={() => setPreview([])} className="ml-4">Clear preview</button></div>}
         {wordFile && (
           <p className="mt-3 text-sm text-slate-500">
             Selected file: <span className="font-medium text-slate-700">{wordFile.name}</span>

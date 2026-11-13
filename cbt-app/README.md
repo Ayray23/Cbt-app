@@ -1,55 +1,35 @@
-# School CBT
+# CBT Frontend
 
-A simple Firebase-backed computer-based testing system for schools.
+React/Vite frontend for the CBT app. Students log in using an admin-issued username and password, or an existing email login. There is no public signup. Admins create student accounts on **Students**, then issue personal exam PINs on **Exam PINs**.
 
-## Simple model
+The trusted API lives at the repository-root `api/cbt.mjs`. Publishing snapshots the paper privately, PIN validation happens on the server, and only the server can grade and finalize a result. Student packets never contain answer keys.
 
-The system is intentionally built around six things:
+## Run locally
 
-**School → Class → Student → Exam → Questions → Results**
+```powershell
+npm install
+npm run dev
+```
 
-Admins should not need to understand Firebase IDs, hashes, sessions, or backend records to operate the system.
+Also run `npm run dev:api` from the repository root. Vite proxies `/api` to that server. Keep frontend Firebase config in this folder's gitignored `.env.local` and server credentials only in the repository-root environment.
 
-## Student workflow
+## Check
 
-1. The school administrator creates the student.
-2. The system generates a permanent Student ID.
-3. The administrator gives the student the initial password.
-4. The student signs in with **Student ID + password**. A personal email is not required for newly created student accounts.
-5. The student sees only published exams for their class.
-6. The student enters the exam code supplied by the administrator and starts the exam.
-7. The student submits once and the result is recorded.
+```powershell
+npm run lint
+npm run build
+```
 
-Existing legacy student accounts that were created with an email can continue using their existing email login while the school transitions to Student IDs.
+Run `npm test` from the repository root for service and offline-store regression tests.
 
-## Administrator workflow
+## Deployment and migration
 
-1. **Students** — create students, view their permanent IDs, choose their class, and block or restore access.
-2. **Exams** — create an exam, choose the class, set the duration, add an optional schedule, and publish when ready.
-3. **Questions** — add the questions belonging to that exam.
-4. **Results** — review submitted examinations.
-5. **Administrators** — available only to superadmins for role management.
+Read [Secure Rollout](../docs/SECURE-ROLLOUT.md). Vercel must use the repository root, not this folder, as Root Directory. Deploy API, frontend, strict Firestore rules and existing-data migration together during maintenance.
 
-The app keeps security and session controls underneath this simple workflow.
+Bootstrap an existing Firebase Auth owner using:
 
-## Firebase setup
+```powershell
+node --env-file-if-exists=../.env.local setAdmin.js owner@example.com superadmin
+```
 
-1. Install dependencies:
-   `npm install`
-2. Create or update `.env.local` with the Firebase web configuration.
-3. Start the app:
-   `npm run dev`
-4. Build for production:
-   `npm run build`
-
-## Roles
-
-- `student` — can see and take exams assigned to the student's class.
-- `admin` — manages students, exams, questions and results.
-- `superadmin` — has administrator management access as well.
-
-## Deployment
-
-The frontend uses Firebase Authentication and Firestore. The existing secure exam/session backend must remain deployed for protected exam sessions and individual exam-code validation.
-
-The refactor deliberately keeps backend/security details out of the normal school workflow. Firebase Spark compatibility remains a design goal; features that require trusted server-side administration, such as arbitrarily resetting another user's Firebase password without that user's credentials, cannot be safely faked by the browser alone.
+Offline starts require an existing saved attempt on the same device; first login and first start need a connection. Keep pending submissions on the device until the server confirms them. Late uploads require staff review.
