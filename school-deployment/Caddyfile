@@ -1,0 +1,28 @@
+{
+  auto_https disable_redirects
+}
+
+# Replace cbt.school.test with the school's LAN DNS hostname.
+# 'tls internal' creates a private CA: distribute and trust its root
+# certificate on every managed exam device BEFORE the pilot.
+https://cbt.school.test {
+  tls internal
+  encode zstd gzip
+  root * ./cbt-app/dist
+
+  # Deliberately do not expose the unauthenticated/prototype collector.
+  @collector path /records /records/* /api/lan /api/lan/*
+  respond @collector "LAN collector is not enabled for student use" 403
+
+  @assets path /assets/*
+  header @assets Cache-Control "public, max-age=31536000, immutable"
+
+  header {
+    X-Content-Type-Options nosniff
+    Referrer-Policy strict-origin-when-cross-origin
+    X-Frame-Options DENY
+    Cache-Control "no-store"
+  }
+  try_files {path} /index.html
+  file_server
+}
