@@ -233,11 +233,17 @@ async function sync() {
       else status("Saved to the school LAN server.");
     }
   } catch (e) {
-    status(
-      e.network
-        ? "Saved on this computer. Waiting for the school LAN connection."
-        : e.message,
-    );
+    if (packet.closed && !packet.acknowledged) {
+      // Preserve the durable final-submission receipt while offline. A failed
+      // retry must not make a closed exam appear unsaved or editable.
+      render();
+    } else {
+      status(
+        e.network
+          ? "Saved on this computer. Waiting for the school LAN connection."
+          : e.message,
+      );
+    }
   } finally {
     syncing = false;
   }
