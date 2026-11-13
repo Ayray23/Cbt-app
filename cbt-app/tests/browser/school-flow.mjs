@@ -12,7 +12,10 @@ const owner = await auth.createUser({ email: 'owner@example.test', password });
 await db.doc(`users/${owner.uid}`).set({ role: 'superadmin', displayName: 'School Owner', email: 'owner@example.test' });
 await db.doc('school/settings').set({ name: 'Pilot Secondary School', address: 'Osogbo', contact: '', academicSession: '2026/2027', term: 'First', classes: ['JSS1 A'], subjects: ['Mathematics'] });
 const api = spawn(process.execPath, ['../server/dev.mjs'], { env: { ...process.env, GCLOUD_PROJECT: projectId }, stdio: 'inherit' });
-const web = spawn(process.execPath, ['node_modules/vite/bin/vite.js', '--host', '127.0.0.1', '--port', '5173'], { env: { ...process.env, VITE_USE_EMULATORS: 'true', VITE_FIREBASE_PROJECT_ID: projectId, VITE_FIREBASE_API_KEY: 'demo-key' }, stdio: 'inherit' });
+const webEnv={...process.env,VITE_USE_EMULATORS:'true',VITE_FIREBASE_PROJECT_ID:projectId,VITE_FIREBASE_API_KEY:'demo-key'};
+const build=spawn(process.execPath,['node_modules/vite/bin/vite.js','build'],{env:webEnv,stdio:'inherit'});
+await new Promise((resolve,reject)=>{build.on('error',reject);build.on('exit',code=>code===0?resolve():reject(new Error('Browser production build failed')));});
+const web = spawn(process.execPath, ['node_modules/vite/bin/vite.js', 'preview', '--host', '127.0.0.1', '--port', '5173'], { env:webEnv, stdio: 'inherit' });
 let browser;
 async function ready(url) { const deadline = Date.now() + 20000; while (Date.now() < deadline) { try { if ((await fetch(url)).ok) return; } catch {} await new Promise(r => setTimeout(r, 200)); } throw new Error('Dev server failed to start'); }
 try {
@@ -46,7 +49,14 @@ try {
   await page.locator('input[type=radio][value=B]').waitFor();
   if (await page.getByRole('button', { name: 'Open exam', exact: true }).isVisible()) await page.getByRole('button', { name: 'Open exam', exact: true }).click();
   await page.locator('input[type=radio][value=B]').waitFor(); assert(await page.locator('input[type=radio][value=B]').isChecked(), 'Refresh preserves answer');
+  await page.evaluate(()=>navigator.serviceWorker.ready);
+  await context.setOffline(true); await page.reload(); await page.locator('input[type=radio][value=B]').waitFor();
+  if(await page.getByRole('button',{name:'Open exam',exact:true}).isVisible())await page.getByRole('button',{name:'Open exam',exact:true}).click();
+  assert(await page.locator('input[type=radio][value=B]').isChecked(),'Production PWA offline reload preserves answer');
   page.on('dialog', d => d.accept()); await page.getByRole('button', { name: 'Submit exam', exact: true }).click(); await page.waitForURL('**/portal');
+  await page.getByText('Saved submissions waiting to upload:',{exact:false}).waitFor();
+  await page.reload();await page.getByText('Saved submissions waiting to upload:',{exact:false}).waitFor();
+  await context.setOffline(false); await page.getByRole('button',{name:'Retry upload',exact:true}).click();
   const deadline = Date.now() + 15000; let result;
   while (Date.now() < deadline) { const rows = await db.collection('examResults').get(); if (!rows.empty) { result = rows.docs[0].data(); break; } await new Promise(r => setTimeout(r, 200)); }
   assert.equal(result?.finalScore, 1); assert.equal(result?.released, false); assert.equal(errors.length, 0, errors.join('\n'));
@@ -83,7 +93,7 @@ try {
   assert.equal(errors.length, 0, errors.join('\n'));
   console.log('PASS: teacher self-registration → verified approval → private author workspace → superadmin question and activity oversight');
   await page.screenshot({ path: '/tmp/cbt-school-student.png', fullPage: true });
-  console.log('PASS: browser admin setup → student provision → exam author/publish → PIN → student start → answer → refresh → submit → server score');
+  console.log('PASS: browser admin setup → student provision → exam author/publish → PIN → student start → answer → production PWA offline reload → offline submit/reload → reconnect → server score');
 } catch (error) {
   for (const context of browser?.contexts() || []) for (const page of context.pages()) console.error('FAILED PAGE:', page.url(), await page.locator('body').innerText().catch(() => 'Unavailable'));
   throw error;

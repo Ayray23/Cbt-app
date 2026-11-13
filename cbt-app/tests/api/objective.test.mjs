@@ -85,3 +85,18 @@ test('self-registered identity cannot author until a verified superadmin approva
   await api(ownerToken, 'teachers.review', { ...decision, decision: 'suspend' });
   await api(token, 'exams.create', {}, 403);
 });
+test('LAN grant HTTP synchronization authenticates its own credential, isolates candidates and grades once', async()=>{
+ const student=await api(ownerToken,'students.create',{username:'lan-http-student',displayName:'LAN HTTP Student',password,className:'JSS1 A',academicSession:'2026/2027',subjects:['Mathematics']});
+ const exam=await api(ownerToken,'exams.create',{title:'LAN HTTP',duration:20,className:'JSS1 A',subject:'Mathematics',academicSession:'2026/2027',term:'First'});
+ await db.doc('questions/lan-http-q').set({examId:exam.id,text:'2+2',options:{A:'4',B:'3',C:'2',D:'1'},correctAnswer:'A',marks:2});await api(ownerToken,'exams.publish',{examId:exam.id});
+ const bundle=await api(ownerToken,'lan.export',{examId:exam.id,studentIds:[student.uid],requestId:'http-lan-export'});
+ assert.equal(bundle.questions[0].correctAnswer,undefined);assert.deepEqual(await api(ownerToken,'lan.export',{examId:exam.id,studentIds:[student.uid],requestId:'http-lan-export'}),bundle);
+ const studentToken=await login('lan-http-student@students.cbt.invalid');await api(studentToken,'exam.start',{examId:exam.id,deviceId:'one'},409);await api(studentToken,'lan.download',{grantId:bundle.grantId},403);
+ const record={uid:student.uid,answers:{'lan-http-q':'A'},startedAtMs:Date.now(),submittedAtMs:Date.now()+1000};
+ await api('x'.repeat(64),'lan.sync',{grantId:bundle.grantId,records:[record]},401);const payload={grantId:bundle.grantId,records:[record]};await api(bundle.secret,'lan.sync',payload);await api(bundle.secret,'lan.sync',payload);
+ const result=(await db.doc(`examResults/${exam.id}_${student.uid}`).get()).data();assert.equal(result.finalScore,2);assert.equal(result.requiresReview,true);assert.equal(result.released,false);
+});
+test('staff provisioning retries return one account and final staff role',async()=>{
+ const input={requestId:'staff-http-id',username:'staff-http',displayName:'Staff HTTP',email:'staff-contact@example.test',password,role:'teacher_admin'};
+ const first=await api(ownerToken,'staff.create',input);const second=await api(ownerToken,'staff.create',input);assert.equal(first.uid,second.uid);assert.equal((await db.doc(`users/${first.uid}`).get()).data().role,'teacher_admin');assert.equal((await auth.getUser(first.uid)).email,'staff-http@students.cbt.invalid');
+});
