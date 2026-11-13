@@ -1,16 +1,24 @@
 import { useEffect, useMemo, useState } from "react";
-import { collection, onSnapshot } from "firebase/firestore";
+import { doc, onSnapshot } from "firebase/firestore";
+import { useRecords } from "../hooks/useRecords";
+import RecordPager from "../components/RecordPager";
 import { db } from "/firebase";
 import StatusBanner from "../components/StatusBanner";
 
 import { callApi } from "../services/api";
 
 function contactState(session, now) {
-  if (session.status === "not-started") return session.attendance === "absent" ? "Absent" : "Not started";
-  if (session.status === "submitted") return session.requiresReview ? "Submitted - review required" : "Submitted";
+  if (session.status === "lan-reserved")
+    return "Reserved for LAN — awaiting synchronization";
+  if (session.status === "not-started")
+    return session.attendance === "absent" ? "Absent" : "Not started";
+  if (session.status === "submitted")
+    return session.requiresReview ? "Submitted - review required" : "Submitted";
   if (session.schemaVersion !== 2) return "Legacy attempt - review";
   if (now >= session.expiresAtMs) return "Time elapsed - awaiting upload";
-  const lastSeen = session.lastSeenAt?.seconds ? session.lastSeenAt.seconds * 1000 : session.lastActivityAtMs || session.startedAtMs;
+  const lastSeen = session.lastSeenAt?.seconds
+    ? session.lastSeenAt.seconds * 1000
+    : session.lastActivityAtMs || session.startedAtMs;
   return now - lastSeen > 90000 ? "No recent contact" : "In progress";
 }
 
@@ -26,7 +34,9 @@ function MetricCard({ label, value, helper, tone = "slate" }) {
 
   return (
     <div className={`rounded-2xl border p-6 shadow-sm ${toneClassName}`}>
-      <p className="text-sm font-medium uppercase tracking-[0.25em] text-slate-400">{label}</p>
+      <p className="text-sm font-medium uppercase tracking-[0.25em] text-slate-400">
+        {label}
+      </p>
       <p className="mt-4 text-4xl font-semibold text-slate-900">{value}</p>
       <p className="mt-2 text-sm text-slate-500">{helper}</p>
     </div>
@@ -59,15 +69,93 @@ function statusBadgeClass(status, isOfflineRisk) {
 }
 
 export default function Monitoring() {
-  async function intervene(session, operation) {
-    const reason = window.prompt('Explain the incident / intervention (required)'); if (!reason) return;
-    let minutes; if (operation === 'extend') { const value = window.prompt('Extra minutes (1-120)'); if (!value) return; minutes = Number(value); }
-    if (operation === 'transfer' && !window.confirm('Ensure the old computer is stopped. Unsynced answers remain on that device; recover them before transfer. Continue?')) return;
-    try { await callApi('sessions.intervene', { sessionId: session.id, operation, reason, minutes }); setError(''); }
-    catch (e) { setError(e.message); }
+  async function recover(session, event) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    try {
+      if (file.size > 10000000) throw new Error("Recovery file is too large.");
+      const value = JSON.parse(await file.text());
+      const packet = value.packets?.find(
+        (p) =>
+          p.session?.studentUid === session.studentUid &&
+          p.session?.examId === session.examId,
+      );
+      if (!packet)
+        throw new Error("No matching student and exam in this recovery file.");
+      const reason = window.prompt(
+        "Why are these device answers being recovered?",
+      );
+      if (!reason) return;
+      if (
+        !window.confirm(
+          "Replace the server draft with these recovered answers? Stop the student devices first, then transfer/reload the replacement computer. The result will require review.",
+        )
+      )
+        return;
+      await callApi("sessions.recover", {
+        sessionId: session.id,
+        answers: packet.pending?.answers || packet.answers || {},
+        reason,
+      });
+      setError(
+        "Recovery saved. Transfer/reload the replacement computer before continuing.",
+      );
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      event.target.value = "";
+    }
   }
-  const [assignments, setAssignments] = useState([]);
+  async function intervene(session, operation) {
+    const reason = window.prompt(
+      "Explain the incident / intervention (required)",
+    );
+    if (!reason) return;
+    let targetDeviceId;
+    if (
+      operation === "finalize" &&
+      !window.confirm(
+        "Close using only answers already saved on the server? Recover unsynced answers first. This requires result review and cannot be undone.",
+      )
+    )
+      return;
+    if (operation === "transfer") {
+      targetDeviceId = window.prompt(
+        "Replacement computer device ID (shown on its student portal)",
+      );
+      if (!targetDeviceId) return;
+    }
+    let minutes;
+    if (operation === "extend") {
+      const value = window.prompt("Extra minutes (1-120)");
+      if (!value) return;
+      minutes = Number(value);
+    }
+    if (
+      operation === "transfer" &&
+      !window.confirm(
+        "Ensure the old computer is stopped. Unsynced answers remain on that device; recover them before transfer. Continue?",
+      )
+    )
+      return;
+    try {
+      await callApi(
+        operation === "finalize" ? "sessions.finalize" : "sessions.intervene",
+        { sessionId: session.id, operation, reason, minutes, targetDeviceId },
+      );
+      setError("");
+    } catch (e) {
+      setError(e.message);
+    }
+  }
   const [examFilter, setExamFilter] = useState("");
+  const papers = useRecords("exams", [], 50);
+  const roster = useRecords(
+    "examAssignments",
+    [["examId", "==", examFilter || "__none__"]],
+    50,
+  );
+  const assignments = roster.rows;
   const [sessions, setSessions] = useState([]);
   const [usersById, setUsersById] = useState({});
   const [now, setNow] = useState(Date.now);
@@ -80,45 +168,77 @@ export default function Monitoring() {
   }, []);
 
   useEffect(() => {
-    const failed = () => setError("Live monitoring is unavailable. Check your connection and administrator access.");
-    const unsubscribeSessions = onSnapshot(collection(db, "examSessions"), { includeMetadataChanges: true }, (snapshot) => {
-      setSessions(snapshot.docs.map((docItem) => ({ id: docItem.id, ...docItem.data() })));
-      setCached(snapshot.metadata.fromCache);
-    }, failed);
-
-    const unsubscribeAssignments = onSnapshot(collection(db, "examAssignments"), snapshot => setAssignments(snapshot.docs.map(d => ({ id: d.id, ...d.data() }))), failed);
-    const unsubscribeUsers = onSnapshot(collection(db, "users"), (snapshot) => {
-      setUsersById(
-        snapshot.docs.reduce((acc, docItem) => {
-          acc[docItem.id] = docItem.data();
-          return acc;
-        }, {})
+    const failed = () =>
+      setError(
+        "Live monitoring is unavailable. Check your connection and administrator access.",
       );
-    }, failed);
-
-    return () => {
-      unsubscribeAssignments();
-      unsubscribeSessions();
-      unsubscribeUsers();
-    };
-  }, []);
+    setSessions([]);
+    setUsersById({});
+    const stops = assignments.flatMap((a) => [
+      onSnapshot(
+        doc(db, "examSessions", a.id),
+        { includeMetadataChanges: true },
+        (snapshot) => {
+          setSessions((rows) => [
+            ...rows.filter((r) => r.id !== a.id),
+            ...(snapshot.exists() ? [{ id: a.id, ...snapshot.data() }] : []),
+          ]);
+          setCached(snapshot.metadata.fromCache);
+        },
+        failed,
+      ),
+      onSnapshot(
+        doc(db, "users", a.studentUid),
+        (snapshot) =>
+          setUsersById((rows) => ({
+            ...rows,
+            [a.studentUid]: snapshot.data(),
+          })),
+        failed,
+      ),
+    ]);
+    return () => stops.forEach((stop) => stop());
+  }, [assignments]);
 
   const orderedSessions = useMemo(
     () =>
-      [...sessions, ...assignments.filter(a => !sessions.some(s => s.id === a.id)).map(a => ({ ...a, status: 'not-started' }))].filter(s => !examFilter || s.examId === examFilter).sort((first, second) => {
-        const secondTime = second.updatedAt?.seconds || second.submittedAt?.seconds || second.startedAt?.seconds || 0;
-        const firstTime = first.updatedAt?.seconds || first.submittedAt?.seconds || first.startedAt?.seconds || 0;
-        return secondTime - firstTime;
-      }),
-    [sessions, assignments, examFilter]
+      [
+        ...sessions,
+        ...assignments
+          .filter((a) => !sessions.some((s) => s.id === a.id))
+          .map((a) => ({ ...a, status: "not-started" })),
+      ]
+        .filter((s) => !examFilter || s.examId === examFilter)
+        .sort((first, second) => {
+          const secondTime =
+            second.updatedAt?.seconds ||
+            second.submittedAt?.seconds ||
+            second.startedAt?.seconds ||
+            0;
+          const firstTime =
+            first.updatedAt?.seconds ||
+            first.submittedAt?.seconds ||
+            first.startedAt?.seconds ||
+            0;
+          return secondTime - firstTime;
+        }),
+    [sessions, assignments, examFilter],
   );
 
   const analytics = useMemo(() => {
-    const started = orderedSessions.filter((session) => contactState(session, now) === "In progress").length;
-    const submitted = orderedSessions.filter((session) => session.status === "submitted").length;
-    const violations = orderedSessions.filter((session) => Number(session.tabSwitchCount || 0) > 0).length;
+    const started = orderedSessions.filter(
+      (session) => contactState(session, now) === "In progress",
+    ).length;
+    const submitted = orderedSessions.filter(
+      (session) => session.status === "submitted",
+    ).length;
+    const violations = orderedSessions.filter(
+      (session) => Number(session.tabSwitchCount || 0) > 0,
+    ).length;
     const forcedClosures = orderedSessions.filter((session) =>
-      ["tab-switch-limit", "fullscreen-exit"].includes(session.submissionReason)
+      ["tab-switch-limit", "fullscreen-exit"].includes(
+        session.submissionReason,
+      ),
     ).length;
 
     return {
@@ -132,16 +252,51 @@ export default function Monitoring() {
   return (
     <div className="space-y-6">
       <StatusBanner tone="error" message={error} />
-      <StatusBanner tone="warning" message={cached ? "Showing cached monitoring data; reconnect to receive live activity." : ""} />
+      <StatusBanner
+        tone="warning"
+        message={
+          cached
+            ? "Showing cached monitoring data; reconnect to receive live activity."
+            : ""
+        }
+      />
       <section className="rounded-2xl bg-white p-6 shadow-sm">
-        <h2 className="text-2xl font-semibold text-slate-900">Live invigilation</h2>
+        <h2 className="text-2xl font-semibold text-slate-900">
+          Live invigilation
+        </h2>
         <p className="mt-2 text-sm text-slate-500">
-          Monitor active exams, suspicious activity, fullscreen exits, and submitted papers in real time.
+          Monitor active exams, suspicious activity, fullscreen exits, and
+          submitted papers in real time.
         </p>
-        <p className="mt-2 text-sm text-slate-500">Active devices report about every 30 seconds. No recent contact may mean a disconnected or closed device. Offline submissions appear here only after upload.</p>
+        <p className="mt-2 text-sm text-slate-500">
+          Active devices report about every 30 seconds. No recent contact may
+          mean a disconnected or closed device. Offline submissions appear here
+          only after upload.
+        </p>
       </section>
 
-      <label className="block">Exam roster<select className="block border rounded-xl p-3" value={examFilter} onChange={e => setExamFilter(e.target.value)}><option value="">All exams</option>{[...new Map([...sessions, ...assignments].map(s => [s.examId, s.examTitle])).entries()].map(([id,title]) => <option value={id} key={id}>{title || id}</option>)}</select></label>
+      <label className="block">
+        Exam roster
+        <select
+          className="block border rounded-xl p-3"
+          value={examFilter}
+          onChange={(e) => setExamFilter(e.target.value)}
+        >
+          <option value="">Select an exam</option>
+          {papers.rows.map((e) => (
+            <option key={e.id} value={e.id}>
+              {e.title}
+            </option>
+          ))}
+        </select>
+      </label>
+      <RecordPager records={papers} />
+      <p>
+        Live metrics cover the selected roster page (50 candidates). Select the
+        next page to inspect more candidates.
+      </p>
+      <RecordPager records={roster} />
+
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <MetricCard
           label="Active Exams"
@@ -186,19 +341,30 @@ export default function Monitoring() {
               {orderedSessions.map((session) => {
                 const studentProfile = usersById[session.studentUid] || {};
                 const studentName =
-                  session.studentName ?? studentProfile.displayName ?? session.studentEmail ?? session.studentUid;
+                  session.studentName ??
+                  studentProfile.displayName ??
+                  session.studentEmail ??
+                  session.studentUid;
                 const accessState =
-                  studentProfile.role === "student" && studentProfile.loginDisabled ? "Blocked" : "Allowed";
+                  studentProfile.role === "student" &&
+                  studentProfile.loginDisabled
+                    ? "Blocked"
+                    : "Allowed";
                 const state = contactState(session, now);
-                const isOfflineRisk = state !== "Submitted" && state !== "In progress";
+                const isOfflineRisk =
+                  state !== "Submitted" && state !== "In progress";
 
                 return (
                   <tr key={session.id} className="border-t border-slate-200">
                     <td className="px-4 py-4 text-slate-700">
                       <p className="font-medium">{studentName}</p>
-                      <p className="mt-1 text-xs text-slate-500">{session.studentUsername || session.studentEmail || "-"}</p>
+                      <p className="mt-1 text-xs text-slate-500">
+                        {session.studentUsername || session.studentEmail || "-"}
+                      </p>
                     </td>
-                    <td className="px-4 py-4 text-slate-500">{session.examTitle ?? session.examId}</td>
+                    <td className="px-4 py-4 text-slate-500">
+                      {session.examTitle ?? session.examId}
+                    </td>
                     <td className="px-4 py-4">
                       <span
                         className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${statusBadgeClass(session.status, isOfflineRisk)}`}
@@ -206,12 +372,82 @@ export default function Monitoring() {
                         {state}
                       </span>
                     </td>
-                    <td className="px-4 py-4 text-slate-500">{Number(session.tabSwitchCount || 0)}</td>
-                    <td className="px-4 py-4 text-slate-500">{session.submissionReason ?? "-"}</td>
                     <td className="px-4 py-4 text-slate-500">
-                      {formatDate(session.updatedAt || session.submittedAt || session.startedAtMs)}
+                      {Number(session.tabSwitchCount || 0)}
                     </td>
-                    <td className="px-4 py-4 text-slate-500">{accessState}<div className="flex flex-wrap gap-2 mt-2">{session.status === 'started' && <><button onClick={() => intervene(session, 'extend')}>Extra time</button><button onClick={() => intervene(session, 'transfer')}>Transfer device</button></>}{session.status !== 'not-started' && <button onClick={() => intervene(session, 'incident')}>Record incident</button>}{session.status === 'not-started' && <button onClick={async () => { const reason = window.prompt('Attendance note'); if (!reason) return; try { await callApi('attendance.set', { assignmentId: session.id, attendance: session.attendance === 'absent' ? 'present' : 'absent', reason }); } catch (e) { setError(e.message); } }}>{session.attendance === 'absent' ? 'Mark present' : 'Mark absent'}</button>}</div></td>
+                    <td className="px-4 py-4 text-slate-500">
+                      {session.submissionReason ?? "-"}
+                    </td>
+                    <td className="px-4 py-4 text-slate-500">
+                      {formatDate(
+                        session.updatedAt ||
+                          session.submittedAt ||
+                          session.startedAtMs,
+                      )}
+                    </td>
+                    <td className="px-4 py-4 text-slate-500">
+                      {accessState}
+                      <div className="flex flex-wrap gap-2 mt-2">
+                        {session.status === "started" && (
+                          <>
+                            <button
+                              onClick={() => intervene(session, "extend")}
+                            >
+                              Extra time
+                            </button>
+                            <button
+                              onClick={() => intervene(session, "transfer")}
+                            >
+                              Transfer device
+                            </button>
+                            <button
+                              onClick={() => intervene(session, "finalize")}
+                            >
+                              Finalize saved answers
+                            </button>
+                            <label>
+                              Recover device answers
+                              <input
+                                type="file"
+                                accept="application/json"
+                                onChange={(e) => recover(session, e)}
+                              />
+                            </label>
+                          </>
+                        )}
+                        {session.status !== "not-started" && (
+                          <button
+                            onClick={() => intervene(session, "incident")}
+                          >
+                            Record incident
+                          </button>
+                        )}
+                        {session.status === "not-started" && (
+                          <button
+                            onClick={async () => {
+                              const reason = window.prompt("Attendance note");
+                              if (!reason) return;
+                              try {
+                                await callApi("attendance.set", {
+                                  assignmentId: session.id,
+                                  attendance:
+                                    session.attendance === "absent"
+                                      ? "present"
+                                      : "absent",
+                                  reason,
+                                });
+                              } catch (e) {
+                                setError(e.message);
+                              }
+                            }}
+                          >
+                            {session.attendance === "absent"
+                              ? "Mark present"
+                              : "Mark absent"}
+                          </button>
+                        )}
+                      </div>
+                    </td>
                   </tr>
                 );
               })}
@@ -220,7 +456,9 @@ export default function Monitoring() {
         </div>
 
         {orderedSessions.length === 0 && (
-          <div className="p-8 text-sm text-slate-500">No exam sessions yet.</div>
+          <div className="p-8 text-sm text-slate-500">
+            No exam sessions yet.
+          </div>
         )}
       </section>
     </div>

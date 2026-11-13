@@ -16,13 +16,15 @@ jobs:
           java-version: 21
       - run: npm ci --prefix cbt-app
       - run: npm test
+      - run: npm test --prefix lan-server
       - run: npm run lint --prefix cbt-app
       - run: npm run build --prefix cbt-app
       - run: npm run test:rules --prefix cbt-app
       - run: npm run test:api --prefix cbt-app
       - run: npx --prefix cbt-app playwright install --with-deps chromium
       - run: npm run test:browser --prefix cbt-app
-      - run: npm audit --omit=dev --audit-level=high --prefix cbt-app
+      - run: npm run test:lan-browser --prefix cbt-app
+      - run: npm audit --audit-level=moderate --prefix cbt-app
       - run: npm ci --prefix cloud-functions/functions
       - run: npm run lint --prefix cloud-functions/functions
-      - run: npm audit --omit=dev --audit-level=high --prefix cloud-functions/functions
+      - run: npm audit --audit-level=moderate --prefix cloud-functions/functions

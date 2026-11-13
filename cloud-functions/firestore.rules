@@ -19,7 +19,7 @@ service cloud.firestore {
     match /exams/{id} {
       allow read: if enabled() && (invigilator() || (teacher() && resource.data.createdBy == request.auth.uid) || (profile().role == 'student' && resource.data.status == 'published'));
       allow create, delete: if false;
-      allow update: if examiner() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'updatedAt', 'questionCount']) && request.resource.data.status == 'draft';
+      allow update: if false;
     }
     match /questions/{id} {
       allow read: if enabled() && (profile().role == 'superadmin' || (profile().role in ['teacher', 'teacher_admin', 'admin', 'examofficer'] && resource.data.createdBy == request.auth.uid));
