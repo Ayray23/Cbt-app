@@ -38,7 +38,7 @@ export function AuthProvider({ children }) {
           } catch { /* Continue with the authoritative profile lookup. */ }
           if (window.navigator.onLine) return;
         }
-        if (!record || !["student", "admin", "superadmin", "teacher", "invigilator", "examofficer"].includes(record.role)) {
+        if (!record || !["student", "admin", "superadmin", "teacher", "teacher_admin", "invigilator", "examofficer"].includes(record.role)) {
           setAuthError("Your account has not been provisioned. Contact your school administrator.");
           setRole(null);
           setProfile(null);

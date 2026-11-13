@@ -3,17 +3,17 @@ service cloud.firestore {
   match /databases/{database}/documents {
     function signedIn() { return request.auth != null; }
     function profile() { return get(/databases/$(database)/documents/users/$(request.auth.uid)).data; }
-    function enabled() { return signedIn() && exists(/databases/$(database)/documents/users/$(request.auth.uid)) && profile().get('loginDisabled', false) == false; }
+    function enabled() { return signedIn() && exists(/databases/$(database)/documents/users/$(request.auth.uid)) && profile().get('loginDisabled', false) == false && profile().get('approvalStatus', 'approved') == 'approved'; }
     function admin() { return enabled() && profile().role in ['admin', 'superadmin']; }
     function examiner() { return enabled() && profile().role in ['admin', 'superadmin', 'examofficer']; }
     function invigilator() { return enabled() && profile().role in ['admin', 'superadmin', 'examofficer', 'invigilator']; }
-    function teacher() { return enabled() && profile().role == 'teacher'; }
+    function teacher() { return enabled() && profile().role in ['teacher', 'teacher_admin']; }
     function draftOwner(examId) {
       let exam = get(/databases/$(database)/documents/exams/$(examId)).data;
       return exam.status == 'draft' && (examiner() || (teacher() && exam.createdBy == request.auth.uid && exam.className in profile().assignedClasses && exam.subject in profile().assignedSubjects));
     }
     match /users/{uid} {
-      allow read: if signedIn() && (request.auth.uid == uid || invigilator());
+      allow read: if signedIn() && (request.auth.uid == uid || (enabled() && profile().role == 'superadmin') || (invigilator() && resource.data.role == 'student'));
       allow write: if false;
     }
     match /exams/{id} {
@@ -22,10 +22,9 @@ service cloud.firestore {
       allow update: if examiner() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'updatedAt', 'questionCount']) && request.resource.data.status == 'draft';
     }
     match /questions/{id} {
-      allow read: if examiner() || (teacher() && resource.data.createdBy == request.auth.uid);
-      allow create: if draftOwner(request.resource.data.examId) && request.resource.data.createdBy == request.auth.uid;
-      allow update: if request.resource.data.examId == resource.data.examId && request.resource.data.createdBy == resource.data.createdBy && draftOwner(resource.data.examId);
-      allow delete: if draftOwner(resource.data.examId);
+      allow read: if enabled() && (profile().role == 'superadmin' || (profile().role in ['teacher', 'teacher_admin', 'admin', 'examofficer'] && resource.data.createdBy == request.auth.uid));
+      // All question mutations use the authenticated API to guarantee an audit entry.
+      allow write: if false;
     }
     match /examAssignments/{id} { allow read: if invigilator() || (enabled() && resource.data.studentUid == request.auth.uid); allow write: if false; }
     match /examSessions/{id} { allow read: if invigilator() || (enabled() && resource.data.studentUid == request.auth.uid && resource.data.schemaVersion == 2); allow write: if false; }

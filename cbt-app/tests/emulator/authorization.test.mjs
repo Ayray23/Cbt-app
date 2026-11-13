@@ -12,7 +12,7 @@ before(async () => {
   assert(process.env.FIRESTORE_EMULATOR_HOST, 'Never run this suite against production');
   env = await initializeTestEnvironment({ projectId, firestore: { rules: readFileSync(new URL('../../../cloud-functions/firestore.rules', import.meta.url), 'utf8') } });
   app = initializeApp({ projectId }, 'school-tests'); db = getFirestore(app);
-  await db.doc('users/admin').set({ role: 'admin' });
+  await db.doc('users/admin').set({ role: 'superadmin' });
   await db.doc('users/alice').set({ role: 'student', className: 'JSS1 A', subjects: ['Mathematics'], academicSession: '2026/2027' });
   await db.doc('users/bob').set({ role: 'student', loginDisabled: true });
   await db.doc('questions/private').set({ examId: 'math', correctAnswer: 'B' });
@@ -62,7 +62,9 @@ test('staff role boundaries and teacher question ownership are enforced by real 
   await db.doc('users/invigilator').set({ role: 'invigilator' });
   await db.doc('exams/teacher-paper').set({ status: 'draft', createdBy: 'teacher', className: 'JSS1 A', subject: 'Mathematics' });
   const teacher = env.authenticatedContext('teacher').firestore(); const invigilator = env.authenticatedContext('invigilator').firestore();
-  await assertSucceeds(setDoc(doc(teacher, 'questions/teacher-q'), { examId: 'teacher-paper', createdBy: 'teacher', text: 'Example' }));
+  await assertFails(setDoc(doc(teacher, 'questions/teacher-q'), { examId: 'teacher-paper', createdBy: 'teacher', text: 'Example' }));
+  await db.doc('questions/teacher-q').set({ examId: 'teacher-paper', createdBy: 'teacher', text: 'Example' });
+  await assertSucceeds(getDoc(doc(teacher, 'questions/teacher-q')));
   await assertFails(setDoc(doc(teacher, 'questions/other-q'), { examId: 'math', createdBy: 'teacher', text: 'Unauthorized' }));
   await assertFails(updateDoc(doc(teacher, 'exams/teacher-paper'), { status: 'published' }));
   await assertFails(getDoc(doc(invigilator, 'questions/teacher-q')));
@@ -70,4 +72,23 @@ test('staff role boundaries and teacher question ownership are enforced by real 
   await assertFails(getDoc(doc(invigilator, 'examResults/math_alice')));
   await db.doc('exams/teacher-paper').update({ status: 'published' });
   await assertFails(updateDoc(doc(teacher, 'questions/teacher-q'), { text: 'Tampered' }));
+});
+
+test('private teacher-admin workspaces exclude peers and pending/suspended accounts, with owner oversight', async () => {
+  for (const [id, status] of [['t1', 'approved'], ['t2', 'approved'], ['pending', 'pending'], ['suspended', 'suspended']]) await db.doc(`users/${id}`).set({ role: 'teacher_admin', approvalStatus: status });
+  await db.doc('users/regular-admin').set({ role: 'admin' });
+  await db.doc('exams/private-t1').set({ createdBy: 't1', status: 'draft' });
+  await db.doc('questions/private-t1').set({ createdBy: 't1', examId: 'private-t1', text: 'Private paper', correctAnswer: 'A' });
+  await assertSucceeds(getDoc(doc(env.authenticatedContext('t1').firestore(), 'questions/private-t1')));
+  for (const uid of ['t2', 'pending', 'suspended', 'regular-admin']) {
+    const client = env.authenticatedContext(uid).firestore();
+    await assertFails(getDoc(doc(client, 'users/t1')));
+    await assertFails(getDoc(doc(client, 'questions/private-t1')));
+    await assertFails(updateDoc(doc(client, `users/${uid}`), { approvalStatus: 'approved', role: 'superadmin' }));
+  }
+  await assertFails(getDoc(doc(env.authenticatedContext('t2').firestore(), 'exams/private-t1')));
+  await assertFails(getDoc(doc(env.authenticatedContext('pending').firestore(), 'school/settings')));
+  const root = env.authenticatedContext('admin').firestore();
+  await assertSucceeds(getDoc(doc(root, 'users/t1')));
+  await assertSucceeds(getDoc(doc(root, 'questions/private-t1')));
 });

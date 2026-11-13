@@ -21,7 +21,7 @@ export default function CreateExam() {
   const [busyId, setBusyId] = useState(null);
   const [examToDelete, setExamToDelete] = useState(null);
 
-  useEffect(() => onSnapshot(query(collection(db, "exams"), ...(role === "teacher" ? [where("createdBy", "==", user.uid)] : []), orderBy("createdAt", "desc")),
+  useEffect(() => onSnapshot(query(collection(db, "exams"), ...(role !== "superadmin" ? [where("createdBy", "==", user.uid)] : []), orderBy("createdAt", "desc")),
     (snapshot) => setExams(snapshot.docs.map((item) => ({ id: item.id, ...item.data() }))),
     () => setBanner({ tone: "error", message: "Could not load exams. Check your administrator access." })), [role, user.uid]);
 
@@ -64,14 +64,14 @@ export default function CreateExam() {
     <section className="rounded-2xl bg-white p-6 shadow-sm">
       <h2 className="text-2xl font-semibold text-slate-900">Create and publish exams</h2>
       <p className="mt-3 text-sm text-slate-600">Publishing fixes the paper and answer key for new attempts. Use Exam PINs to assign each student their own access code.</p>
-      <Link hidden={role === "teacher"} to="/exam-pins" className="mt-4 inline-block font-medium text-emerald-700 underline">Manage personal exam PINs</Link>
+      <Link hidden={["teacher", "teacher_admin"].includes(role)} to="/exam-pins" className="mt-4 inline-block font-medium text-emerald-700 underline">Manage personal exam PINs</Link>
     </section>
     {!school && <Link to="/school" className="block bg-amber-50 p-4 rounded-xl">Complete School setup before creating an exam.</Link>}
     <form onSubmit={create} className="grid gap-4 rounded-2xl bg-white p-6 shadow-sm md:grid-cols-2">
       <input aria-label="Exam title" placeholder="Exam title" required value={title} onChange={(event) => setTitle(event.target.value)} className="rounded-xl border border-slate-300 px-4 py-3" />
       <input aria-label="Duration in minutes" type="number" min="1" max="480" required placeholder="Minutes" value={duration} onChange={(event) => setDuration(event.target.value)} className="rounded-xl border border-slate-300 px-4 py-3" />
       <p className="md:col-span-2">{school?.academicSession} · {school?.term} term. Schedule times are Nigerian time (WAT).</p>
-      {['className', 'subject'].map(key => <label key={key}>{key === 'className' ? 'Class' : 'Subject'}<select required value={academic[key]} onChange={e => setAcademic({ ...academic, [key]: e.target.value })} className="w-full border rounded-xl p-3"><option value="">Select</option>{(school?.[key === 'className' ? 'classes' : 'subjects'] || []).filter(v => role !== 'teacher' || (profile?.[key === 'className' ? 'assignedClasses' : 'assignedSubjects'] || []).includes(v)).map(v => <option key={v}>{v}</option>)}</select></label>)}
+      {['className', 'subject'].map(key => <label key={key}>{key === 'className' ? 'Class' : 'Subject'}<select required value={academic[key]} onChange={e => setAcademic({ ...academic, [key]: e.target.value })} className="w-full border rounded-xl p-3"><option value="">Select</option>{(school?.[key === 'className' ? 'classes' : 'subjects'] || []).filter(v => !['teacher', 'teacher_admin'].includes(role) || (profile?.[key === 'className' ? 'assignedClasses' : 'assignedSubjects'] || []).includes(v)).map(v => <option key={v}>{v}</option>)}</select></label>)}
       <label>Assessment<select value={academic.category} onChange={e => setAcademic({ ...academic, category: e.target.value })} className="w-full border rounded-xl p-3">{['ca', 'exam', 'practice', 'mock'].map(v => <option key={v}>{v}</option>)}</select></label>
       <label>Weight towards subject total (%)<input type="number" required min="1" max="100" value={academic.weight} onChange={e => setAcademic({ ...academic, weight: Number(e.target.value) })} className="w-full border rounded-xl p-3" /></label>
       {['start', 'end'].map(key => <label key={key}>Entry window {key} (optional, WAT)<input type="datetime-local" value={academic[key]} onChange={e => setAcademic({ ...academic, [key]: e.target.value })} className="w-full border rounded-xl p-3" /></label>)}
@@ -89,7 +89,7 @@ export default function CreateExam() {
         {role !== "teacher" && (exam.status !== "published" || !exam.paperVersion) && <button disabled={Boolean(busyId)} onClick={() => changeStatus(exam, "published")} className="rounded-xl bg-emerald-600 px-4 py-2 text-sm text-white disabled:opacity-50">
           {busyId === exam.id ? "Publishing..." : exam.status === "published" ? "Republish securely" : "Publish"}
         </button>}
-        <button hidden={role === "teacher"} disabled={Boolean(busyId)} onClick={() => setExamToDelete(exam)} className="rounded-xl bg-red-600 px-4 py-2 text-sm text-white disabled:opacity-50">Archive</button>
+        <button hidden={["teacher", "teacher_admin"].includes(role)} disabled={Boolean(busyId)} onClick={() => setExamToDelete(exam)} className="rounded-xl bg-red-600 px-4 py-2 text-sm text-white disabled:opacity-50">Archive</button>
       </div>
     </article>)}
     {!exams.length && <p className="rounded-2xl bg-white p-6 text-sm text-slate-500">No exams yet.</p>}
