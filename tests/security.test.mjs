@@ -89,6 +89,28 @@ test("late offline submissions are retained for review; an expired timer cannot 
   assert.deepEqual(await service.execute(alice, "exam.progress", { deviceId: "test-device", revision: 1, examId: "math", answers: { q1: "B" } }), { expired: true });
   await service.execute(alice, "exam.submit", { deviceId: "test-device", revision: 1, examId: "math", answers: { q1: "B" }, closedAtMs: 1 });
   assert.equal(records.get("examResults/math_alice").requiresReview, true);
+  assert.equal(records.get("examResults/math_alice").finalScore, 0);
+  assert.deepEqual(records.get("examResults/math_alice").lateReportedAnswers, { q1: "B" });
+});
+
+test("a forged timeout reason cannot score unsaved answers after expiry", async () => {
+  const { service, pins, setTime, records } = await setup();
+  const packet = await service.execute(alice, "exam.start", {
+    deviceId: "test-device", revision: 1, examId: "math", pin: pins[0].pin,
+  });
+  await service.execute(alice, "exam.progress", {
+    deviceId: "test-device", revision: 2, examId: "math", answers: { q1: "A" },
+  });
+  setTime(packet.session.expiresAtMs + 60000);
+  await service.execute(alice, "exam.submit", {
+    deviceId: "test-device", examId: "math", answers: { q1: "B" },
+    submissionReason: "timeout", closedAtMs: 100000,
+  });
+  const result = records.get("examResults/math_alice");
+  assert.equal(result.finalScore, 0);
+  assert.equal(result.answers.q1, "A");
+  assert.equal(result.lateReportedAnswers.q1, "B");
+  assert.equal(result.requiresReview, true);
 });
 
 test("offline close is durable before sync and remains closed through reload and stale saves", () => {
