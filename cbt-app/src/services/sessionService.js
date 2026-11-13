@@ -1,13 +1,8 @@
 import {
-  collection,
   doc,
   getDoc,
-  getDocs,
-  limit,
-  query,
   serverTimestamp,
   updateDoc,
-  where,
 } from "firebase/firestore";
 import { getFunctions, httpsCallable } from "firebase/functions";
 import { auth, db } from "/firebase";
@@ -255,10 +250,16 @@ export async function setUserRole(email, role) {
   const normalizedEmail = String(email || "").trim().toLowerCase();
   const normalizedRole = String(role || "").trim().toLowerCase();
   if (!normalizedEmail || !normalizedRole) throw new Error("Email and role are required.");
-  const snapshot = await getDocs(query(collection(db, "users"), where("email", "==", normalizedEmail), limit(1)));
-  if (snapshot.empty) throw new Error("User profile not found. Ask the user to sign in first.");
-  await updateDoc(snapshot.docs[0].ref, { role: normalizedRole, updatedAt: serverTimestamp() });
-  return { ok: true, uid: snapshot.docs[0].id, email: normalizedEmail, role: normalizedRole };
+  requireUser();
+  // Role changes go through the superadmin-only Cloud Function, which resolves
+  // the account via Firebase Auth instead of the client-written users.email field.
+  const changeRole = httpsCallable(getFunctions(), "setUserRole");
+  try {
+    const result = await changeRole({ email: normalizedEmail, role: normalizedRole });
+    return result.data;
+  } catch (error) {
+    throw new Error(friendlyCallableError(error, "Could not change this user's role."));
+  }
 }
 
 export async function setStudentLoginAccess(studentId, loginDisabled) {

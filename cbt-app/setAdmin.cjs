@@ -1,4 +1,7 @@
 /* eslint-env node */
+// Bootstrap script: set a user's role (default superadmin).
+// Usage: node setAdmin.cjs <email> [student|admin|superadmin]
+// Needs cbt-app/serviceAccountKey.json (never commit this file).
 const admin = require("firebase-admin");
 const path = require("path");
 
@@ -8,7 +11,7 @@ const role = (roleArg || "superadmin").trim().toLowerCase();
 const allowedRoles = new Set(["student", "admin", "superadmin"]);
 
 if (!email || !allowedRoles.has(role)) {
-  console.error("Usage: node setAdmin.js <email> [student|admin|superadmin]");
+  console.error("Usage: node setAdmin.cjs <email> [student|admin|superadmin]");
   process.exit(1);
 }
 
@@ -20,18 +23,27 @@ admin.initializeApp({
 });
 
 async function main() {
-  const db = admin.firestore();
-  const snapshot = await db.collection("users").where("email", "==", email).limit(1).get();
+  // Resolve the account through Firebase Auth, not the users.email field.
+  let authUser;
+  try {
+    authUser = await admin.auth().getUserByEmail(email);
+  } catch (error) {
+    if (error && error.code === "auth/user-not-found") {
+      throw new Error("No account exists for this email.");
+    }
+    throw error;
+  }
 
-  if (snapshot.empty) {
+  const userRef = admin.firestore().collection("users").doc(authUser.uid);
+  const userDoc = await userRef.get();
+
+  if (!userDoc.exists) {
     throw new Error(
       "User profile not found. Ask the user to sign in first so their Firestore user record exists."
     );
   }
 
-  const userDoc = snapshot.docs[0];
-
-  await userDoc.ref.set(
+  await userRef.set(
     {
       role,
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),

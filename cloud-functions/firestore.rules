@@ -28,8 +28,17 @@ service cloud.firestore {
 
     match /users/{userId} {
       allow read: if isSignedIn() && (request.auth.uid == userId || isAdmin());
+      // Self-created profiles are limited to the fields the app writes at first
+      // sign-in. The email must be the signed-in account's own email (role changes
+      // are matched by email), and class assignment is left to administrators.
       allow create: if isSignedIn() && (
-        (request.auth.uid == userId && (!('role' in request.resource.data) || request.resource.data.role == 'student')) ||
+        (
+          request.auth.uid == userId &&
+          (!('role' in request.resource.data) || request.resource.data.role == 'student') &&
+          request.resource.data.keys().hasOnly(['email', 'displayName', 'role', 'loginDisabled', 'createdAt', 'lastLoginAt']) &&
+          request.resource.data.get('email', '') == request.auth.token.get('email', '') &&
+          request.resource.data.get('loginDisabled', false) == false
+        ) ||
         (isAdmin() && request.resource.data.role == 'student')
       );
       allow update: if isSignedIn() && (
@@ -105,6 +114,11 @@ service cloud.firestore {
           resource.data.studentUid == request.auth.uid &&
           resource.data.examId != null &&
           resource.data.status == 'started' &&
+          // No writes after expiry (plus the 30s grace in submitExamSession), so the
+          // stored answers cannot change once time is up.
+          resource.data.get('expiresAtMs', 0) is number &&
+          resource.data.get('expiresAtMs', 0) > 0 &&
+          request.time.toMillis() <= resource.data.get('expiresAtMs', 0) + 30000 &&
           request.resource.data.studentUid == resource.data.studentUid &&
           request.resource.data.examId == resource.data.examId &&
           request.resource.data.status == resource.data.status &&

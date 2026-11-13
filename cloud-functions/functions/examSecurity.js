@@ -5,6 +5,9 @@ const crypto = require("crypto");
 
 const db = admin.firestore();
 
+// Keep in sync with the expiry grace window in firestore.rules (examSessions update).
+const SUBMIT_GRACE_MS = 30000;
+
 function normalizeAccessCode(value) {
   return String(value || "").trim().replace(/\s+/g, "").toUpperCase();
 }
@@ -202,10 +205,16 @@ exports.submitExamSession = onCall(async (request) => {
 
   const expiresAtMs = Number(session.expiresAtMs || 0);
   if (!expiresAtMs) throw new HttpsError("failed-precondition", "This session has no valid expiry time. Contact the administrator.");
-  const submissionReason = String(request.data && request.data.submissionReason || "manual");
-  if (Date.now() > expiresAtMs + 30000 && submissionReason !== "timeout") {
-    throw new HttpsError("deadline-exceeded", "The exam time has expired.");
-  }
+  // The reason is informational only. It must never relax a server-side check,
+  // because the client chooses it.
+  const submissionReason = String(request.data && request.data.submissionReason || "manual").slice(0, 40);
+  const submittedAtMs = Date.now();
+  const lateByMs = submittedAtMs - expiresAtMs;
+  const isLateSubmission = lateByMs > SUBMIT_GRACE_MS;
+  // After the grace window the answers sent by the client are ignored. Firestore
+  // rules stop the student writing to the session after expiry, so the answers
+  // already stored on the session are the ones saved in time.
+  const gradedSource = isLateSubmission ? normalizeAnswers(session.answers) : answers;
 
   const questionsSnapshot = await db.collection("questions").where("examId", "==", examId).get();
   if (questionsSnapshot.empty) throw new HttpsError("failed-precondition", "Exam has no questions.");
@@ -214,7 +223,7 @@ exports.submitExamSession = onCall(async (request) => {
   const gradedAnswers = {};
   questionsSnapshot.docs.forEach((questionDoc) => {
     const question = questionDoc.data();
-    const answer = answers[questionDoc.id] || "";
+    const answer = gradedSource[questionDoc.id] || "";
     const correct = String(question.correctAnswer || "").trim().toUpperCase();
     const marks = Number(question.marks || 1);
     total += answer === correct ? marks : 0;
@@ -229,7 +238,9 @@ exports.submitExamSession = onCall(async (request) => {
     submissionReason,
     tabSwitchCount: Number(request.data && request.data.tabSwitchCount || session.tabSwitchCount || 0),
     integrityWarnings: Number(request.data && request.data.integrityWarnings || session.integrityWarnings || 0),
-    submittedAtMs: Date.now(),
+    lateSubmission: isLateSubmission,
+    lateByMs: isLateSubmission ? lateByMs : 0,
+    submittedAtMs,
     submittedAt: admin.firestore.FieldValue.serverTimestamp(),
     updatedAt: admin.firestore.FieldValue.serverTimestamp(),
   }, { merge: true });
@@ -239,7 +250,7 @@ exports.submitExamSession = onCall(async (request) => {
     uid: request.auth.uid,
     examId,
     sessionId: sessionRef.id,
-    metadata: { score: total, maxScore: questionsSnapshot.docs.reduce((sum, item) => sum + Number(item.data().marks || 1), 0), submissionReason },
+    metadata: { score: total, maxScore: questionsSnapshot.docs.reduce((sum, item) => sum + Number(item.data().marks || 1), 0), submissionReason, lateSubmission: isLateSubmission, lateByMs: isLateSubmission ? lateByMs : 0 },
   });
 
   return { id: sessionRef.id, score: total, maxScore: questionsSnapshot.docs.reduce((sum, item) => sum + Number(item.data().marks || 1), 0), status: "submitted" };
