@@ -60,7 +60,8 @@ node manage.js list
 cd ..
 
 # Run in TWO separate terminals (or managed services after validation):
-powershell -File school-deployment/start-lan.ps1 -Hostname cbt.school.test
+powershell -File school-deployment/start-lan.ps1 -Hostname cbt.school.test `
+  -CloudSyncUrl https://YOUR-STAGING-APP.vercel.app/api/cbt
 powershell -File school-deployment/start-proxy.ps1 -Hostname cbt.school.test
 ```
 
@@ -139,3 +140,26 @@ still require examiner review before official release.
 **No direct production deploy/merge** until this pilot, staging Firebase/Vercel
 rollout and rules/index checks are signed off. See `lan-server/README.md`
 and `docs/SECURE-ROLLOUT.md`.
+
+
+## Automatic cloud sync acceptance
+
+Cloud synchronization requires an internet route to the configured HTTPS API.
+Set `-CloudSyncUrl` to the currently deployed **matching** Firebase/Vercel
+environment. Without the flag the host intentionally saves submissions
+locally but does not attempt automatic cloud upload. With the flag the host
+retries pending records when it starts, after each local submission, and
+every 30 seconds. Never point an examination bundle at a different school's
+Firebase project. Use `node manage.js status` with the same
+`CBT_LAN_DB` setting to inspect private aggregate pending/synced counts.
+The terminal should never reveal the bundle's cloud grant secret.
+
+WAN-offline pilot gate: collect a final answer and confirm it remains pending;
+disconnect/reconnect the WAN several times; confirm upload after reconnection
+without running `manage.js sync`; then restart Node and confirm no duplicate
+marks. Validate server certificate, clocks, exact result/answer counts, and
+staff review hold before release.
+
+If the WAN **never returns**, cloud synchronization cannot occur; the answer
+remains in the school's encrypted LAN database until staff restore a legitimate
+internet link or use an approved secure transfer/recovery method.
