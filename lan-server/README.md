@@ -76,3 +76,35 @@ Always use the exact `https://` hostname trusted on the lab browsers.
 See `../school-deployment/PILOT.md` for DNS, CA distribution, 500-seat
 testing, encrypted backup/restore and production sign-off gates. Tests and
 deployment instructions do not constitute school-scale certification.
+
+## Automatic cloud synchronization (online when internet returns)
+
+The LAN host can **automatically** reconcile final submissions with the trusted
+cloud API. Configure an explicit target using `CBT_LAN_SYNC_URL` before
+starting the Node process (for example,
+`https://YOUR-STAGING-APP.vercel.app/api/cbt`). The app never exports
+secrets or question keys to student machines. It retries pending SQLite
+records on startup, after accepted local submissions, and every 30 seconds
+(default). A network outage cannot remove records; only a validated cloud
+acknowledgement marks them synced.
+
+Windows pilot launcher:
+```powershell
+powershell -File school-deployment/start-lan.ps1 -Hostname cbt.school.test `
+  -CloudSyncUrl https://YOUR-STAGING-APP.vercel.app/api/cbt
+```
+On the host, staff can inspect counts without exposing private candidate data:
+```sh
+node manage.js status
+```
+The old `node manage.js sync <https://.../api/cbt>` remains an emergency
+manual recovery option. Use the correct staging/production cloud destination
+and confirm imported results require examiner review. Keep the LAN host
+running as a managed service and preserve its private database and grants.
+
+**No internet means no cloud communication:** exams still run and save
+locally when WAN is down, but Firebase cannot receive them until the WAN
+returns or staff use another approved, connected transfer path. Offline
+candidate preparation also needs a prior online export. Automatic retries
+remove the need for manual intervention after ordinary reconnection; they
+do not bypass these physical requirements.
