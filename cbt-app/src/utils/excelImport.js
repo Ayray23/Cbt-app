@@ -45,7 +45,7 @@ function cellText(cell, strings) {
   const value = first(cell, "v")?.textContent ?? "";
   if (type === "s") {
     const i = Number(value);
-    if (!Number.isSafeInteger(i) || !strings[i]) throw new Error("Invalid shared string reference.");
+    if (!Number.isSafeInteger(i) || i >= strings.length) throw new Error("Invalid shared string reference.");
     return strings[i];
   }
   if (type === "e") throw new Error("Spreadsheet contains an Excel error cell.");
