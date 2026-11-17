@@ -5,6 +5,7 @@ import { createHash } from "node:crypto";
 import { isIP } from "node:net";
 import { resolve } from "node:path";
 import { openStore } from "./store.js";
+import { syncPending, validateCloudUrl } from "./sync.js";
 const host = process.env.HOST || "127.0.0.1",
   port = Number(process.env.PORT || 8788);
 const tls = process.env.CBT_LAN_TLS_KEY && process.env.CBT_LAN_TLS_CERT;
@@ -30,6 +31,29 @@ const files = new Map([
   ["/sw.js", ["sw.js", "text/javascript"]],
 ]);
 const attempts = new Map();
+// Always retain submissions on disk while internet is unavailable. Enabling
+// this requires an explicit staging/production cloud API destination.
+const cloudSyncUrl = process.env.CBT_LAN_SYNC_URL || "";
+if (cloudSyncUrl) validateCloudUrl(cloudSyncUrl);
+const syncIntervalMs = Math.max(10000, Math.min(3600000,
+  Number(process.env.CBT_LAN_SYNC_INTERVAL_MS) || 30000));
+let syncRunning = null;
+let shuttingDown = false;
+function requestSync() {
+  if (!cloudSyncUrl || shuttingDown || syncRunning) return;
+  syncRunning = (async () => {
+    try {
+      if (!store.summary().pending) return;
+      const accepted = await syncPending(store, cloudSyncUrl);
+      if (accepted) console.log(`Cloud accepted ${accepted} LAN submission(s).`);
+    } catch (error) {
+      // Never stop exam access or remove pending answers because the WAN fails.
+      console.warn(`LAN results remain queued; cloud sync deferred: ${error.message}`);
+    }
+  })().finally(() => { syncRunning = null; });
+}
+const syncTimer = cloudSyncUrl ? setInterval(requestSync, syncIntervalMs) : null;
+syncTimer?.unref();
 const send = (res, status, value) => {
   res.writeHead(status, {
     "Content-Type": "application/json",
@@ -102,7 +126,10 @@ const handler = async (req, res) => {
       return send(res, 200, store.login(body.ticket, body.deviceId));
     }
     const ticket = req.headers.authorization?.replace(/^Bearer /, "");
-    return send(res, 200, store.update(ticket, body.deviceId, body));
+    const result = store.update(ticket, body.deviceId, body);
+    send(res, 200, result);
+    if (result.closed) setImmediate(requestSync);
+    return;
   } catch (e) {
     send(res, e.status || 500, {
       error: e.status
@@ -120,13 +147,21 @@ const server = tls
       handler,
     )
   : httpServer(handler);
-server.listen(port, host, () =>
-  console.log(`CBT LAN ready at ${tls ? "https" : "http"}://${host}:${port}`),
-);
+server.listen(port, host, () => {
+  console.log(`CBT LAN ready at ${tls ? "https" : "http"}://${host}:${port}`);
+  if (cloudSyncUrl) {
+    console.log("Automatic cloud reconciliation enabled; pending results stay in SQLite until acknowledged.");
+    requestSync();
+  }
+});
 for (const signal of ["SIGINT", "SIGTERM"])
-  process.on(signal, () =>
-    server.close(() => {
+  process.on(signal, () => {
+    shuttingDown = true;
+    if (syncTimer) clearInterval(syncTimer);
+    server.close(async () => {
+      // Wait for an already-running cloud request before closing the DB.
+      if (syncRunning) await syncRunning;
       store.close();
       process.exit(0);
-    }),
-  );
+    });
+  });
