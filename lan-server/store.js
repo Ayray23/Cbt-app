@@ -261,6 +261,17 @@ export function openStore(path, now = Date.now) {
           ...JSON.parse(r.data),
           synced: Boolean(r.synced),
         })),
+    summary() {
+      const rows = db.prepare("SELECT data,synced FROM attempts").all();
+      const count = { total: rows.length, active: 0, pending: 0, synced: 0 };
+      for (const row of rows) {
+        const status = JSON.parse(row.data).status;
+        if (status === "started") count.active++;
+        else if (status === "submitted" && row.synced) count.synced++;
+        else if (status === "submitted") count.pending++;
+      }
+      return count;
+    },
     batches() {
       const groups = new Map();
       for (const row of db
