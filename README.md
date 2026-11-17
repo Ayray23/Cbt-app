@@ -28,3 +28,18 @@ See [Secure Rollout](docs/SECURE-ROLLOUT.md) before changing any live rules or m
 ## Offline school LAN
 
 See [LAN setup](lan-server/README.md). Prepare a bundle as superadmin while online, import it on the Node 24 school host, and serve students over trusted local HTTPS. Individual tickets reserve one attempt; final cloud synchronization grades against the immutable key and holds results for review.
+
+## Excel imports and automatic LAN reconciliation
+
+School administrators can import students from Excel `.xlsx` or CSV with a
+validation preview. Teachers and examination officers can import objective
+questions from Word `.docx` or Excel `.xlsx` into an editable preview before
+saving. Use the import templates and check question keys before publishing.
+Binary `.xls` files are not supported.
+
+The school LAN host can automatically upload locally completed exams after WAN
+connectivity returns by setting `CBT_LAN_SYNC_URL` (Windows
+`start-lan.ps1 -CloudSyncUrl https://YOUR-APP/api/cbt`). Submissions remain in
+SQLite while internet is unavailable and become marked synced only after cloud
+acknowledgement. Staff can inspect pending counts using `node manage.js status`.
+See `lan-server/README.md` and `school-deployment/PILOT.md` for the pilot.
