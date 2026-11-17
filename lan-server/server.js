@@ -2,11 +2,21 @@ import { createServer as httpServer } from "node:http";
 import { createServer as httpsServer } from "node:https";
 import { readFileSync } from "node:fs";
 import { createHash } from "node:crypto";
+import { isIP } from "node:net";
 import { resolve } from "node:path";
 import { openStore } from "./store.js";
 const host = process.env.HOST || "127.0.0.1",
   port = Number(process.env.PORT || 8788);
 const tls = process.env.CBT_LAN_TLS_KEY && process.env.CBT_LAN_TLS_CERT;
+// The TLS-terminating Caddy proxy must be on the same host. Do not trust
+// forwarded client identity from non-loopback connections.
+const publicOrigin = process.env.CBT_LAN_PUBLIC_ORIGIN || "";
+if (publicOrigin) {
+  const url = new URL(publicOrigin);
+  if (url.protocol !== "https:" || url.origin !== publicOrigin || url.username || url.password) {
+    throw new Error("CBT_LAN_PUBLIC_ORIGIN must be an HTTPS origin without a path.");
+  }
+}
 if (!tls && !["127.0.0.1", "::1", "localhost"].includes(host))
   throw new Error(
     "LAN access requires trusted HTTPS. Configure CBT_LAN_TLS_KEY and CBT_LAN_TLS_CERT.",
@@ -55,7 +65,7 @@ const handler = async (req, res) => {
     if (req.method !== "POST" || !["/api/login", "/api/save"].includes(req.url))
       return send(res, 404, { error: "Not found" });
     const origin = req.headers.origin;
-    if (origin && origin !== `${tls ? "https" : "http"}://${req.headers.host}`)
+    if (origin && origin !== (publicOrigin || `${tls ? "https" : "http"}://${req.headers.host}`))
       return send(res, 403, { error: "Wrong origin" });
     let raw = "";
     for await (const chunk of req) {
@@ -70,7 +80,16 @@ const handler = async (req, res) => {
       return send(res, 400, { error: "Invalid JSON" });
     }
     if (req.url === "/api/login") {
-      const ip = req.socket.remoteAddress;
+      const socketIp = req.socket.remoteAddress;
+      const proxyIp = req.headers["x-cbt-client-ip"];
+      const loopback = ["127.0.0.1", "::1", "::ffff:127.0.0.1"].includes(socketIp);
+      // Caddy overwrites this header with the real TCP peer IP. Honour it
+      // only when the proxy is configured and the socket peer is loopback;
+      // otherwise a remote student could forge identities to evade limits.
+      const ip =
+        publicOrigin && loopback && typeof proxyIp === "string" && isIP(proxyIp)
+          ? proxyIp
+          : socketIp;
       const rate = attempts.get(ip) || { count: 0, until: Date.now() + 60000 };
       if (Date.now() > rate.until) {
         rate.count = 0;
