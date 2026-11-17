@@ -13,7 +13,8 @@
     "test:rules": "firebase emulators:exec --config ../cloud-functions/firebase.json --project demo-cbt-school --only firestore \"node --test tests/emulator/*.test.mjs\"",
     "test:browser": "firebase emulators:exec --config ../cloud-functions/firebase.json --project demo-cbt-school --only auth,firestore \"node tests/browser/school-flow.mjs\"",
     "test:api": "firebase emulators:exec --config ../cloud-functions/firebase.json --project demo-cbt-school --only auth,firestore \"node --test tests/api/*.test.mjs\"",
-    "test:lan-browser": "firebase emulators:exec --config ../cloud-functions/firebase.json --project demo-cbt-school --only firestore \"node tests/browser/lan-flow.mjs\""
+    "test:lan-browser": "firebase emulators:exec --config ../cloud-functions/firebase.json --project demo-cbt-school --only firestore \"node tests/browser/lan-flow.mjs\"",
+    "test:imports": "node --test tests/excel-import.test.mjs"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.1.17",
@@ -22,7 +23,9 @@
     "mammoth": "^1.11.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
-    "react-router-dom": "^7.18.5"
+    "react-router-dom": "^7.18.5",
+    "jszip": "^3.10.1",
+    "@xmldom/xmldom": "^0.8.15"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.1",
