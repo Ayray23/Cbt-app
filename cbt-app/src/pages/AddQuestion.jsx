@@ -62,7 +62,7 @@ export default function AddQuestion() {
       return "Select a valid correct answer.";
     }
 
-    if (Number(payload.marks) <= 0) {
+    if (!Number.isFinite(Number(payload.marks)) || Number(payload.marks) <= 0) {
       return "Marks must be greater than zero.";
     }
 
