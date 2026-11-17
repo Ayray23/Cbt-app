@@ -17,6 +17,7 @@ jobs:
       - run: npm ci --prefix cbt-app
       - run: npm test
       - run: npm test --prefix lan-server
+      - run: npm run test:imports --prefix cbt-app
       - run: npm run lint --prefix cbt-app
       - run: npm run build --prefix cbt-app
       - run: npm run test:rules --prefix cbt-app
