@@ -58,9 +58,15 @@ export default function Students() {
     try {
       const file = e.target.files[0];
       if (!file) return;
-      if (file.size > 500000)
+      setImports([]);
+      const excel = /\\.xlsx$/i.test(file.name);
+      if (!excel && !/\\.csv$/i.test(file.name))
+        throw new Error("Choose a .xlsx Excel workbook or .csv file.");
+      if (!excel && file.size > 500000)
         throw new Error("Use a CSV file smaller than 500 KB.");
-      const rows = parseCsv(await file.text());
+      const rows = excel
+        ? await import("../utils/excelImport").then((m) => m.readExcelTable(file, 200))
+        : parseCsv(await file.text());
       if (rows.length > 200)
         throw new Error("Import at most 200 students per file.");
       const seen = new Set(students.map((s) => s.username));
@@ -89,7 +95,7 @@ export default function Students() {
             ...r,
             username,
             subjects,
-            row: i + 2,
+            row: r.__rowNumber || i + 2,
             error: errors.join("; "),
             state: "ready",
           };
@@ -237,8 +243,11 @@ export default function Students() {
       <section className="bg-white rounded-2xl p-6 space-y-4">
         <h3 className="text-xl font-semibold">Bulk enrolment</h3>
         <p>
-          Save your Excel sheet as CSV. Subjects are separated with |. Passwords
-          stay in memory during preview and are not saved in Firestore.
+          Upload an Excel .xlsx workbook directly, or a CSV file. Use the
+          downloadable template's column names. Separate multiple subjects
+          with |. Format usernames/admission numbers as Text in Excel to
+          preserve leading zeros. Passwords remain in memory during preview
+          and are not stored as plaintext in Firestore.
         </p>
         <button
           className="underline"
@@ -268,9 +277,9 @@ export default function Students() {
           Download template
         </button>
         <input
-          aria-label="Import students CSV"
+          aria-label="Import students Excel XLSX or CSV"
           type="file"
-          accept=".csv"
+          accept=".xlsx,.csv"
           disabled={busy || !school}
           onChange={readImport}
         />
