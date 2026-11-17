@@ -9,3 +9,7 @@ lan-server/data/
 *.sqlite
 *.sqlite-wal
 *.sqlite-shm
+
+# Never commit private school exam bundles or candidate ticket exports.
+**/lan-bundle*.json
+school-deployment/bundle*.json
