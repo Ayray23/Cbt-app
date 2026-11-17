@@ -3,10 +3,12 @@ on:
   pull_request:
     paths:
       - "lan-server/**"
+      - "school-deployment/**"
       - ".github/workflows/lan-tests.yml"
   push:
     paths:
       - "lan-server/**"
+      - "school-deployment/**"
       - ".github/workflows/lan-tests.yml"
 jobs:
   lan:
