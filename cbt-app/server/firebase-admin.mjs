@@ -12,6 +12,11 @@ export function backend() {
     const raw = process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
     if (!raw) throw new Error("Set FIREBASE_SERVICE_ACCOUNT_JSON on the server before using the CBT API.");
     const account = JSON.parse(raw);
+    // Fail closed if frontend and privileged API would operate on different
+    // Firebase projects. This check never logs the private key or client email.
+    const expectedProject = process.env.VITE_FIREBASE_PROJECT_ID;
+    if (expectedProject && account.project_id !== expectedProject)
+      throw new Error("Firebase Admin credential project does not match the configured CBT frontend project.");
     app = initializeApp({ credential: cert(account), projectId: account.project_id }, "cbt-api");
   }
   return { db: getFirestore(app), auth: getAuth(app), fields: FieldValue };
