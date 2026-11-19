@@ -2,6 +2,7 @@ import { limitMutation } from "../server/rate-limit.mjs";
 import { backend } from "../cbt-app/server/firebase-admin.mjs";
 import { createService } from "../server/service.mjs";
 import { assert } from "../server/domain.mjs";
+import { assertLanAllowed } from "../server/feature-gates.mjs";
 
 export async function POST(request) {
   try {
@@ -27,6 +28,8 @@ export async function POST(request) {
       400,
       "Invalid request.",
     );
+    // Fail closed before auth/database setup, including grant-based lan.sync.
+    assertLanAllowed(body.action);
     const dependencies = backend();
     const service = createService(dependencies);
     if (
