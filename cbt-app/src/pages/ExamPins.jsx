@@ -45,6 +45,21 @@ export default function ExamPins() {
 
   return <div className="space-y-6">
     <StatusBanner {...banner} onClose={() => setBanner(null)} />
+    <style>{`
+      @media screen { .pin-print-sheet { display: none; } }
+      @media print {
+        @page { size: A4; margin: 12mm; }
+        body:has(.pin-print-sheet) #root * { visibility: hidden !important; }
+        body:has(.pin-print-sheet) #root .pin-print-sheet,
+        body:has(.pin-print-sheet) #root .pin-print-sheet * { visibility: visible !important; }
+        body:has(.pin-print-sheet) #root .pin-print-sheet {
+          display: block !important; position: absolute !important; top: 0; left: 0;
+          width: 100%; color: #111827; background: white;
+        }
+        .pin-print-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 7mm; }
+        .pin-print-slip { break-inside: avoid; page-break-inside: avoid; border: 1px solid #94a3b8; padding: 7mm; border-radius: 7px; }
+      }
+    `}</style>
     <section className="rounded-2xl bg-white p-6 shadow-sm">
       <h2 className="text-2xl font-semibold text-slate-900">Personal exam PINs</h2>
       <p className="mt-3 text-sm text-slate-600">Assign an exam to students and issue a separate PIN to each account. A student's PIN works only for that student and that exam.</p>
@@ -72,13 +87,33 @@ export default function ExamPins() {
     </section>
     {result && <section className="rounded-2xl border border-amber-200 bg-amber-50 p-6">
       <div className="flex flex-wrap items-center justify-between gap-3"><h3 className="text-xl font-semibold">{result.examTitle}</h3>
-        <button onClick={copyPins} className="rounded-xl border border-amber-300 bg-white px-4 py-2 text-sm">Copy PIN list</button></div>
+        <div className="flex gap-2">
+          <button type="button" onClick={copyPins} className="rounded-xl border border-amber-300 bg-white px-4 py-2 text-sm">Copy PIN list</button>
+          <button type="button" onClick={() => window.print()} className="rounded-xl border border-amber-300 bg-white px-4 py-2 text-sm">Print individual PIN slips</button>
+        </div></div>
       <div className="mt-4 overflow-x-auto"><table className="min-w-full text-left text-sm"><thead><tr>
         <th className="py-3 pr-4">Student</th><th className="pr-4">Username / email</th><th>Personal PIN</th>
       </tr></thead><tbody>{result.pins.map((entry) => <tr key={entry.studentUid} className="border-t border-amber-200">
         <td className="py-3 pr-4">{entry.name}</td><td className="pr-4">{entry.username || entry.email}</td>
         <td className="font-mono font-semibold tracking-widest">{entry.pin}</td>
       </tr>)}</tbody></table></div>
+    </section>}
+    {result && <section className="pin-print-sheet" aria-label="Printable individual exam PIN slips">
+      <h1 className="mb-4 text-xl font-bold">{result.examTitle} — Candidate PIN slips</h1>
+      <p className="mb-6 text-sm">Private access credentials · Distribute each slip only to its named candidate.</p>
+      <div className="pin-print-grid">{result.pins.map((entry) => (
+        <article key={entry.studentUid} className="pin-print-slip">
+          <p className="text-xs font-bold uppercase tracking-widest">School CBT · Individual exam access</p>
+          <h2 className="mt-3 text-lg font-bold">{result.examTitle}</h2>
+          <p className="mt-4 text-sm">Student: <strong>{entry.name}</strong></p>
+          <p className="mt-1 text-sm">Username: <strong>{entry.username || entry.email}</strong></p>
+          <div className="mt-4 rounded border-2 border-slate-800 p-4 text-center">
+            <p className="text-xs uppercase">Personal exam PIN</p>
+            <p className="mt-2 break-all font-mono text-2xl font-bold tracking-widest">{entry.pin}</p>
+          </div>
+          <p className="mt-3 text-xs">One student. One examination. Keep this PIN private.</p>
+        </article>
+      ))}</div>
     </section>}
   </div>;
 }
