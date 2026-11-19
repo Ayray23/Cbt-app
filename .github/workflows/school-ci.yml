@@ -3,6 +3,7 @@ on: [push, pull_request]
 jobs:
   verify:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -24,7 +25,9 @@ jobs:
       - run: npm run test:api --prefix cbt-app
       - run: npx --prefix cbt-app playwright install --with-deps chromium
       - run: npm run test:browser --prefix cbt-app
+        timeout-minutes: 12
       - run: npm run test:lan-browser --prefix cbt-app
+        timeout-minutes: 12
       - run: npm audit --audit-level=moderate --prefix cbt-app
       - run: npm ci --prefix cloud-functions/functions
       - run: npm run lint --prefix cloud-functions/functions
