@@ -15,7 +15,7 @@ rather than relying only on old individual-feature checks.
 | LAN UI disabled by default | Frontend `VITE_ENABLE_LAN=false` |
 | Legacy branch conflicts | Closed as superseded without deleting source; see issue #33 |
 | Vercel deployment protection | Build-skipping hold active, leaving earlier READY deployment |
-| Vercel Firebase environment | **BLOCKED**: missing `FIREBASE_SERVICE_ACCOUNT_JSON` and `VITE_FIREBASE_*` |
+| Vercel Firebase environment | **PRESENT, UNVERIFIED** (20 Nov): production `VITE_FIREBASE_*` variables and Sensitive `FIREBASE_SERVICE_ACCOUNT_JSON` exist. Actual credential identity/permissions and live database migration are not yet verified. |
 | Production migration and backup restore | **BLOCKED**: no connected Firebase project access or verified restore |
 | School LAN trusted DNS/HTTPS/UPS/500-seat pilot | **BLOCKED**: no access to actual school lab hardware |
 | Test suite against merged main | Run `School CBT checks` on this exact branch's PR and record conclusion in issue #33 |
@@ -61,4 +61,4 @@ Firestore rules, publish a client-graded fallback, delete pending SQLite
 results, or claim certification for 500 concurrent candidates without an
 actual hardware/load test.
 
-Source of truth: Issues #25 and #33 and `docs/SECURE-ROLLOUT.md`.
+Source of truth: Issues #25 and #33, `docs/SECURE-ROLLOUT.md`, and `docs/ONLINE-FIREBASE-GO-LIVE.md`.
