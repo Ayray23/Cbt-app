@@ -1,0 +1,30 @@
+{
+  # Managed LAN HTTPS; HTTP is deliberately not served to exam devices.
+  auto_https disable_redirects
+  admin 127.0.0.1:2019
+}
+
+# CBT_LAN_HOSTNAME must be an internal DNS name resolvable without internet.
+# Caddy terminates HTTPS with its internal CA; the Node exam service stays
+# accessible only over loopback, not directly from student computers.
+https://{$CBT_LAN_HOSTNAME} {
+  tls internal
+  encode zstd gzip
+
+  # Do not enable the retired prototype collector or any staff CLI endpoints.
+  @legacy path /records /records/* /api/lan /api/lan/*
+  respond @legacy "Not found" 404
+
+  header {
+    X-Content-Type-Options nosniff
+    X-Frame-Options DENY
+    Referrer-Policy no-referrer
+    Cache-Control "no-store"
+  }
+
+  reverse_proxy 127.0.0.1:8788 {
+    # Overwrite rather than accepting a browser-provided identity header.
+    # The Node host honours it only from a loopback proxy connection.
+    header_up X-CBT-Client-IP {remote_host}
+  }
+}

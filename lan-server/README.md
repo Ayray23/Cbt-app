@@ -53,3 +53,26 @@ The computer ID is displayed on the LAN login page. A transfer selects that exac
 Keep the host disk encrypted and restrict its folder/OS account. Stop the service before a simple filesystem backup of the database and its `-wal`/`-shm` files; alternatively use a SQLite-consistent backup process. Encrypt backups, store a separate copy, and perform a restore drill. A records JSON export is a recovery aid, not a complete database backup (it does not contain bundles/ticket mappings). Retain bundles and the database until the cloud confirms every result and the school's retention policy permits deletion.
 
 Run `npm test` here. CI also runs `npm run test:lan-browser --prefix cbt-app` from the repository root: two isolated browsers, offline reload/submission/reload, reconnect, SQLite restart and repeated cloud synchronization. This is not a certification for 500 physical school computers. Before real use test the actual router, trusted certificates, host hardware, backups, simultaneous candidates and power/UPS recovery. Public cloud changes cannot provision the school's local network or certificate trust.
+
+
+## Optional Caddy TLS termination for the school LAN
+
+The integrated Stage 5 setup is in `../school-deployment/`. Unlike the older
+PR #19 static staging example, its Caddyfile **reverse-proxies this actual
+offline LAN exam portal** rather than serving `cbt-app/dist`.
+
+On the school server, run `setup-staging.ps1` with the LAN hostname, then
+import the confidential bundles and launch `start-lan.ps1` and
+`start-proxy.ps1` in separate terminals for the pilot. Caddy owns TLS on port
+443 and Node must stay bound to `127.0.0.1:8788`; never open that port to
+student devices. In proxy mode the Node process uses
+`CBT_LAN_PUBLIC_ORIGIN=https://<actual-lan-hostname>` to validate browser
+origins and accepts Caddy's overwritten `X-CBT-Client-IP` header **only from
+loopback**, so simultaneous students retain independent login limits.
+The alternate direct TLS configuration documented above still works without
+Caddy and does not use forwarded IP headers.
+
+Always use the exact `https://` hostname trusted on the lab browsers.
+See `../school-deployment/PILOT.md` for DNS, CA distribution, 500-seat
+testing, encrypted backup/restore and production sign-off gates. Tests and
+deployment instructions do not constitute school-scale certification.
