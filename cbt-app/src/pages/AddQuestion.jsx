@@ -4,6 +4,7 @@ import { collection, onSnapshot, query, where } from "firebase/firestore";
 import { db } from "/firebase";
 import StatusBanner from "../components/StatusBanner";
 import { parseQuestionText } from "../utils/questionImport";
+import { downloadCsv } from "../utils/csv";
 import { addQuestion } from "../services/cbtService";
 
 export default function AddQuestion() {
@@ -18,10 +19,10 @@ export default function AddQuestion() {
   const [options, setOptions] = useState({ A: "", B: "", C: "", D: "" });
   const [correctAnswer, setCorrectAnswer] = useState("");
   const [marks, setMarks] = useState(1);
-  const [wordFile, setWordFile] = useState(null);
+  const [importFile, setWordFile] = useState(null);
   const [loading, setLoading] = useState(false);
   const [banner, setBanner] = useState(null);
-  const wordFileInputRef = useRef(null);
+  const importFileInputRef = useRef(null);
 
   useEffect(() => {
     const examsQuery = query(
@@ -61,7 +62,7 @@ export default function AddQuestion() {
       return "Select a valid correct answer.";
     }
 
-    if (Number(payload.marks) <= 0) {
+    if (!Number.isFinite(Number(payload.marks)) || Number(payload.marks) <= 0) {
       return "Marks must be greater than zero.";
     }
 
@@ -109,33 +110,47 @@ export default function AddQuestion() {
     }
   }
 
-  async function handleWordUpload() {
+  async function handleImportUpload() {
     if (!examId) {
       setBanner({ tone: "error", message: "Select an exam first." });
       return;
     }
 
-    if (!wordFile) {
-      setBanner({ tone: "error", message: "Choose a Word document." });
+    if (!importFile) {
+      setBanner({ tone: "error", message: "Choose a Word .docx document or Excel .xlsx workbook." });
       return;
     }
 
     setLoading(true);
 
     try {
-      if (
-        !wordFile.name.toLowerCase().endsWith(".docx") ||
-        wordFile.size > 2000000
-      )
-        throw new Error("Choose a DOCX file smaller than 2 MB.");
-      const arrayBuffer = await wordFile.arrayBuffer();
-      const { default: mammoth } = await import("mammoth");
-      const result = await mammoth.extractRawText({ arrayBuffer });
+      if (!/\\.(docx|xlsx)$/i.test(importFile.name) || !importFile.size || importFile.size > 2000000)
+        throw new Error("Choose a DOCX or XLSX file smaller than 2 MB.");
+      const excel = /\\.xlsx$/i.test(importFile.name);
+      const raw = excel
+        ? await import("../utils/excelImport").then((m) => m.readExcelTable(importFile, 300))
+        : await (async () => {
+            const { default: mammoth } = await import("mammoth");
+            const result = await mammoth.extractRawText({ arrayBuffer: await importFile.arrayBuffer() });
+            return parseQuestionText(result.value, examId);
+          })();
       const seen = new Set();
-      const parsed = parseQuestionText(result.value, examId).map((payload) => {
+      const parsed = raw.map((row) => {
+        const payload = excel
+          ? {
+              examId,
+              question: row.question || "",
+              options: {
+                A: row.optionA || "", B: row.optionB || "",
+                C: row.optionC || "", D: row.optionD || "",
+              },
+              correctAnswer: String(row.correctAnswer || "").trim().toUpperCase(),
+              marks: row.marks === "" || row.marks == null ? 1 : Number(row.marks),
+              sourceRow: row.__rowNumber,
+            }
+          : row;
         const key = payload.question.toLowerCase().trim();
-        const error =
-          validate(payload) ||
+        const error = validate(payload) ||
           (seen.has(key) ? "Duplicate question in this file." : "");
         seen.add(key);
         return {
@@ -145,6 +160,7 @@ export default function AddQuestion() {
           requestId: crypto.randomUUID(),
         };
       });
+      if (!parsed.length) throw new Error("The document contains no questions.");
       setPreview(parsed);
       setBanner({
         tone: "info",
@@ -152,14 +168,14 @@ export default function AddQuestion() {
           "Review every question and answer before saving. Invalid rows are listed below.",
       });
       setWordFile(null);
-      if (wordFileInputRef.current) {
-        wordFileInputRef.current.value = "";
+      if (importFileInputRef.current) {
+        importFileInputRef.current.value = "";
       }
     } catch (error) {
       console.error(error);
       setBanner({
         tone: "error",
-        message: error.message || "Word preview failed.",
+        message: error.message || "Document preview failed.",
       });
     } finally {
       setLoading(false);
@@ -221,12 +237,12 @@ export default function AddQuestion() {
     reader.onload = () => setImage(String(reader.result));
     reader.readAsDataURL(file);
   }
-  function handleCancelWordUpload() {
+  function handleCancelImportUpload() {
     setWordFile(null);
-    if (wordFileInputRef.current) {
-      wordFileInputRef.current.value = "";
+    if (importFileInputRef.current) {
+      importFileInputRef.current.value = "";
     }
-    setBanner({ tone: "info", message: "Selected Word document removed." });
+    setBanner({ tone: "info", message: "Selected import file removed." });
   }
 
   return (
@@ -240,8 +256,7 @@ export default function AddQuestion() {
       <section className="rounded-2xl bg-white p-6 shadow-sm">
         <h2 className="text-2xl font-semibold text-slate-900">Add questions</h2>
         <p className="mt-2 text-sm text-slate-500">
-          Build the question bank manually or import a `.docx` file using the
-          template format.
+          Build the question bank manually, import Word .docx, or upload an Excel .xlsx question sheet.
         </p>
       </section>
 
@@ -356,33 +371,45 @@ export default function AddQuestion() {
       </section>
 
       <section className="rounded-2xl bg-white p-6 shadow-sm">
-        <h3 className="text-lg font-semibold text-slate-900">Word import</h3>
+        <h3 className="text-lg font-semibold text-slate-900">Word / Excel question import</h3>
         <p className="mt-2 text-sm text-slate-500">
-          Accepts `1. Question`, `Question 1`, `A.` or `A)`, with or without
-          blank lines.
+          Word accepts numbered questions with A–D options. Excel .xlsx uses
+          columns: question, optionA, optionB, optionC, optionD, correctAnswer,
+          marks. Review the correct answer for each question before saving.
+          Embedded Excel images are not imported.
         </p>
 
+        <button
+          type="button"
+          className="underline text-sm mt-3"
+          onClick={() => downloadCsv("question-template.csv", [
+            ["question", "optionA", "optionB", "optionC", "optionD", "correctAnswer", "marks"],
+            ["2 + 2 = ?", "4", "5", "3", "6", "A", 1],
+          ])}
+        >
+          Download Excel-ready question template
+        </button>
         <div className="mt-4 flex flex-col gap-4 md:flex-row md:items-center">
           <input
-            ref={wordFileInputRef}
+            ref={importFileInputRef}
             type="file"
-            accept=".docx"
+            accept=".docx,.xlsx"
             onChange={(event) => setWordFile(event.target.files?.[0] ?? null)}
             className="flex-1 text-sm"
           />
 
           <div className="flex gap-3">
             <button
-              onClick={handleWordUpload}
-              disabled={loading || !wordFile}
+              onClick={handleImportUpload}
+              disabled={loading || !importFile}
               className="rounded-xl bg-emerald-600 px-5 py-3 text-sm font-medium text-white disabled:opacity-60"
             >
               {loading ? "Uploading..." : "Preview questions"}
             </button>
 
             <button
-              onClick={handleCancelWordUpload}
-              disabled={loading || !wordFile}
+              onClick={handleCancelImportUpload}
+              disabled={loading || !importFile}
               className="rounded-xl border border-slate-300 px-5 py-3 text-sm font-medium text-slate-700 disabled:opacity-60"
             >
               Cancel
@@ -396,7 +423,7 @@ export default function AddQuestion() {
             {preview.map((r, i) => (
               <article key={i} className="border rounded-xl p-4">
                 <label>
-                  Question {i + 1}
+                  Question {i + 1}{r.sourceRow ? ` (Excel row ${r.sourceRow})` : ""}
                   <textarea
                     disabled={r.saved}
                     className="block border w-full p-2"
@@ -467,10 +494,10 @@ export default function AddQuestion() {
             </button>
           </div>
         )}
-        {wordFile && (
+        {importFile && (
           <p className="mt-3 text-sm text-slate-500">
             Selected file:{" "}
-            <span className="font-medium text-slate-700">{wordFile.name}</span>
+            <span className="font-medium text-slate-700">{importFile.name}</span>
           </p>
         )}
       </section>

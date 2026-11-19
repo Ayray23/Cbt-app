@@ -82,7 +82,7 @@ New configuration is single-school: school name, class arms (e.g. JSS1 A through
 
 Teachers author their assigned classes and subjects. Examination officers publish, assign PINs and release results. Invigilators record attendance and interventions, extend an active attempt with a reason, or authorize a device transfer. Only already-synced answers can be recovered on a replacement computer; inspect the old computer's queue before transfer. A browser device ID is not hardware attestation.
 
-Paper scores are normalized to percentages before weighting. CA/exam weights must total 100 for a complete subject total. Practice/mock papers do not contribute. Corrections require reasons and withhold previously released results until approved again. Results and interventions have audit entries. CSV export protects against spreadsheet formulas; Word question imports have previews and validation. Native Excel input is not implemented: save student sheets as CSV.
+Paper scores are normalized to percentages before weighting. CA/exam weights must total 100 for a complete subject total. Practice/mock papers do not contribute. Corrections require reasons and withhold previously released results until approved again. Results and interventions have audit entries. CSV export protects against spreadsheet formulas; Word question imports have previews and validation. Student bulk imports now accept CSV and native Excel .xlsx files; question imports accept Word .docx and native Excel .xlsx. Excel imports parse the first worksheet locally, reject formulas, and require staff preview/validation before making server-side records. Legacy binary .xls files remain unsupported.
 
 ### Reproducible checks (repository root; Node 24 and Java 21)
 
