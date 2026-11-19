@@ -332,7 +332,14 @@ export default function App() {
               </Route>
 
               <Route element={<RequireRole allowedRoles={["superadmin"]} />}>
-                <Route path="/lan-exams" element={<LanExams />} />
+                <Route
+                  path="/lan-exams"
+                  element={
+                    import.meta.env.VITE_ENABLE_LAN === "true"
+                      ? <LanExams />
+                      : <Navigate to="/dashboard" replace />
+                  }
+                />
                 <Route path="/admins" element={<Admins />} />
               </Route>
             </Route>

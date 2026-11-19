@@ -139,3 +139,25 @@ Deploy the frontend/API and rules together in maintenance; the new audit query a
 ## Integrated offline release
 
 See `AUDIT-FIXES-AND-OFFLINE.md` for fixes and `../lan-server/README.md` for school-host setup. Deploy the added indexes. Configure explicit frontend variables from `cbt-app/.env.example` before deployment: the old production-project fallback is removed. Cloud and LAN submissions share server-side immutable marking; imported LAN results require review.
+
+
+## Default-off LAN release gate (2026-11-19)
+
+The secure cloud API refuses **all** `lan.*` actions with HTTP 503 unless
+`CBT_ENABLE_LAN=true` is set **server-side**. This includes `lan.sync` even
+when a bearer grant is provided. An unset value, `false`, `1`, or `TRUE`
+all leave LAN disabled. The superadmin menu and route are hidden by default;
+set `VITE_ENABLE_LAN=true` at build time **only** when the server flag is
+also enabled. The browser flag is cosmetic and never replaces server checks.
+
+Normal cloud exams, PIN verification, marking, results, teachers and Excel
+imports remain available with LAN disabled. LAN candidate bundles and SQLite
+records are retained; disabling the API does not delete a pending submission.
+Keep `CBT_LAN_SYNC_URL` unset on the school host during a hold, preserving
+SQLite and cloud grant data. For supervised rollout, verify the security
+migration, real school LAN TLS, UPS and DB restore, staff review workflow and
+load test before enabling both flags in an approved release window.
+
+**Not a substitute for production secrets:** configure the matching
+`FIREBASE_SERVICE_ACCOUNT_JSON` and `VITE_FIREBASE_*` variables privately in
+Vercel. Never commit credentials or enable LAN by default.

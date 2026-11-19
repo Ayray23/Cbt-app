@@ -23,7 +23,7 @@ before(async () => {
   const owner = await auth.createUser({ email: 'api-owner@example.test', password });
   await db.doc(`users/${owner.uid}`).set({ role: 'superadmin', displayName: 'Owner' });
   ownerToken = await login('api-owner@example.test');
-  server = spawn(process.execPath, ['../server/dev.mjs'], { env: { ...process.env, GCLOUD_PROJECT: projectId }, stdio: 'inherit' });
+  server = spawn(process.execPath, ['../server/dev.mjs'], { env: { ...process.env, GCLOUD_PROJECT: projectId, CBT_ENABLE_LAN: "true" }, stdio: 'inherit' });
   let ready = false;
   for (let i = 0; i < 100; i++) { try { await fetch('http://127.0.0.1:8787'); ready = true; break; } catch {} await new Promise(resolve => setTimeout(resolve, 100)); }
   assert(ready, 'API server did not start');
