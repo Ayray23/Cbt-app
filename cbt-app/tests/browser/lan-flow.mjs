@@ -73,9 +73,22 @@ async function boot() {
 }
 async function stop() {
   if (child && child.exitCode === null) {
-    await new Promise((r) => {
-      child.once("exit", r);
-      child.kill();
+    const processToStop = child;
+    await new Promise((resolve, reject) => {
+      let settled = false;
+      const finish = (error) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(forceKill);
+        clearTimeout(timeout);
+        if (error) reject(error);
+        else resolve();
+      };
+      const forceKill = setTimeout(() => processToStop.kill("SIGKILL"), 5000);
+      const timeout = setTimeout(() => finish(new Error("LAN service did not stop within 10 seconds")), 10000);
+      processToStop.once("exit", () => finish());
+      processToStop.once("error", finish);
+      processToStop.kill("SIGTERM");
     });
   }
 }
@@ -94,7 +107,12 @@ try {
     await page.locator("#ticket").fill(candidate.ticket);
     await page.locator("#start").click();
     await page.locator("input[value=A]").waitFor();
-    await page.evaluate(() => navigator.serviceWorker.ready);
+    await page.evaluate(async () => {
+      await Promise.race([
+        navigator.serviceWorker.ready,
+        new Promise((_, reject) => setTimeout(() => reject(new Error("LAN service worker readiness timeout")), 10000)),
+      ]);
+    });
   }
   await a.locator("input[value=A]").check();
   await a.getByText("Saved on this computer.", { exact: true }).waitFor();
