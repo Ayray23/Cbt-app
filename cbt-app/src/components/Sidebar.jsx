@@ -26,14 +26,22 @@ export default function Sidebar() {
     { to: "/results", label: "Results" },
   ];
 
-  const studentLinks = [{ to: "/portal", label: "Available Exams" }, { to: "/my-results", label: "My results" }, { to: "/account", label: "My account" }];
+  const studentLinks = [
+    { to: "/portal", label: "Available Exams" },
+    { to: "/my-results", label: "My results" },
+    { to: "/account", label: "My account" },
+  ];
 
   return (
     <aside className="bg-slate-950 px-4 py-6 text-white md:sticky md:top-0 md:h-screen md:overflow-y-auto md:w-72">
       <div className="mb-8">
         <AppLogo size="md" tone="light" />
         <h1 className="mt-4 text-2xl font-semibold">
-          {["teacher", "teacher_admin"].includes(role) ? "Teacher admin" : role !== "student" ? "Staff workspace" : "Exam Portal"}
+          {["teacher", "teacher_admin"].includes(role)
+            ? "Teacher admin"
+            : role !== "student"
+              ? "Staff workspace"
+              : "Exam Portal"}
         </h1>
         <p className="mt-2 text-sm text-slate-400">
           {role !== "student"
@@ -43,16 +51,39 @@ export default function Sidebar() {
       </div>
 
       <nav className="space-y-2">
-        {(isAdmin ? adminLinks : ['teacher', 'teacher_admin'].includes(role) ? adminLinks.filter(l => ['/exams/create', '/questions/add', '/questions', '/teacher-account'].includes(l.to)) : role === 'examofficer' ? adminLinks.filter(l => !['/school', '/students', '/dashboard'].includes(l.to)) : role === 'invigilator' ? adminLinks.filter(l => l.to === '/monitoring') : studentLinks).map((link) => (
+        {(isAdmin
+          ? adminLinks
+          : ["teacher", "teacher_admin"].includes(role)
+            ? adminLinks.filter((l) =>
+                [
+                  "/exams/create",
+                  "/questions/add",
+                  "/questions",
+                  "/teacher-account",
+                ].includes(l.to),
+              )
+            : role === "examofficer"
+              ? adminLinks.filter(
+                  (l) => !["/school", "/students", "/dashboard"].includes(l.to),
+                )
+              : role === "invigilator"
+                ? adminLinks.filter((l) => l.to === "/monitoring")
+                : studentLinks
+        ).map((link) => (
           <NavLink key={link.to} to={link.to} className={linkClassName}>
             {link.label}
           </NavLink>
         ))}
 
         {role === "superadmin" && (
-          <NavLink to="/admins" className={linkClassName}>
-            Teacher oversight
-          </NavLink>
+          <>
+            <NavLink to="/lan-exams" className={linkClassName}>
+              Offline LAN exams
+            </NavLink>
+            <NavLink to="/admins" className={linkClassName}>
+              Teacher oversight
+            </NavLink>
+          </>
         )}
       </nav>
     </aside>

@@ -2,7 +2,7 @@
 
 ## What changed
 
-- Only an admin or superadmin can provision a school account. Public signup is removed; signing in never creates a Firestore profile.
+- Admins provision students; teachers can self-register a pending account and require verified email plus superadmin approval. Signing in alone never grants school access.
 - New students use a username and password. Contact email is optional. Firebase uses an internal address ending in `@students.cbt.invalid`; students never need that address or a mailbox. Existing email accounts keep working.
 - Admins select an exam and students on **Exam PINs**. Each PIN is bound to one account and one exam. PINs are shown once and stored only as hashes in server-only records. Five failed attempts lock that account/exam PIN for 15 minutes. Regeneration is allowed only before the attempt starts.
 - Publishing creates an immutable server-only question/answer snapshot. Students receive only question text, options and marks. All grading happens on the server; browser-supplied scores are ignored. Results are stored separately. Examination officers can review them; students can read only their own released results.
@@ -53,7 +53,7 @@ Keep the existing owner profile as `superadmin`. To bootstrap an owner that does
 
 In the app, open **Students**, enter the student's name, unique username and password (8+ characters), confirm it, and leave contact email blank if not needed. Give the student those credentials separately. On **Exam PINs**, select a paper and students, generate the PIN list and distribute only each student's own PIN. Losing a PIN does not permit resetting an existing attempt.
 
-Removing signup and denying profile writes prevents public Firebase Auth registrations from obtaining school access. Firebase's underlying email/password provider may still accept raw identity registrations unless registration is disabled separately in its supported provider settings; these identities have no school profile and the API/rules reject them.
+Pending teacher approval and denying client profile writes prevent public Firebase Auth registrations from obtaining school access automatically. Firebase's underlying email/password provider may still accept raw identity registrations unless registration is disabled separately in its supported provider settings; these identities have no school profile and the API/rules reject them.
 
 ## Verification before an exam
 
@@ -135,3 +135,7 @@ A teacher admin manages their own draft papers/question bank and password. Paper
 Question create/copy/delete and paper creation/publication record server-authored audit entries. Direct question writes are denied, including by privileged browser clients, to avoid silent bypass of activity recording. The oversight page shows up to 200 exams, questions and recent events per selected staff member; deleted questions leave activity records, not a recoverable version history. Historical actions before this feature have no retroactive audit entries. Only the superadmin retains unrestricted question reads; other legacy admin/officer accounts now query their own question banks.
 
 Deploy the frontend/API and rules together in maintenance; the new audit query also needs the `workspaceUid + createdAtMs` index. Test verification-email delivery and authorized domains in staging. The automated browser fixture verifies the Auth emulator identity programmatically; it does not prove real inbox delivery. Legacy questions lacking `createdBy` remain visible to the superadmin and need verified ownership assignment before appearing in a teacher's bank. Do not infer ownership from class or subject alone.
+
+## Integrated offline release
+
+See `AUDIT-FIXES-AND-OFFLINE.md` for fixes and `../lan-server/README.md` for school-host setup. Deploy the added indexes. Configure explicit frontend variables from `cbt-app/.env.example` before deployment: the old production-project fallback is removed. Cloud and LAN submissions share server-side immutable marking; imported LAN results require review.

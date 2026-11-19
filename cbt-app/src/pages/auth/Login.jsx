@@ -1,3 +1,4 @@
+import { sendPasswordResetEmail } from "firebase/auth";
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { signInWithEmailAndPassword, signOut } from "firebase/auth";
@@ -28,14 +29,26 @@ export default function Login() {
 
     try {
       const identifier = email.trim().toLowerCase();
-      const loginAddress = identifier.includes("@") ? identifier : `${identifier}@students.cbt.invalid`;
+      const loginAddress = identifier.includes("@")
+        ? identifier
+        : `${identifier}@students.cbt.invalid`;
       await signInWithEmailAndPassword(auth, loginAddress, password);
       await callApi("account.verify");
       navigate("/");
     } catch (loginError) {
-      if (loginError.status === 403 && loginError.message.includes("has not been created")) { navigate("/signup"); return; }
+      if (
+        loginError.status === 403 &&
+        loginError.message.includes("has not been created")
+      ) {
+        navigate("/signup");
+        return;
+      }
       await signOut(auth);
-      setError(loginError.code?.startsWith("auth/") ? "Invalid username, email or password." : loginError.message);
+      setError(
+        loginError.code?.startsWith("auth/")
+          ? "Invalid username, email or password."
+          : loginError.message,
+      );
     } finally {
       setLoading(false);
     }
@@ -47,11 +60,14 @@ export default function Login() {
         <AppLogo size="lg" />
         <h1 className="mt-3 text-3xl font-semibold text-slate-900">Sign in</h1>
         <p className="mt-2 text-sm text-slate-500">
-          Students use the username and password issued by their school. Existing email accounts can still sign in.
+          Students use the username and password issued by their school.
+          Existing email accounts can still sign in.
         </p>
 
         {error && (
-          <p className="mt-4 rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>
+          <p className="mt-4 rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">
+            {error}
+          </p>
         )}
 
         <form onSubmit={handleLogin} className="mt-6 space-y-4">
@@ -128,8 +144,31 @@ export default function Login() {
           </button>
         </form>
 
+        <button
+          className="mt-5 underline"
+          onClick={async () => {
+            const address = window.prompt(
+              "Your registered personal email (teachers only)",
+            );
+            if (!address) return;
+            try {
+              await sendPasswordResetEmail(auth, address.trim());
+            } catch {
+              /* Same response avoids exposing account existence. */
+            }
+            window.alert(
+              "If this email can receive a reset link, check its inbox and spam folder. For username accounts, contact the superadmin.",
+            );
+          }}
+        >
+          Forgot teacher password?
+        </button>
         <p className="mt-6 text-sm text-slate-500">
-          Teacher? <Link to="/signup" className="font-semibold underline">Create your teacher account</Link>. Students should contact the school administrator.
+          Teacher?{" "}
+          <Link to="/signup" className="font-semibold underline">
+            Create your teacher account
+          </Link>
+          . Students should contact the school administrator.
         </p>
       </div>
     </div>
