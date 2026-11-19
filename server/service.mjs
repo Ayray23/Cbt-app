@@ -1,3 +1,4 @@
+import { teacherService } from "./teachers.mjs";
 import { randomUUID } from "node:crypto";
 import { assert, cleanAnswers, documentId, examPaper, grade, newPin, pinDigest, pinMatches,
   publicQuestions, safeSession, shuffled, studentUsername, usernameEmail } from "./domain.mjs";
@@ -7,21 +8,22 @@ import { eligible, schoolFields, schoolActions } from "./school.mjs";
 export function createService({ db, auth, fields, now = Date.now }) {
   const stamp = () => fields.serverTimestamp();
 
-  async function identity(token) {
+  async function identity(token, { allowPending = false } = {}) {
     let claims;
     try { claims = await auth.verifyIdToken(token, true); }
     catch { assert(false, 401, "Please sign in again."); }
     const profile = await db.doc(`users/${claims.uid}`).get();
     assert(profile.exists, 403, "Your account has not been created by an administrator.");
     const user = { ...profile.data(), uid: claims.uid };
-    assert(["student", "teacher", "invigilator", "examofficer", "admin", "superadmin"].includes(user.role), 403, "Your account role is invalid.");
+    assert(["student", "teacher", "teacher_admin", "invigilator", "examofficer", "admin", "superadmin"].includes(user.role), 403, "Your account role is invalid.");
     assert(!user.loginDisabled, 403, "Your account access has been blocked. Contact your administrator.");
+    assert(allowPending || !user.approvalStatus || user.approvalStatus === "approved", 403, "Your teacher account is awaiting approval or has been suspended.");
     return user;
   }
 
   function admin(user) { assert(["admin", "superadmin"].includes(user.role), 403, "Administrator access required."); }
   function examiner(user) { assert(["admin", "superadmin", "examofficer"].includes(user.role), 403, "Examination officer access required."); }
-  function author(user) { assert(["admin", "superadmin", "examofficer", "teacher"].includes(user.role), 403, "Teacher access required."); }
+  function author(user) { assert(["admin", "superadmin", "examofficer", "teacher", "teacher_admin"].includes(user.role), 403, "Teacher access required."); }
   function invigilate(user) { assert(["admin", "superadmin", "examofficer", "invigilator"].includes(user.role), 403, "Invigilator access required."); }
   function student(user) { assert(user.role === "student", 403, "A student account is required to take an exam."); }
 
@@ -57,7 +59,7 @@ export function createService({ db, auth, fields, now = Date.now }) {
 
   async function createStaff(user, input) {
     assert(user.role === "superadmin", 403, "Owner access required to create staff.");
-    assert(["admin", "teacher", "examofficer", "invigilator"].includes(input.role), 400, "Select a staff role.");
+    assert(["admin", "teacher", "teacher_admin", "examofficer", "invigilator"].includes(input.role), 400, "Select a staff role.");
     const created = await createStudent(user, { username: input.username, displayName: input.displayName, password: input.password, email: input.email });
     await db.doc(`users/${created.uid}`).update({ role: input.role, assignedClasses: [], assignedSubjects: [] });
     await db.collection("auditLogs").doc().create({ actorUid: user.uid, action: "staff.create", target: created.uid, details: { role: input.role }, createdAt: stamp(), createdAtMs: now() });
@@ -114,6 +116,7 @@ export function createService({ db, auth, fields, now = Date.now }) {
         maxMarks: grade(paper, {}).maxMarks, questionCount: paper.length, publishedAt: stamp(), updatedAt: stamp(),
         accessCodeHash: fields.delete(), accessCodeUpdatedAt: fields.delete() });
       tx.delete(db.doc(`examAccess/${examId}`));
+      tx.create(db.collection("auditLogs").doc(), { actorUid: user.uid, workspaceUid: exam.data().createdBy || user.uid, action: "exams.publish", target: examId, details: { paperVersion: version }, createdAt: stamp(), createdAtMs: now() });
       return { ok: true };
     });
     return result;
@@ -301,7 +304,7 @@ export function createService({ db, auth, fields, now = Date.now }) {
   }
 
   async function execute(user, action, input) {
-    const actions = { ...schoolActions({ db, auth, fields, now, admin, examiner, author, invigilate }), "account.verify": async (account) => {
+    const actions = { ...teacherService({ db, auth, fields, now }).actions, ...schoolActions({ db, auth, fields, now, admin, examiner, author, invigilate }), "account.verify": async (account) => {
       await db.doc(`users/${account.uid}`).update({ lastLoginAt: stamp() });
       return { role: account.role };
     }, "staff.create": createStaff, "students.create": createStudent, "students.access": setAccess, "users.role": setRole,
@@ -310,5 +313,5 @@ export function createService({ db, auth, fields, now = Date.now }) {
     assert(Object.hasOwn(actions, action), 404, "Unknown action.");
     return actions[action](user, input);
   }
-  return { identity, execute };
+  return { identity, execute, registerTeacher: teacherService({ db, auth, fields, now }).register };
 }

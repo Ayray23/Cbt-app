@@ -50,6 +50,38 @@ try {
   const deadline = Date.now() + 15000; let result;
   while (Date.now() < deadline) { const rows = await db.collection('examResults').get(); if (!rows.empty) { result = rows.docs[0].data(); break; } await new Promise(r => setTimeout(r, 200)); }
   assert.equal(result?.finalScore, 1); assert.equal(result?.released, false); assert.equal(errors.length, 0, errors.join('\n'));
+  await page.getByRole('button', { name: 'Sign out', exact: true }).click(); await page.waitForURL('**/login');
+  await page.getByRole('link', { name: 'Create your teacher account', exact: true }).click();
+  await page.getByLabel('Full name', { exact: true }).fill('Teacher Alice');
+  await page.getByLabel('Email address', { exact: true }).fill('teacher-alice@example.test');
+  await page.getByLabel('Password', { exact: true }).fill(password); await page.getByLabel('Confirm password', { exact: true }).fill(password);
+  await page.getByRole('button', { name: 'Create teacher account', exact: true }).click(); await page.waitForURL('**/teacher-access');
+  await page.getByText('pending', { exact: true }).waitFor();
+  const teacher = await auth.getUserByEmail('teacher-alice@example.test');
+  assert.equal((await db.doc(`users/${teacher.uid}`).get()).data().role, 'teacher_admin');
+  // Simulate following the emulator verification link; real email delivery is a staging check.
+  await auth.updateUser(teacher.uid, { emailVerified: true });
+  await page.getByRole('button', { name: 'Sign out', exact: true }).click(); await login('owner@example.test'); await page.waitForURL('**/dashboard');
+  await page.getByRole('link', { name: 'Teacher oversight', exact: true }).click();
+  await page.locator('article').filter({ hasText: 'Teacher Alice' }).getByRole('button', { name: 'Review access / teaching assignments' }).click();
+  await page.getByLabel('Reason', { exact: true }).fill('Verified school employee');
+  await page.getByRole('checkbox', { name: 'JSS1 A', exact: true }).check(); await page.getByRole('checkbox', { name: 'Mathematics', exact: true }).check();
+  await page.getByRole('button', { name: 'Save teacher access', exact: true }).click(); await page.getByText('Staff record saved.', { exact: true }).waitFor();
+  await page.getByRole('button', { name: 'Sign out', exact: true }).click(); await login('teacher-alice@example.test'); await page.waitForURL('**/exams/create');
+  await page.getByLabel('Exam title').fill('Private teacher paper'); await page.getByLabel('Duration in minutes').fill('20');
+  await page.getByLabel(/^Class/).selectOption('JSS1 A'); await page.getByLabel(/^Subject/).selectOption('Mathematics');
+  await page.getByRole('button', { name: 'Create exam', exact: true }).click(); await page.getByText('Exam created.', { exact: false }).waitFor();
+  assert.equal(await page.getByText('Mathematics Pilot', { exact: true }).count(), 0, 'Teacher cannot see the owner paper');
+  await page.getByRole('link', { name: 'Add Questions', exact: true }).click(); await page.getByRole('heading', { name: 'Manual entry', exact: true }).waitFor();
+  await page.locator('select').first().selectOption({ label: 'Private teacher paper' }); await page.getByPlaceholder('Type the question prompt').fill('Private teacher question');
+  for (const [key, value] of Object.entries({ A: 'Yes', B: 'No', C: 'Maybe', D: 'Never' })) await page.getByPlaceholder(`Option ${key}`, { exact: true }).fill(value);
+  await page.locator('select').nth(1).selectOption('A'); await page.getByRole('button', { name: 'Save question', exact: true }).click(); await page.getByText('Question saved successfully.').waitFor();
+  await page.getByRole('button', { name: 'Sign out', exact: true }).click(); await login('owner@example.test'); await page.waitForURL('**/dashboard');
+  await page.getByRole('link', { name: 'Teacher oversight', exact: true }).click();
+  await page.locator('article').filter({ hasText: 'Teacher Alice' }).getByRole('button', { name: 'Inspect work', exact: true }).click();
+  await page.getByText('Private teacher question', { exact: true }).waitFor(); await page.getByText('questions.create', { exact: false }).waitFor();
+  assert.equal(errors.length, 0, errors.join('\n'));
+  console.log('PASS: teacher self-registration → verified approval → private author workspace → superadmin question and activity oversight');
   await page.screenshot({ path: '/tmp/cbt-school-student.png', fullPage: true });
   console.log('PASS: browser admin setup → student provision → exam author/publish → PIN → student start → answer → refresh → submit → server score');
 } catch (error) {

@@ -2,7 +2,6 @@ import { useAuth } from "../contexts/AuthContext";
 import { useEffect, useState } from "react";
 import {
   collection,
-  deleteDoc,
   doc,
   getDoc,
   onSnapshot,
@@ -26,13 +25,13 @@ export default function Questions() {
 
   useEffect(() => {
     const unsubscribeQuestions = onSnapshot(
-      query(collection(db, "questions"), ...(role === "teacher" ? [where("createdBy", "==", user.uid)] : []), orderBy("createdAt", "desc")),
+      query(collection(db, "questions"), ...(role !== "superadmin" ? [where("createdBy", "==", user.uid)] : []), orderBy("createdAt", "desc")),
       (snapshot) => {
         setQuestions(snapshot.docs.map((docItem) => ({ id: docItem.id, ...docItem.data() })));
       }
     );
 
-    const unsubscribeExams = onSnapshot(query(collection(db, "exams"), ...(role === "teacher" ? [where("createdBy", "==", user.uid)] : [])), (snapshot) => {
+    const unsubscribeExams = onSnapshot(query(collection(db, "exams"), ...(role !== "superadmin" ? [where("createdBy", "==", user.uid)] : [])), (snapshot) => {
       const nextExams = {};
       snapshot.docs.forEach((docItem) => {
         nextExams[docItem.id] = docItem.data();
@@ -55,7 +54,7 @@ export default function Questions() {
       if (!exam.exists() || exam.data().status !== "draft") {
         throw new Error("Move the exam to draft before deleting a question, then publish the updated paper.");
       }
-      await deleteDoc(doc(db, "questions", questionToDelete.id));
+      await callApi("questions.delete", { questionId: questionToDelete.id });
       setBanner({ tone: "success", message: "Question deleted." });
     } catch (error) {
       console.error(error);

@@ -68,3 +68,20 @@ test('objective paper completes through authenticated HTTP with private marking 
   await api(ownerToken, 'students.access', { studentId: student.uid, loginDisabled: true });
   await api(studentToken, 'exam.start', input, 403);
 });
+
+test('self-registered identity cannot author until a verified superadmin approval', async () => {
+  const account = await auth.createUser({ email: 'http-teacher@example.test', password });
+  const token = await login('http-teacher@example.test');
+  await api(token, 'teachers.register', { displayName: 'HTTP Teacher', role: 'superadmin', approvalStatus: 'approved' });
+  await api(token, 'account.verify');
+  await api(token, 'exams.create', {}, 403);
+  await api(token, 'teachers.review', { uid: account.uid, decision: 'approve' }, 403);
+  const decision = { uid: account.uid, decision: 'approve', reason: 'Approved employee', classes: ['JSS1 A'], subjects: ['Mathematics'] };
+  await api(ownerToken, 'teachers.review', decision, 409);
+  await auth.updateUser(account.uid, { emailVerified: true });
+  await api(ownerToken, 'teachers.review', decision);
+  const result = await api(token, 'exams.create', { title: 'Private HTTP paper', duration: 10, academicSession: '2026/2027', term: 'First', className: 'JSS1 A', subject: 'Mathematics', weight: 100 });
+  assert.equal((await db.doc(`exams/${result.id}`).get()).data().createdBy, account.uid);
+  await api(ownerToken, 'teachers.review', { ...decision, decision: 'suspend' });
+  await api(token, 'exams.create', {}, 403);
+});

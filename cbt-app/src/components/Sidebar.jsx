@@ -13,6 +13,7 @@ export default function Sidebar() {
   const { role, isAdmin } = useAuth();
 
   const adminLinks = [
+    { to: "/teacher-account", label: "My password" },
     { to: "/school", label: "School setup" },
     { to: "/audit", label: "Audit trail" },
     { to: "/dashboard", label: "Overview" },
@@ -32,7 +33,7 @@ export default function Sidebar() {
       <div className="mb-8">
         <AppLogo size="md" tone="light" />
         <h1 className="mt-4 text-2xl font-semibold">
-          {role !== "student" ? "Staff workspace" : "Exam Portal"}
+          {["teacher", "teacher_admin"].includes(role) ? "Teacher admin" : role !== "student" ? "Staff workspace" : "Exam Portal"}
         </h1>
         <p className="mt-2 text-sm text-slate-400">
           {role !== "student"
@@ -42,7 +43,7 @@ export default function Sidebar() {
       </div>
 
       <nav className="space-y-2">
-        {(isAdmin ? adminLinks : role === 'teacher' ? adminLinks.filter(l => ['/exams/create', '/questions/add', '/questions'].includes(l.to)) : role === 'examofficer' ? adminLinks.filter(l => !['/school', '/students', '/dashboard'].includes(l.to)) : role === 'invigilator' ? adminLinks.filter(l => l.to === '/monitoring') : studentLinks).map((link) => (
+        {(isAdmin ? adminLinks : ['teacher', 'teacher_admin'].includes(role) ? adminLinks.filter(l => ['/exams/create', '/questions/add', '/questions', '/teacher-account'].includes(l.to)) : role === 'examofficer' ? adminLinks.filter(l => !['/school', '/students', '/dashboard'].includes(l.to)) : role === 'invigilator' ? adminLinks.filter(l => l.to === '/monitoring') : studentLinks).map((link) => (
           <NavLink key={link.to} to={link.to} className={linkClassName}>
             {link.label}
           </NavLink>
@@ -50,7 +51,7 @@ export default function Sidebar() {
 
         {role === "superadmin" && (
           <NavLink to="/admins" className={linkClassName}>
-            Admin Access
+            Teacher oversight
           </NavLink>
         )}
       </nav>

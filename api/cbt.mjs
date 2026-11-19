@@ -13,8 +13,9 @@ export async function POST(request) {
     try { body = JSON.parse(text); } catch { assert(false, 400, "Invalid request."); }
     assert(body && typeof body === "object" && !Array.isArray(body), 400, "Invalid request.");
     const service = createService(backend());
-    const user = await service.identity(token);
-    const result = await service.execute(user, body.action, body);
+    const result = body.action === "teachers.register"
+      ? await service.registerTeacher(token, body)
+      : await service.execute(await service.identity(token, { allowPending: body.action === "account.verify" }), body.action, body);
     return Response.json(result, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     if (!error.status) console.error("CBT API request failed", error.code || error.name);
