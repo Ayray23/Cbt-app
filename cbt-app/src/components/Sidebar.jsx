@@ -77,9 +77,11 @@ export default function Sidebar() {
 
         {role === "superadmin" && (
           <>
-            <NavLink to="/lan-exams" className={linkClassName}>
-              Offline LAN exams
-            </NavLink>
+            {import.meta.env.VITE_ENABLE_LAN === "true" && (
+              <NavLink to="/lan-exams" className={linkClassName}>
+                Offline LAN exams
+              </NavLink>
+            )}
             <NavLink to="/admins" className={linkClassName}>
               Teacher oversight
             </NavLink>
