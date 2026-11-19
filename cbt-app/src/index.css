@@ -4,3 +4,11 @@
 
 html, body, #root { height: 100%; }
 body { font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial; }
+
+@media print {
+  aside, header, nav, button, .print\:hidden { display: none !important; }
+  main { padding: 0 !important; }
+  body { background: white !important; }
+  table { width: 100%; border-collapse: collapse; }
+  tr { break-inside: avoid; }
+}

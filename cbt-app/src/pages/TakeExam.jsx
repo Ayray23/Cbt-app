@@ -1,538 +1,256 @@
-import { useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { doc, getDoc } from "firebase/firestore";
-import { db } from "/firebase";
-import {
-  loadExamQuestions,
-  saveExamProgress,
-  saveLocalExamDraft,
-  startExamSession,
-  submitExamSession,
-} from "../services/sessionService";
-import ConfirmDialog from "../components/ConfirmDialog";
+import { useAuth } from "../contexts/AuthContext";
+import { getDeviceExamMap, saveExamProgress, saveLocalExamDraft, startExamSession, submitExamSession } from "../services/sessionService";
+import StatusBanner from "../components/StatusBanner";
+
 import ExamCalculator from "../components/ExamCalculator";
 
-const DISPLAY_OPTION_LABELS = ["A", "B", "C", "D"];
-const MAX_TAB_SWITCH_WARNINGS = 3;
+const LABELS = ["A", "B", "C", "D"];
 
-function formatTime(totalSeconds) {
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = totalSeconds % 60;
-  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+function formatTime(seconds) {
+  return `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
 }
-
 
 export default function TakeExam() {
   const { examId } = useParams();
+  const { user } = useAuth();
   const navigate = useNavigate();
-  const [exam, setExam] = useState(null);
-  const [questions, setQuestions] = useState([]);
+  const [ownsTab, setOwnsTab] = useState(false);
+  const [packet, setPacket] = useState(null);
   const [answers, setAnswers] = useState({});
-  const [session, setSession] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [submitting, setSubmitting] = useState(false);
-  const [saving, setSaving] = useState(false);
+  const [index, setIndex] = useState(0);
+  const [timeLeft, setTimeLeft] = useState(0);
   const [error, setError] = useState("");
-  const [timeLeft, setTimeLeft] = useState(null);
-  const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
-  const [showSubmitConfirm, setShowSubmitConfirm] = useState(false);
-  const [warningCount, setWarningCount] = useState(0);
-  const hydratedAnswersRef = useRef(false);
-  const hasEnteredFullscreenRef = useRef(false);
-  const autosaveTimeoutRef = useRef(null);
-  const lastSavedAnswersRef = useRef("");
+  const [saveStatus, setSaveStatus] = useState("Answers save on this device.");
+  const [needsFullscreen, setNeedsFullscreen] = useState(false);
   const answersRef = useRef({});
-  const warningCountRef = useRef(0);
-  const sessionStatus = session?.status ?? null;
+  const packetRef = useRef(null);
+  const closedRef = useRef(false);
+  const warningsRef = useRef(0);
+  const enteredFullscreenRef = useRef(Boolean(document.fullscreenElement));
 
-  const handleSubmit = useEffectEvent(async (submissionReason = "manual") => {
-    if (submitting || session?.status === "submitted") {
-      return;
+
+  useEffect(() => {
+    let cancelled = false;
+    let release;
+    if (!navigator.locks) {
+      setError("This browser cannot safely reserve an exam tab. Use a current Chrome, Edge or Firefox browser over HTTPS.");
+      return undefined;
     }
+    // React StrictMode replays effects; cancelled mounts must never compete for this lock.
+    queueMicrotask(() => {
+      if (cancelled) return;
+      void navigator.locks.request(`cbt-attempt-${user.uid}-${examId}`, { ifAvailable: true }, async lock => {
+      if (cancelled) return;
+      if (!lock) { setError("This exam is already open in another tab. Close that tab, then reload this page."); return; }
+      setOwnsTab(true);
+      await new Promise(resolve => { release = resolve; });
+    }).catch(() => { if (!cancelled) setError("Could not reserve this exam tab. Reload or contact your supervisor."); });
+    });
+    return () => { cancelled = true; release?.(); };
+  }, [examId, user.uid]);
 
-    setSubmitting(true);
-    setError("");
-
+  const finish = useCallback((reason = "manual") => {
+    if (closedRef.current || !packetRef.current) return;
+    closedRef.current = true;
     try {
-      const result = await submitExamSession(examId, answersRef.current, {
-        submissionReason,
-        tabSwitchCount: warningCountRef.current,
-        integrityWarnings: warningCountRef.current,
-      });
-
-      navigate("/portal", {
-        replace: true,
-        state: {
-          message: result.pendingSync
-            ? "Exam closed offline. Your submission is saved on this device and will sync automatically when internet returns."
-            : "Exam submitted successfully. You cannot reopen this exam.",
-        },
-      });
-    } catch (submitError) {
-      console.error(submitError);
-      if (window.navigator.onLine) {
-        setError(submitError.message ?? "Submission failed.");
-        return;
-      }
-    } finally {
-      setSubmitting(false);
+      submitExamSession(examId, answersRef.current, { submissionReason: reason, tabSwitchCount: warningsRef.current });
+      navigate("/portal", { replace: true, state: { message: "Exam closed. Your answers are saved and will upload when connected." } });
+      if (document.fullscreenElement) void document.exitFullscreen().catch(() => {});
+    } catch (saveError) {
+      closedRef.current = false;
+      setError(`Could not save your submission on this device. Keep this page open and contact your supervisor. ${saveError.message}`);
     }
-  });
+  }, [examId, navigate]);
 
   useEffect(() => {
-    answersRef.current = answers;
-  }, [answers]);
-
-  useEffect(() => {
-    warningCountRef.current = warningCount;
-  }, [warningCount]);
-
-  const requestFullscreenMode = useEffectEvent(async () => {
-    if (!document.fullscreenEnabled || document.fullscreenElement) {
-      return;
-    }
-
-    try {
-      await document.documentElement.requestFullscreen();
-      hasEnteredFullscreenRef.current = Boolean(document.fullscreenElement);
-    } catch (fullscreenError) {
-      // Fullscreen can be denied unless the request follows a user gesture.
-      // A denied request must not be treated as an exam violation.
-      console.info("Fullscreen mode is unavailable; continuing the exam normally.", fullscreenError);
-    }
-  });
-
-  useEffect(() => {
-    async function loadExam() {
-      setLoading(true);
-      setError("");
-
+    if (!ownsTab) return undefined;
+    let cancelled = false;
+    async function load() {
       try {
-        const examSnapshot = await getDoc(doc(db, "exams", examId));
-        if (!examSnapshot.exists()) {
-          throw new Error("Exam not found.");
-        }
+        const loaded = await startExamSession(examId);
+        if (cancelled) return;
+        packetRef.current = loaded;
+        answersRef.current = loaded.session.answers || {};
+        warningsRef.current = Math.max(loaded.session.tabSwitchCount || 0, loaded.metadata?.tabSwitchCount || 0);
+        setPacket(loaded);
+        setAnswers(answersRef.current);
+        setNeedsFullscreen(Boolean(document.fullscreenEnabled && !document.fullscreenElement));
 
-        const examData = { id: examSnapshot.id, ...examSnapshot.data() };
-        setExam(examData);
-
-        // A valid exam session must exist before the secure endpoint releases question content.
-        // Never query question documents directly from the student client: they contain answer keys.
-        const startedSession = await startExamSession(examId);
-        const loadedQuestions = await loadExamQuestions(examId);
-        const order = startedSession.questionOrder ?? [];
-        const sortedQuestions =
-          order.length > 0
-            ? [...loadedQuestions].sort((first, second) => order.indexOf(first.id) - order.indexOf(second.id))
-            : loadedQuestions;
-
-        setQuestions(sortedQuestions);
-        setSession(startedSession);
-        setAnswers(startedSession.answers ?? {});
-        answersRef.current = startedSession.answers ?? {};
-        hydratedAnswersRef.current = true;
-        lastSavedAnswersRef.current = JSON.stringify(startedSession.answers ?? {});
-        setWarningCount(Number(startedSession.tabSwitchCount || 0));
-
-        const firstUnansweredIndex = sortedQuestions.findIndex(
-          (question) => !(startedSession.answers ?? {})[question.id]
-        );
-        setCurrentQuestionIndex(firstUnansweredIndex >= 0 ? firstUnansweredIndex : 0);
-
-        if (startedSession.status !== "submitted") {
-          const expiresAt =
-            startedSession.expiresAtMs ??
-            (startedSession.startedAtMs ?? Date.now()) + (examData.duration ?? 0) * 60 * 1000;
-          setTimeLeft(Math.max(0, Math.floor((expiresAt - Date.now()) / 1000)));
-        }
       } catch (loadError) {
-        console.error(loadError);
-        setError(loadError.message ?? "Failed to load exam.");
-      } finally {
-        setLoading(false);
+        if (!cancelled) setError(loadError.message);
       }
     }
-
-    loadExam();
-  }, [examId]);
-
-  useEffect(() => {
-    if (!loading && sessionStatus !== "submitted") {
-      void requestFullscreenMode();
-    }
-  }, [loading, requestFullscreenMode, sessionStatus]);
+    void load();
+    return () => { cancelled = true; };
+  }, [examId, finish, ownsTab]);
 
   useEffect(() => {
-    if (timeLeft === null || session?.status === "submitted") {
-      return undefined;
-    }
+    if (!packet) return undefined;
+    const tick = () => {
+      const remaining = Math.max(0, Math.ceil((packet.session.expiresAtMs - (Date.now() + (packet.offsetMs || 0))) / 1000));
+      setTimeLeft(remaining);
+      if (remaining === 0) finish("timeout");
+    };
+    tick();
+    const timer = window.setInterval(tick, 1000);
+    return () => window.clearInterval(timer);
+  }, [packet, finish]);
 
-    if (timeLeft <= 0) {
-      void handleSubmit();
-      return undefined;
-    }
-
-    const intervalId = window.setInterval(() => {
-      setTimeLeft((current) => {
-        if (current === null) {
-          return current;
-        }
-
-        return Math.max(0, current - 1);
-      });
-    }, 1000);
-
-    return () => window.clearInterval(intervalId);
-  }, [handleSubmit, timeLeft, session?.status]);
-
-  useEffect(() => {
-    if (!hydratedAnswersRef.current || !sessionStatus || sessionStatus === "submitted" || submitting) {
-      return undefined;
-    }
-
-    const serializedAnswers = JSON.stringify(answers);
-    if (serializedAnswers === lastSavedAnswersRef.current) {
-      return undefined;
-    }
-
-    // Persist the latest selection locally immediately. Firebase sync is debounced
-    // so changing several answers quickly does not trigger a write for each click.
+  const persistProgress = useCallback(async () => {
+    if (!packetRef.current || closedRef.current) return;
     try {
-      saveLocalExamDraft(examId, answers, {
-        tabSwitchCount: warningCountRef.current,
-        integrityWarnings: warningCountRef.current,
-      });
-    } catch (draftError) {
-      console.error("Could not save the local exam draft", draftError);
-    }
-
-    if (autosaveTimeoutRef.current) {
-      window.clearTimeout(autosaveTimeoutRef.current);
-    }
-
-    autosaveTimeoutRef.current = window.setTimeout(async () => {
-      try {
-        setSaving(true);
-        await saveExamProgress(examId, answers, {
-          tabSwitchCount: warningCountRef.current,
-          integrityWarnings: warningCountRef.current,
-        });
-        lastSavedAnswersRef.current = serializedAnswers;
-      } catch (saveError) {
-        console.error(saveError);
-      } finally {
-        setSaving(false);
+      const result = await saveExamProgress(examId, answersRef.current, { tabSwitchCount: warningsRef.current });
+      if (closedRef.current) return;
+      if (result.closed) { finish("manual"); return; }
+      if (result.expired) { finish("timeout"); return; }
+      if (result.expiresAtMs && packetRef.current.session.expiresAtMs !== result.expiresAtMs) {
+        const updated = { ...packetRef.current, session: { ...packetRef.current.session, expiresAtMs: result.expiresAtMs } };
+        packetRef.current = updated; setPacket(updated);
       }
-    }, 1500);
-
-    return () => {
-      if (autosaveTimeoutRef.current) {
-        window.clearTimeout(autosaveTimeoutRef.current);
-      }
-    };
-  }, [answers, examId, sessionStatus, submitting]);
+      setSaveStatus(result.localOnly ? "Saved on this device. Upload waits for a connection." : "Saved to server.");
+    } catch {
+      if (!closedRef.current) setSaveStatus("Saved on this device. Waiting to upload.");
+    }
+  }, [examId, finish]);
 
   useEffect(() => {
-    if (!sessionStatus || sessionStatus === "submitted") {
-      return undefined;
-    }
-
-    function preventClipboard(event) {
-      event.preventDefault();
-    }
-
-    function preventShortcutKeys(event) {
-      const pressedKey = String(event.key || "").toLowerCase();
-      if ((event.ctrlKey || event.metaKey) && ["c", "v", "x", "a", "s", "p"].includes(pressedKey)) {
-        event.preventDefault();
-      }
-    }
-
-    window.addEventListener("copy", preventClipboard);
-    window.addEventListener("cut", preventClipboard);
-    window.addEventListener("paste", preventClipboard);
-    window.addEventListener("contextmenu", preventClipboard);
-    window.addEventListener("keydown", preventShortcutKeys);
-
-    return () => {
-      window.removeEventListener("copy", preventClipboard);
-      window.removeEventListener("cut", preventClipboard);
-      window.removeEventListener("paste", preventClipboard);
-      window.removeEventListener("contextmenu", preventClipboard);
-      window.removeEventListener("keydown", preventShortcutKeys);
-    };
-  }, [sessionStatus]);
+    if (!packet) return undefined;
+    const timeout = window.setTimeout(() => void persistProgress(), 800);
+    return () => window.clearTimeout(timeout);
+  }, [answers, packet, persistProgress]);
 
   useEffect(() => {
-    if (!sessionStatus || sessionStatus === "submitted") {
-      return undefined;
-    }
+    if (!packet) return undefined;
+    const heartbeat = window.setInterval(() => void persistProgress(), 30000);
+    const reconnect = () => void persistProgress();
+    window.addEventListener("online", reconnect);
+    return () => { window.clearInterval(heartbeat); window.removeEventListener("online", reconnect); };
+  }, [packet, persistProgress]);
 
-    function handleFullscreenChange() {
-      const isActive = Boolean(document.fullscreenElement);
-
-      if (isActive) {
-        hasEnteredFullscreenRef.current = true;
-        return;
-      }
-
-      // Enforce fullscreen exit only after fullscreen was genuinely entered.
-      // Browser-denied initial requests must never close or submit an exam.
-      if (hasEnteredFullscreenRef.current && sessionStatus !== "submitted" && !submitting) {
-        hasEnteredFullscreenRef.current = false;
-        void handleSubmit("fullscreen-exit");
-      }
-    }
-
-    async function handleVisibilityChange() {
-      if (!document.hidden || sessionStatus === "submitted" || submitting) {
-        return;
-      }
-
-      const nextWarningCount = warningCountRef.current + 1;
-      setWarningCount(nextWarningCount);
-
-      try {
-        await saveExamProgress(examId, answersRef.current, {
-          tabSwitchCount: nextWarningCount,
-          integrityWarnings: nextWarningCount,
-          lastVisibilityChangeAtMs: Date.now(),
-        });
-      } catch (visibilityError) {
-        console.error(visibilityError);
-      }
-
-      if (nextWarningCount >= MAX_TAB_SWITCH_WARNINGS) {
-        await handleSubmit("tab-switch-limit");
+  useEffect(() => {
+    function fullscreenChanged() {
+      if (document.fullscreenElement) {
+        enteredFullscreenRef.current = true;
+        setNeedsFullscreen(false);
+      } else if (enteredFullscreenRef.current && !closedRef.current) {
+        warningsRef.current++;
+        setNeedsFullscreen(true);
+        void persistProgress();
       }
     }
-
-    function handleBeforeUnload(event) {
-      if (sessionStatus === "submitted") {
-        return;
-      }
-
-      event.preventDefault();
-      event.returnValue = "";
+    function visibilityChanged() {
+      if (!document.hidden || closedRef.current || !packetRef.current) return;
+      warningsRef.current++;
+      saveLocalExamDraft(examId, answersRef.current, { tabSwitchCount: warningsRef.current });
+      void persistProgress();
     }
-
-    document.addEventListener("fullscreenchange", handleFullscreenChange);
-    document.addEventListener("visibilitychange", handleVisibilityChange);
-    window.addEventListener("beforeunload", handleBeforeUnload);
-
+    function pageHidden() { if (packetRef.current && !closedRef.current) { try { saveLocalExamDraft(examId, answersRef.current, { tabSwitchCount: warningsRef.current }); } catch { /* Already saved on each answer input. */ } } }
+    function routeChanged() {
+      if (window.location.pathname !== `/exam/${examId}`) pageHidden();
+    }
+    function storageChanged() {
+      if (getDeviceExamMap(user.uid)[examId]?.closed && !closedRef.current) {
+        closedRef.current = true;
+        navigate("/portal", { replace: true });
+      }
+    }
+    function preventClipboard(event) { event.preventDefault(); }
+    function preventShortcut(event) {
+      if ((event.ctrlKey || event.metaKey) && ["c", "v", "x", "a", "s", "p"].includes(event.key.toLowerCase())) event.preventDefault();
+    }
+    document.addEventListener("fullscreenchange", fullscreenChanged);
+    document.addEventListener("visibilitychange", visibilityChanged);
+    window.addEventListener("pagehide", pageHidden);
+    window.addEventListener("popstate", routeChanged);
+    window.addEventListener("storage", storageChanged);
+    for (const event of ["copy", "paste", "cut", "contextmenu"]) window.addEventListener(event, preventClipboard);
+    window.addEventListener("keydown", preventShortcut);
     return () => {
-      document.removeEventListener("fullscreenchange", handleFullscreenChange);
-      document.removeEventListener("visibilitychange", handleVisibilityChange);
-      window.removeEventListener("beforeunload", handleBeforeUnload);
+      document.removeEventListener("fullscreenchange", fullscreenChanged);
+      document.removeEventListener("visibilitychange", visibilityChanged);
+      window.removeEventListener("pagehide", pageHidden);
+      window.removeEventListener("popstate", routeChanged);
+      window.removeEventListener("storage", storageChanged);
+      for (const event of ["copy", "paste", "cut", "contextmenu"]) window.removeEventListener(event, preventClipboard);
+      window.removeEventListener("keydown", preventShortcut);
     };
-  }, [examId, handleSubmit, sessionStatus, submitting]);
+  }, [examId, user.uid, navigate, finish, persistProgress]);
 
-  const totalMarks = useMemo(
-    () => questions.reduce((sum, question) => sum + Number(question.marks ?? 1), 0),
-    [questions]
-  );
+  function choose(questionId, value) {
+    if (closedRef.current) return;
+    const next = { ...answersRef.current, [questionId]: value };
+    try {
+      // Save on the input event itself, before the network debounce or next render.
+      saveLocalExamDraft(examId, next, { tabSwitchCount: warningsRef.current });
+      answersRef.current = next;
+      setAnswers(next);
+      setError("");
+    } catch { setError("Your device could not save this answer. Contact your supervisor before continuing."); }
+  }
 
-  const answeredCount = useMemo(
-    () => questions.filter((question) => Boolean(answers[question.id])).length,
-    [answers, questions]
-  );
+  async function enterFullscreen() {
+    try { await document.documentElement.requestFullscreen(); }
+    catch { setError("Fullscreen could not start. Ask your supervisor to check this browser."); }
+  }
 
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-[#f5f7fb] px-4 py-8 sm:px-6">
-        <div className="mx-auto max-w-7xl animate-pulse space-y-5">
-          <div className="h-16 rounded-2xl bg-white" />
-          <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_330px]">
-            <div className="h-[560px] rounded-3xl bg-white" />
-            <div className="h-[560px] rounded-3xl bg-white" />
-          </div>
-        </div>
+  if (!packet) return <div className="rounded-2xl bg-white p-6 shadow-sm">
+    {error ? <><StatusBanner tone="error" message={error} /><button onClick={() => navigate("/portal", { replace: true })} className="mt-4 underline">Back to exams</button></> : "Opening your saved exam..."}
+  </div>;
+
+  const byId = Object.fromEntries(packet.questions.map((question) => [question.id, question]));
+  const questions = packet.session.questionOrder.map((id) => byId[id]).filter(Boolean);
+  const current = questions[index];
+  if (!current) return <StatusBanner tone="error" message="The saved paper is incomplete. Contact your supervisor." />;
+  const order = packet.session.optionOrderByQuestion?.[current.id] || LABELS;
+  const answeredCount = questions.filter((question) => answers[question.id]).length;
+
+  return <div className="space-y-6">
+    <StatusBanner tone="error" message={error} />
+    {needsFullscreen && <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/70 p-4">
+      <section className="max-w-md rounded-3xl bg-white p-8">
+        <h2 className="text-2xl font-semibold">Enter exam mode</h2>
+        <p className="mt-3 text-sm text-slate-600">Your original timer is running. Open your paper to continue.</p>
+        <button onClick={enterFullscreen} className="mt-5 rounded-xl bg-slate-900 px-5 py-3 text-white">Open exam</button>
+      </section>
+    </div>}
+    <section className="flex flex-wrap items-center justify-between gap-4 rounded-3xl bg-white p-6 shadow-sm">
+      <div><p className="text-sm uppercase tracking-[0.2em] text-slate-400">Live exam</p>
+        <h2 className="mt-2 text-3xl font-semibold text-slate-900">{packet.session.examTitle}</h2>
+        <p className="whitespace-pre-wrap mt-2">{packet.session.instructions}</p>
+        <p className="mt-2 text-sm text-slate-500">{answeredCount} of {questions.length} answered</p>
+        <p className="mt-1 text-xs text-slate-500" role="status">{saveStatus}</p>
       </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-[#f5f7fb] px-4">
-        <div className="w-full max-w-xl rounded-3xl border border-rose-100 bg-white p-8 shadow-sm">
-          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-rose-50 text-xl text-rose-600">!</div>
-          <h1 className="mt-5 text-2xl font-semibold tracking-tight text-slate-900">We couldn’t open this exam</h1>
-          <p className="mt-2 text-sm leading-6 text-slate-500">{error}</p>
-          <button type="button" onClick={() => navigate("/portal")} className="mt-6 rounded-xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-700">Return to portal</button>
+      <div className="rounded-2xl bg-slate-100 p-4"><p className="text-sm">Time left</p><p className="mt-1 text-3xl tabular-nums">{formatTime(timeLeft)}</p></div>
+    </section>
+    <section className="grid gap-6 xl:grid-cols-[260px_1fr]">
+      <aside className="rounded-3xl bg-white p-6 shadow-sm">
+        <h3 className="font-semibold">Question palette</h3>
+        <div className="mt-4 grid grid-cols-5 gap-2">{questions.map((question, position) =>
+          <button key={question.id} onClick={() => setIndex(position)} aria-label={`Question ${position + 1}`}
+            aria-current={position === index ? "step" : undefined}
+            className={`rounded-xl border py-3 text-sm ${index === position ? "border-slate-900 bg-slate-900 text-white" : answers[question.id] ? "border-emerald-300 bg-emerald-50 text-emerald-700" : "border-slate-200"}`}>{position + 1}</button>)}</div>
+        {packet.session.allowCalculator && <div className="mt-6"><ExamCalculator /></div>}
+      </aside>
+      <section className="rounded-3xl bg-white p-6 shadow-sm md:p-8">
+        <p className="text-sm text-slate-500">Question {index + 1} | {current.marks} mark(s)</p>
+        <h3 className="whitespace-pre-wrap mt-4 text-2xl font-medium text-slate-900">{current.text}</h3>
+        {current.image && <img src={current.image} alt={current.imageAlt || "Question diagram"} className="mt-4 max-h-80 max-w-full object-contain" />}
+        <div className="mt-6 space-y-4">{order.map((key, position) =>
+          <label key={key} className={`flex cursor-pointer items-start gap-4 rounded-2xl border p-4 ${answers[current.id] === key ? "border-slate-900 bg-slate-900 text-white" : "border-slate-200 bg-slate-50"}`}>
+            <input type="radio" className="mt-1" name={current.id} checked={answers[current.id] === key}
+              onChange={() => choose(current.id, key)} value={key} />
+            <span><strong>{LABELS[position]}.</strong> {current.options[key]}</span>
+          </label>)}</div>
+        <div className="mt-8 flex flex-wrap justify-between gap-3">
+          <div className="flex gap-3">
+            <button disabled={index === 0} onClick={() => setIndex(index - 1)} className="rounded-xl border border-slate-300 px-5 py-3 text-sm disabled:opacity-40">Previous</button>
+            {index < questions.length - 1 && <button onClick={() => setIndex(index + 1)} className="rounded-xl bg-slate-900 px-5 py-3 text-sm text-white">Next</button>}
+          </div>
+          {index === questions.length - 1 && <button onClick={() => { if (window.confirm(`Submit now? ${answeredCount} of ${questions.length} questions answered. This cannot be undone.`)) finish("manual"); }} className="rounded-xl bg-emerald-600 px-5 py-3 text-sm text-white">Submit exam</button>}
         </div>
-      </div>
-    );
-  }
-
-  if (!exam || questions.length === 0) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-[#f5f7fb] px-4">
-        <div className="rounded-3xl border border-slate-200 bg-white p-8 text-center shadow-sm">
-          <h1 className="text-xl font-semibold text-slate-900">Exam unavailable</h1>
-          <p className="mt-2 text-sm text-slate-500">There are no questions available for this exam.</p>
-          <button type="button" onClick={() => navigate("/portal")} className="mt-5 rounded-xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white">Return to portal</button>
-        </div>
-      </div>
-    );
-  }
-
-  const currentQuestion = questions[currentQuestionIndex];
-  const prompt = currentQuestion.text ?? currentQuestion.question ?? "";
-  const options = currentQuestion.options ?? {};
-  const optionOrder = session?.optionOrderByQuestion?.[currentQuestion.id] ?? DISPLAY_OPTION_LABELS;
-  const isLastQuestion = currentQuestionIndex === questions.length - 1;
-  const progressPercent = Math.round((answeredCount / questions.length) * 100);
-
-  function confirmAndSubmit() {
-    setShowSubmitConfirm(true);
-  }
-
-  function moveToNextQuestion() {
-    setCurrentQuestionIndex((current) => Math.min(current + 1, questions.length - 1));
-  }
-
-  function moveToPreviousQuestion() {
-    setCurrentQuestionIndex((current) => Math.max(current - 1, 0));
-  }
-
-  return (
-    <div className="min-h-screen bg-[#f5f7fb] text-slate-900">
-      <div className="mx-auto max-w-[1500px] px-3 pb-6 pt-3 sm:px-6 sm:pt-5 lg:px-8">
-        <header className="mb-5 flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-slate-200/80 bg-white px-4 py-4 shadow-[0_2px_12px_rgba(15,23,42,0.025)] sm:px-6">
-          <div className="flex min-w-0 items-center gap-3">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-indigo-600 text-sm font-bold tracking-tight text-white">CBT</div>
-            <div className="min-w-0">
-              <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-indigo-600">Examination in progress</p>
-              <h1 className="mt-1 truncate text-base font-semibold tracking-tight text-slate-900 sm:text-lg">{exam.title}</h1>
-            </div>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-3 sm:gap-5">
-            <div className="hidden items-center gap-2 text-xs font-medium text-slate-500 sm:flex">
-              <span className={["h-2 w-2 rounded-full", saving ? "animate-pulse bg-amber-500" : "bg-emerald-500"].join(" ")} />
-              {saving ? "Saving progress" : "Progress saved"}
-            </div>
-            <div className={["flex items-center gap-3 rounded-xl border px-4 py-2.5", (timeLeft ?? 0) <= 300 ? "border-rose-200 bg-rose-50" : "border-slate-200 bg-slate-50"].join(" ")}>
-              <div className="text-right">
-                <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">Time remaining</p>
-                <p role="timer" aria-live="off" className={["mt-0.5 font-mono text-xl font-semibold tabular-nums", (timeLeft ?? 0) <= 300 ? "text-rose-700" : "text-slate-900"].join(" ")}>{formatTime(timeLeft ?? exam.duration * 60)}</p>
-              </div>
-              <div className={["flex h-9 w-9 items-center justify-center rounded-lg", (timeLeft ?? 0) <= 300 ? "bg-rose-100 text-rose-700" : "bg-white text-slate-600"].join(" ")} aria-hidden="true">◷</div>
-            </div>
-            <button type="button" onClick={confirmAndSubmit} disabled={submitting} className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-700 disabled:opacity-50">
-              {submitting ? "Submitting…" : "Finish exam"}
-            </button>
-          </div>
-        </header>
-
-        <div className="mb-5 grid gap-3 sm:grid-cols-3">
-          <div className="rounded-2xl border border-slate-200/80 bg-white px-4 py-3.5">
-            <div className="flex items-center justify-between gap-3">
-              <p className="text-xs font-medium text-slate-500">Questions answered</p>
-              <p className="text-sm font-semibold tabular-nums text-slate-900">{answeredCount}<span className="font-medium text-slate-400"> / {questions.length}</span></p>
-            </div>
-            <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full bg-indigo-600 transition-[width] duration-300" style={{ width: progressPercent + "%" }} /></div>
-          </div>
-          <div className="rounded-2xl border border-slate-200/80 bg-white px-4 py-3.5">
-            <p className="text-xs font-medium text-slate-500">Current question</p>
-            <p className="mt-1 text-sm font-semibold text-slate-900">{currentQuestionIndex + 1} <span className="font-medium text-slate-400">of {questions.length}</span></p>
-          </div>
-          <div className="rounded-2xl border border-slate-200/80 bg-white px-4 py-3.5">
-            <p className="text-xs font-medium text-slate-500">Question value</p>
-            <p className="mt-1 text-sm font-semibold text-slate-900">{currentQuestion.marks ?? 1} <span className="font-medium text-slate-400">{Number(currentQuestion.marks ?? 1) === 1 ? "mark" : "marks"}</span></p>
-          </div>
-        </div>
-
-        <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
-          <main className="min-w-0">
-            <section className="overflow-hidden rounded-3xl border border-slate-200/80 bg-white shadow-[0_8px_30px_rgba(15,23,42,0.035)]">
-              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-5 py-4 sm:px-8">
-                <div className="flex items-center gap-3">
-                  <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-indigo-50 text-sm font-bold text-indigo-700">{String(currentQuestionIndex + 1).padStart(2, "0")}</span>
-                  <div>
-                    <p className="text-sm font-semibold text-slate-900">Question {currentQuestionIndex + 1}</p>
-                    <p className="mt-0.5 text-xs text-slate-500">Choose one answer</p>
-                  </div>
-                </div>
-                <span className={["rounded-full px-3 py-1.5 text-xs font-semibold", answers[currentQuestion.id] ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-500"].join(" ")}>{answers[currentQuestion.id] ? "Answer selected" : "Not answered"}</span>
-              </div>
-
-              <div className="px-5 py-7 sm:px-8 sm:py-9">
-                <h2 className="max-w-4xl whitespace-pre-wrap text-lg font-medium leading-8 tracking-[-0.015em] text-slate-900 sm:text-[22px] sm:leading-9">{prompt}</h2>
-
-                <fieldset className="mt-7 space-y-3">
-                  <legend className="sr-only">Answer options</legend>
-                  {optionOrder.map((originalOptionKey, optionIndex) => {
-                    const selected = answers[currentQuestion.id] === originalOptionKey;
-                    return (
-                      <label key={`${currentQuestion.id}-${originalOptionKey}`} className={["group flex cursor-pointer items-start gap-4 rounded-2xl border p-4 transition-colors duration-150 sm:p-5", selected ? "border-indigo-500 bg-indigo-50/70 ring-1 ring-indigo-500/20" : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50"].join(" ")}>
-                        <input type="radio" name={currentQuestion.id} value={originalOptionKey} checked={selected} onChange={(event) => setAnswers((current) => ({ ...current, [currentQuestion.id]: event.target.value }))} className="sr-only" />
-                        <span className={["flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border text-sm font-bold transition-colors", selected ? "border-indigo-600 bg-indigo-600 text-white" : "border-slate-200 bg-white text-slate-600 group-hover:border-slate-300"].join(" ")}>{DISPLAY_OPTION_LABELS[optionIndex]}<span className="sr-only"> option</span></span>
-                        <span className={["min-w-0 flex-1 pt-1 text-sm leading-6 sm:text-base sm:leading-7", selected ? "font-medium text-indigo-950" : "text-slate-700"].join(" ")}>{options[originalOptionKey] ?? ""}</span>
-                        <span className={["mt-1 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border", selected ? "border-indigo-600 bg-indigo-600 text-white" : "border-slate-300 bg-white"].join(" ")} aria-hidden="true">{selected ? <span className="text-xs">✓</span> : null}</span>
-                      </label>
-                    );
-                  })}
-                </fieldset>
-
-                <div className="mt-8 flex flex-col gap-4 border-t border-slate-100 pt-6 sm:flex-row sm:items-center sm:justify-between">
-                  <p className="text-xs text-slate-500">Your selection is saved automatically.</p>
-                  <div className="flex gap-3">
-                    <button type="button" onClick={moveToPreviousQuestion} disabled={currentQuestionIndex === 0} className="inline-flex min-h-11 flex-1 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40 sm:flex-none"><span aria-hidden="true">←</span> Previous</button>
-                    <button type="button" onClick={moveToNextQuestion} disabled={isLastQuestion} className="inline-flex min-h-11 flex-1 items-center justify-center gap-2 rounded-xl bg-indigo-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-400 sm:flex-none">Next <span aria-hidden="true">→</span></button>
-                  </div>
-                </div>
-              </div>
-            </section>
-            <div className="mt-4 flex flex-wrap items-center justify-between gap-2 px-1 text-xs text-slate-400">
-              <span>Tab warnings: {warningCount}/{MAX_TAB_SWITCH_WARNINGS}</span>
-              <span>{totalMarks} total marks · {questions.length} questions</span>
-            </div>
-          </main>
-
-          <aside className="min-w-0 space-y-4 xl:sticky xl:top-4">
-            <section className="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-[0_2px_12px_rgba(15,23,42,0.025)]">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <h2 className="text-sm font-semibold text-slate-900">Question navigator</h2>
-                  <p className="mt-1 text-xs text-slate-500">Jump to any question</p>
-                </div>
-                <span className="rounded-lg bg-slate-100 px-2.5 py-1.5 text-xs font-semibold text-slate-600">{answeredCount}/{questions.length}</span>
-              </div>
-              <div className="mt-4 grid grid-cols-6 gap-2 sm:grid-cols-8 xl:grid-cols-6">
-                {questions.map((question, index) => {
-                  const active = index === currentQuestionIndex;
-                  const answered = Boolean(answers[question.id]);
-                  return (
-                    <button key={question.id} type="button" onClick={() => setCurrentQuestionIndex(index)} aria-label={`Go to question ${index + 1}`} aria-current={active ? "step" : undefined} className={["flex aspect-square min-h-9 items-center justify-center rounded-lg border text-xs font-semibold transition", active ? "border-indigo-600 bg-indigo-600 text-white shadow-sm shadow-indigo-600/20" : answered ? "border-emerald-200 bg-emerald-50 text-emerald-700 hover:border-emerald-300" : "border-slate-200 bg-white text-slate-500 hover:border-slate-300 hover:bg-slate-50"].join(" ")}>{index + 1}</button>
-                  );
-                })}
-              </div>
-              <div className="mt-4 flex flex-wrap gap-x-4 gap-y-2 border-t border-slate-100 pt-3 text-[11px] text-slate-500">
-                <span className="inline-flex items-center gap-1.5"><span className="h-2 w-2 rounded-sm bg-indigo-600" />Current</span>
-                <span className="inline-flex items-center gap-1.5"><span className="h-2 w-2 rounded-sm bg-emerald-400" />Answered</span>
-                <span className="inline-flex items-center gap-1.5"><span className="h-2 w-2 rounded-sm border border-slate-300 bg-white" />Unanswered</span>
-              </div>
-            </section>
-
-            <ExamCalculator />
-          </aside>
-        </div>
-      </div>
-
-      <ConfirmDialog
-        open={showSubmitConfirm}
-        title="Finish and submit exam?"
-        message={`You have answered ${answeredCount} of ${questions.length} questions. Once submitted, you cannot return to this exam.`}
-        confirmLabel="Submit exam"
-        cancelLabel="Continue exam"
-        tone="success"
-        onConfirm={async () => {
-          setShowSubmitConfirm(false);
-          await handleSubmit();
-        }}
-        onCancel={() => setShowSubmitConfirm(false)}
-      />
-    </div>
-  );
+      </section>
+    </section>
+  </div>;
 }

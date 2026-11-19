@@ -1,155 +1,98 @@
+import { useAuth } from "../contexts/AuthContext";
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { collection, onSnapshot, orderBy, query, where } from "firebase/firestore";
 import { db } from "/firebase";
 import ConfirmDialog from "../components/ConfirmDialog";
 import StatusBanner from "../components/StatusBanner";
-import { createExam, deleteExam, setExamAccessCode, updateExamStatus } from "../services/cbtService";
-import { migrateLegacyExamAccess } from "../services/secureExamService";
+import { createExam, deleteExam, updateExamStatus } from "../services/cbtService";
+
+import { useSchool } from "../hooks/useSchool";
 
 export default function CreateExam() {
+  const { role, user, profile } = useAuth();
+  const { school } = useSchool();
+  const [academic, setAcademic] = useState({ className: '', subject: '', category: 'exam', weight: 100, allowCalculator: false, instructions: '', start: '', end: '' });
   const [title, setTitle] = useState("");
   const [duration, setDuration] = useState("");
-  const [className, setClassName] = useState("");
-  const [assignmentMode, setAssignmentMode] = useState("class");
-  const [students, setStudents] = useState([]);
-  const [assignedStudentUids, setAssignedStudentUids] = useState([]);
-  const [startAt, setStartAt] = useState("");
-  const [endAt, setEndAt] = useState("");
-  const [loading, setLoading] = useState(false);
   const [exams, setExams] = useState([]);
   const [banner, setBanner] = useState(null);
+  const [creating, setCreating] = useState(false);
+  const [busyId, setBusyId] = useState(null);
   const [examToDelete, setExamToDelete] = useState(null);
-  const [publishingExamId, setPublishingExamId] = useState(null);
-  const [accessCodesByExam, setAccessCodesByExam] = useState({});
-  const [publishExam, setPublishExam] = useState(null);
-  const [publishPassword, setPublishPassword] = useState("");
-  const [publishPasswordConfirm, setPublishPasswordConfirm] = useState("");
 
-  useEffect(() => {
-    const examsQuery = query(collection(db, "exams"), orderBy("createdAt", "desc"));
-    const accessQuery = query(collection(db, "examAccess"));
-    const studentsQuery = query(collection(db, "users"), where("role", "==", "student"));
-    const unsubscribeExams = onSnapshot(examsQuery, (snapshot) => setExams(snapshot.docs.map((docItem) => ({ id: docItem.id, ...docItem.data() }))));
-    const unsubscribeAccess = onSnapshot(accessQuery, (snapshot) => setAccessCodesByExam(snapshot.docs.reduce((acc, docItem) => {
-      const record = docItem.data();
-      acc[docItem.id] = Boolean(record.codeHash || record.code);
-      return acc;
-    }, {})));
+  useEffect(() => onSnapshot(query(collection(db, "exams"), ...(role === "teacher" ? [where("createdBy", "==", user.uid)] : []), orderBy("createdAt", "desc")),
+    (snapshot) => setExams(snapshot.docs.map((item) => ({ id: item.id, ...item.data() }))),
+    () => setBanner({ tone: "error", message: "Could not load exams. Check your administrator access." })), [role, user.uid]);
 
-    const unsubscribeStudents = onSnapshot(studentsQuery, (snapshot) => {
-      const next = snapshot.docs.map((item) => ({ id: item.id, ...item.data() }));
-      setStudents(next);
-      const classes = [...new Set(next.map((student) => String(student.className || "").trim()).filter(Boolean))].sort();
-      setClassName((current) => current || classes[0] || "");
-    });
-
-    // Migrate legacy password hashes/plaintext from records that were previously
-    // readable by signed-in students. The callable only permits administrators.
-    migrateLegacyExamAccess().then(({ migratedCount, removedLegacyFields }) => {
-      if (removedLegacyFields > 0) {
-        setBanner({ tone: "success", message: `Secured ${migratedCount} legacy exam password record(s) and removed ${removedLegacyFields} exposed legacy field(s).` });
-      }
-    }).catch((error) => {
-      console.error("Legacy exam password migration failed", error);
-      setBanner({ tone: "error", message: "Could not secure legacy exam passwords. Confirm the latest Firebase Functions are deployed, then reopen this page." });
-    });
-
-    return () => { unsubscribeExams(); unsubscribeAccess(); unsubscribeStudents(); };
-  }, []);
-
-  async function handleSubmit(event) {
+  async function create(event) {
     event.preventDefault();
-    if (!title.trim() || !duration || !className.trim()) { setBanner({ tone: "error", message: "Enter an exam title, duration, and target class." }); return; }
-    if (assignmentMode === "individual" && assignedStudentUids.length === 0) { setBanner({ tone: "error", message: "Select at least one student for an individual-assignment exam." }); return; }
-    const selectedStudents = students.filter((student) => assignedStudentUids.includes(student.id));
-    if (assignmentMode === "individual" && selectedStudents.some((student) => String(student.className || "").trim() !== className)) { setBanner({ tone: "error", message: "All individually assigned students must belong to the selected class." }); return; }
-    setLoading(true);
+    if (!title.trim() || Number(duration) < 1 || Number(duration) > 480) return;
+    setCreating(true);
     try {
-      await createExam({ title, duration, className, assignmentMode, assignedStudentUids, startAt, endAt });
-      setTitle(""); setDuration(""); setStartAt(""); setEndAt(""); setAssignedStudentUids([]); setAssignmentMode("class");
-      setBanner({ tone: "success", message: "Exam created successfully." });
-    } catch (error) { setBanner({ tone: "error", message: error.message ?? "Could not create exam." }); }
-    finally { setLoading(false); }
+      await createExam({ title, duration, ...academic, academicSession: school.academicSession, term: school.term,
+        scheduleStartAtMs: academic.start ? new Date(`${academic.start}+01:00`).getTime() : 0,
+        scheduleEndAtMs: academic.end ? new Date(`${academic.end}+01:00`).getTime() : 0 });
+      setTitle(""); setDuration("");
+      setBanner({ tone: "success", message: "Exam created. Add questions, publish it, then assign personal exam PINs." });
+    } catch (error) { setBanner({ tone: "error", message: error.message }); }
+    finally { setCreating(false); }
   }
 
-  async function handleStatusChange(examId, status) {
-    if (status === "published") setPublishingExamId(examId);
-    try { await updateExamStatus(examId, status); setBanner({ tone: "success", message: status === "published" ? "Exam published." : "Exam moved back to draft." }); }
-    catch (error) { setBanner({ tone: "error", message: error.message ?? "Could not update exam status." }); }
-    finally { if (status === "published") setPublishingExamId(null); }
+  async function changeStatus(exam, status) {
+    if (busyId) return;
+    setBusyId(exam.id);
+    try {
+      await updateExamStatus(exam.id, status);
+      setBanner({ tone: "success", message: status === "published"
+        ? "Exam published. Issue each student their own PIN from Exam PINs."
+        : "Exam moved to draft. Existing attempts keep their original paper." });
+    } catch (error) { setBanner({ tone: "error", message: error.message }); }
+    finally { setBusyId(null); }
   }
 
-  async function handleDelete() {
+  async function remove() {
     if (!examToDelete) return;
-    try { await deleteExam(examToDelete.id); setBanner({ tone: "success", message: "Exam deleted." }); }
-    catch (error) { setBanner({ tone: "error", message: error.message ?? "Could not delete exam." }); }
-    finally { setExamToDelete(null); }
+    setBusyId(examToDelete.id);
+    try { await deleteExam(examToDelete.id); setBanner({ tone: "success", message: "Exam archived. Papers, attempts and results are retained." }); }
+    catch (error) { setBanner({ tone: "error", message: error.message }); }
+    finally { setExamToDelete(null); setBusyId(null); }
   }
 
-  async function handlePublishExam() {
-    if (!publishExam) return;
-    try {
-      if (!publishPassword.trim() || !publishPasswordConfirm.trim()) throw new Error("Enter and confirm the exam password before publishing.");
-      if (publishPassword.trim().toUpperCase() !== publishPasswordConfirm.trim().toUpperCase()) throw new Error("The exam passwords do not match.");
-      setPublishingExamId(publishExam.id);
-      await setExamAccessCode(publishExam.id, publishPassword);
-      await updateExamStatus(publishExam.id, "published");
-      setBanner({ tone: "success", message: "Exam published. Its password is stored securely and will not be displayed again." });
-      setPublishExam(null); setPublishPassword(""); setPublishPasswordConfirm("");
-    } catch (error) { setBanner({ tone: "error", message: error.message ?? "Could not publish exam." }); }
-    finally { setPublishingExamId(null); }
-  }
-
-  function formatSchedule(exam) {
-    if (!exam.scheduleStartAtMs && !exam.scheduleEndAtMs) return "Open schedule: no time window set";
-    const start = exam.scheduleStartAtMs ? new Date(exam.scheduleStartAtMs).toLocaleString() : "Now";
-    const end = exam.scheduleEndAtMs ? new Date(exam.scheduleEndAtMs).toLocaleString() : "No end time";
-    return `${start} → ${end}`;
-  }
-
-  return (
-    <div className="space-y-6">
-      <StatusBanner tone={banner?.tone} message={banner?.message} onClose={() => setBanner(null)} />
-      <section className="rounded-2xl bg-white p-6 shadow-sm">
-        <h2 className="text-2xl font-semibold text-slate-900">Create and publish exams</h2>
-        <p className="mt-2 text-sm text-slate-500">Keep exams in draft until the question bank is complete. Add an optional time window so students can only enter during the scheduled examination period.</p>
-      </section>
-      <section className="rounded-2xl bg-white p-6 shadow-sm">
-        <form onSubmit={handleSubmit} className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-          <input type="text" placeholder="Midterm Mathematics" value={title} onChange={(event) => setTitle(event.target.value)} className="rounded-xl border border-slate-300 px-4 py-3" />
-          <input type="number" min="1" placeholder="Duration (minutes)" value={duration} onChange={(event) => setDuration(event.target.value)} className="rounded-xl border border-slate-300 px-4 py-3" />
-          <label className="text-xs font-medium text-slate-500">Target class<select required value={className} onChange={(event) => { setClassName(event.target.value); setAssignedStudentUids([]); }} className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900"><option value="">Choose class</option>{[...new Set(students.map((student) => String(student.className || "").trim()).filter(Boolean))].sort().map((name) => <option key={name} value={name}>{name}</option>)}</select></label>
-          <label className="text-xs font-medium text-slate-500">Assignment type<select value={assignmentMode} onChange={(event) => { setAssignmentMode(event.target.value); setAssignedStudentUids([]); }} className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900"><option value="class">Entire class</option><option value="individual">Selected students only</option></select></label>
-          <label className="text-xs font-medium text-slate-500">Start<input type="datetime-local" value={startAt} onChange={(event) => setStartAt(event.target.value)} className="mt-1 w-full rounded-xl border border-slate-300 px-4 py-3 text-sm text-slate-900" /></label>
-          <label className="text-xs font-medium text-slate-500">End<input type="datetime-local" value={endAt} onChange={(event) => setEndAt(event.target.value)} className="mt-1 w-full rounded-xl border border-slate-300 px-4 py-3 text-sm text-slate-900" /></label>
-          <button type="submit" disabled={loading} className="rounded-xl bg-slate-900 px-5 py-3 text-sm font-medium text-white disabled:opacity-60">{loading ? "Creating..." : "Create exam"}</button>
-          {assignmentMode === "individual" && <div className="rounded-xl border border-slate-200 p-3 md:col-span-2 xl:col-span-3"><p className="mb-2 text-sm font-semibold text-slate-700">Choose students in {className || "the selected class"}</p><div className="grid max-h-48 gap-2 overflow-y-auto sm:grid-cols-2 lg:grid-cols-3">{students.filter((student) => String(student.className || "").trim() === className).map((student) => <label key={student.id} className="flex items-center gap-2 rounded-lg bg-slate-50 p-2 text-sm"><input type="checkbox" checked={assignedStudentUids.includes(student.id)} onChange={(event) => setAssignedStudentUids((current) => event.target.checked ? [...current, student.id] : current.filter((id) => id !== student.id))} /><span>{student.displayName || student.email || student.id}</span></label>)}</div></div>}
-        </form>
-      </section>
-      <section className="grid gap-4">
-        {exams.map((exam) => (
-          <article key={exam.id} className="rounded-2xl bg-white p-6 shadow-sm">
-            <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-              <div>
-                <h3 className="text-xl font-semibold text-slate-900">{exam.title}</h3>
-                <p className="mt-1 text-sm text-slate-500">{exam.duration} minutes | {exam.questionCount ?? 0} question(s)</p>
-                <p className="mt-1 text-sm text-slate-500">Class: {exam.className || "Not assigned"} · {exam.assignmentMode === "individual" ? `${(exam.assignedStudentUids || []).length} selected student(s)` : "Entire class"}</p>
-                <p className="mt-1 text-sm text-slate-500">Status: {exam.status ?? "draft"}</p>
-                <p className="mt-1 text-sm text-slate-500">Schedule: {formatSchedule(exam)}</p>
-                <p className="mt-1 text-sm text-slate-500">Password: {accessCodesByExam[exam.id] ? "Configured" : "Not configured"}</p>
-              </div>
-              <div className="flex flex-wrap gap-3">
-                <button onClick={() => handleStatusChange(exam.id, "draft")} className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700">Move to draft</button>
-                {exam.status !== "published" && <button onClick={() => { setPublishExam(exam); setPublishPassword(""); setPublishPasswordConfirm(""); }} disabled={publishingExamId === exam.id} className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-60">{publishingExamId === exam.id ? "Publishing..." : "Publish"}</button>}
-                <button onClick={() => setExamToDelete(exam)} className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white">Delete</button>
-              </div>
-            </div>
-          </article>
-        ))}
-        {exams.length === 0 && <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-8 text-sm text-slate-500">No exams created yet.</div>}
-      </section>
-      <ConfirmDialog open={Boolean(examToDelete)} title="Delete exam?" message="This will remove the exam and all its questions. This action cannot be undone." confirmLabel="Delete exam" onConfirm={handleDelete} onCancel={() => setExamToDelete(null)} />
-      {publishExam && <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 px-4"><div className="w-full max-w-lg rounded-3xl bg-white p-6 shadow-2xl"><h3 className="text-xl font-semibold text-slate-900">Publish {publishExam.title}</h3><p className="mt-3 text-sm text-slate-600">Enter the exam password for this subject. Students will need this exact password before they can start the exam. The password will not be stored in readable form.</p><div className="mt-5 space-y-4"><div><label className="block text-sm font-medium text-slate-700">Exam password</label><input type="password" value={publishPassword} onChange={(event) => setPublishPassword(event.target.value)} placeholder="Enter exam password" className="mt-2 w-full rounded-xl border border-slate-300 px-4 py-3 uppercase tracking-[0.2em]" /></div><div><label className="block text-sm font-medium text-slate-700">Confirm exam password</label><input type="password" value={publishPasswordConfirm} onChange={(event) => setPublishPasswordConfirm(event.target.value)} placeholder="Re-enter the same password" className="mt-2 w-full rounded-xl border border-slate-300 px-4 py-3 uppercase tracking-[0.2em]" /></div></div><div className="mt-6 flex justify-end gap-3"><button onClick={() => { setPublishExam(null); setPublishPassword(""); setPublishPasswordConfirm(""); }} className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700">Cancel</button><button onClick={handlePublishExam} disabled={publishingExamId === publishExam.id} className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-60">{publishingExamId === publishExam.id ? "Publishing..." : "Save password and publish"}</button></div></div></div>}
-    </div>
-  );
+  return <div className="space-y-6">
+    <StatusBanner {...banner} onClose={() => setBanner(null)} />
+    <section className="rounded-2xl bg-white p-6 shadow-sm">
+      <h2 className="text-2xl font-semibold text-slate-900">Create and publish exams</h2>
+      <p className="mt-3 text-sm text-slate-600">Publishing fixes the paper and answer key for new attempts. Use Exam PINs to assign each student their own access code.</p>
+      <Link hidden={role === "teacher"} to="/exam-pins" className="mt-4 inline-block font-medium text-emerald-700 underline">Manage personal exam PINs</Link>
+    </section>
+    {!school && <Link to="/school" className="block bg-amber-50 p-4 rounded-xl">Complete School setup before creating an exam.</Link>}
+    <form onSubmit={create} className="grid gap-4 rounded-2xl bg-white p-6 shadow-sm md:grid-cols-2">
+      <input aria-label="Exam title" placeholder="Exam title" required value={title} onChange={(event) => setTitle(event.target.value)} className="rounded-xl border border-slate-300 px-4 py-3" />
+      <input aria-label="Duration in minutes" type="number" min="1" max="480" required placeholder="Minutes" value={duration} onChange={(event) => setDuration(event.target.value)} className="rounded-xl border border-slate-300 px-4 py-3" />
+      <p className="md:col-span-2">{school?.academicSession} · {school?.term} term. Schedule times are Nigerian time (WAT).</p>
+      {['className', 'subject'].map(key => <label key={key}>{key === 'className' ? 'Class' : 'Subject'}<select required value={academic[key]} onChange={e => setAcademic({ ...academic, [key]: e.target.value })} className="w-full border rounded-xl p-3"><option value="">Select</option>{(school?.[key === 'className' ? 'classes' : 'subjects'] || []).filter(v => role !== 'teacher' || (profile?.[key === 'className' ? 'assignedClasses' : 'assignedSubjects'] || []).includes(v)).map(v => <option key={v}>{v}</option>)}</select></label>)}
+      <label>Assessment<select value={academic.category} onChange={e => setAcademic({ ...academic, category: e.target.value })} className="w-full border rounded-xl p-3">{['ca', 'exam', 'practice', 'mock'].map(v => <option key={v}>{v}</option>)}</select></label>
+      <label>Weight towards subject total (%)<input type="number" required min="1" max="100" value={academic.weight} onChange={e => setAcademic({ ...academic, weight: Number(e.target.value) })} className="w-full border rounded-xl p-3" /></label>
+      {['start', 'end'].map(key => <label key={key}>Entry window {key} (optional, WAT)<input type="datetime-local" value={academic[key]} onChange={e => setAcademic({ ...academic, [key]: e.target.value })} className="w-full border rounded-xl p-3" /></label>)}
+      <label><input type="checkbox" checked={academic.allowCalculator} onChange={e => setAcademic({ ...academic, allowCalculator: e.target.checked })} /> Allow built-in calculator</label>
+      <label className="md:col-span-2">Student instructions<textarea value={academic.instructions} onChange={e => setAcademic({ ...academic, instructions: e.target.value })} className="w-full border rounded-xl p-3" /></label>
+      <button disabled={creating || !school} className="rounded-xl bg-slate-900 px-5 py-3 text-sm text-white disabled:opacity-60">{creating ? "Creating..." : "Create exam"}</button>
+    </form>
+    {exams.map((exam) => <article key={exam.id} className="flex flex-wrap items-center justify-between gap-4 rounded-2xl bg-white p-6 shadow-sm">
+      <div><h3 className="text-xl font-semibold">{exam.title}</h3>
+        <p className="mt-2 text-sm text-slate-500">{exam.academicSession} · {exam.term} · {exam.className} · {exam.subject} · {exam.duration} minutes | {exam.questionCount || 0} questions | {exam.status || "draft"}</p>
+        {exam.status === "published" && !exam.paperVersion && <p className="mt-2 text-sm text-amber-700">Republish this legacy exam to enable personal PINs and secure marking.</p>}
+      </div>
+      <div className="flex flex-wrap gap-3">
+        {role !== "teacher" && exam.status === "published" && <button disabled={Boolean(busyId)} onClick={() => changeStatus(exam, "draft")} className="rounded-xl border border-slate-300 px-4 py-2 text-sm disabled:opacity-50">Move to draft</button>}
+        {role !== "teacher" && (exam.status !== "published" || !exam.paperVersion) && <button disabled={Boolean(busyId)} onClick={() => changeStatus(exam, "published")} className="rounded-xl bg-emerald-600 px-4 py-2 text-sm text-white disabled:opacity-50">
+          {busyId === exam.id ? "Publishing..." : exam.status === "published" ? "Republish securely" : "Publish"}
+        </button>}
+        <button hidden={role === "teacher"} disabled={Boolean(busyId)} onClick={() => setExamToDelete(exam)} className="rounded-xl bg-red-600 px-4 py-2 text-sm text-white disabled:opacity-50">Archive</button>
+      </div>
+    </article>)}
+    {!exams.length && <p className="rounded-2xl bg-white p-6 text-sm text-slate-500">No exams yet.</p>}
+    <ConfirmDialog open={Boolean(examToDelete)} title="Archive exam?" message="This closes the paper to new starts and preserves its questions, attempts and results. Resolve all active attempts first." confirmLabel="Archive exam" onConfirm={remove} onCancel={() => setExamToDelete(null)} />
+  </div>;
 }
