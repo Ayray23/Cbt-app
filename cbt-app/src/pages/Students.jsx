@@ -14,7 +14,7 @@ const empty = {
   admissionNumber: "",
   subjects: [],
 };
-const field = "block w-full mt-1 rounded-xl border p-3";
+const field = "ui-field";
 export default function Students() {
   const { school } = useSchool();
   const records = useRecords("users", [["role", "==", "student"]]);
@@ -139,13 +139,13 @@ export default function Students() {
       .includes(search.toLowerCase()),
   );
   return (
-    <div className="space-y-6">
+    <div className="ui-page">
       <StatusBanner {...banner} />
       {!school && (
         <p className="bg-amber-50 p-4">Complete School setup first.</p>
       )}
-      <form onSubmit={save} className="bg-white rounded-2xl p-6 space-y-4">
-        <h2 className="text-2xl font-semibold">
+      <form onSubmit={save} className="ui-card space-y-4">
+        <h2 className="ui-section-heading">
           {editing ? "Edit student / promote class" : "Create student"}
         </h2>
         <p>
@@ -228,7 +228,7 @@ export default function Students() {
         </fieldset>
         <button
           disabled={busy || !school || !form.subjects.length}
-          className="bg-slate-900 rounded-xl text-white p-3 disabled:opacity-50"
+          className="ui-btn-primary"
         >
           {busy ? "Saving…" : editing ? "Save changes" : "Create student"}
         </button>
@@ -239,14 +239,14 @@ export default function Students() {
               setEditing(null);
               setForm(empty);
             }}
-            className="ml-3"
+            className="ui-btn-secondary ml-3"
           >
             Cancel edit
           </button>
         )}
       </form>
-      <section className="bg-white rounded-2xl p-6 space-y-4">
-        <h3 className="text-xl font-semibold">Bulk enrolment</h3>
+      <section className="ui-card space-y-4">
+        <h3 className="ui-section-heading">Bulk enrolment</h3>
         <p>
           Upload an Excel .xlsx workbook directly, or a CSV file. Use the
           downloadable template's column names. Separate multiple subjects
@@ -255,7 +255,7 @@ export default function Students() {
           during preview and are not stored as plaintext in Firestore.
         </p>
         <button
-          className="underline"
+          className="ui-btn-secondary"
           onClick={() =>
             downloadCsv("student-template.csv", [
               [
@@ -298,22 +298,22 @@ export default function Students() {
             <button
               disabled={busy || imports.some((r) => r.error)}
               onClick={importStudents}
-              className="bg-slate-900 text-white rounded-xl p-3"
+              className="ui-btn-primary"
             >
               {busy ? "Importing…" : "Import valid preview"}
             </button>
             <button
               disabled={busy}
               onClick={() => setImports([])}
-              className="ml-4"
+              className="ui-btn-secondary ml-2"
             >
               Clear preview
             </button>
           </>
         )}
       </section>
-      <section className="bg-white rounded-2xl p-6 space-y-4">
-        <h3 className="text-xl font-semibold">
+      <section className="ui-card space-y-4">
+        <h3 className="ui-section-heading">
           Student register ({filtered.length})
         </h3>
         <input
@@ -327,7 +327,7 @@ export default function Students() {
         {filtered.map((s) => (
           <article
             key={s.id}
-            className="border-b py-4 flex flex-wrap justify-between gap-3"
+            className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white p-4 transition hover:border-blue-200 hover:bg-blue-50/40"
           >
             <div>
               <strong>{s.displayName}</strong>
@@ -336,7 +336,7 @@ export default function Students() {
                 · {s.academicSession} · {s.loginDisabled ? "Blocked" : "Active"}
               </p>
             </div>
-            <div className="flex gap-3 flex-wrap">
+            <div className="flex flex-wrap gap-2">
               <button
                 disabled={busy}
                 onClick={() => {

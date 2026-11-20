@@ -11,12 +11,12 @@ import StatusBanner from "../components/StatusBanner";
 
 function MetricCard({ label, value, helper }) {
   return (
-    <div className="rounded-2xl bg-white p-6 shadow-sm">
-      <p className="text-sm font-medium uppercase tracking-[0.25em] text-slate-400">
+    <div className="ui-card">
+      <p className="ui-eyebrow">
         {label}
       </p>
-      <p className="mt-4 text-4xl font-semibold text-slate-900">{value}</p>
-      <p className="mt-2 text-sm text-slate-500">{helper}</p>
+      <p className="mt-3 text-3xl font-extrabold tracking-tight text-blue-950 sm:text-4xl">{value}</p>
+      <p className="mt-2 text-sm leading-5 text-slate-600">{helper}</p>
     </div>
   );
 }
@@ -215,8 +215,8 @@ export default function Dashboard() {
   return (
     <div className="space-y-6">
       <StatusBanner tone="error" message={error} />
-      <section className="rounded-2xl bg-white p-6 shadow-sm">
-        <h2 className="text-2xl font-semibold text-slate-900">
+      <section className="ui-card">
+        <h2 className="ui-page-heading">
           Operations and analytics hub
         </h2>
         <p className="mt-2 max-w-3xl text-sm text-slate-500">
@@ -281,13 +281,13 @@ export default function Dashboard() {
         />
       </section>
 
-      <section className="rounded-2xl bg-white p-6 shadow-sm">
+      <section className="ui-card">
         <div className="flex items-center justify-between">
           <div>
             <h3 className="text-xl font-semibold text-slate-900">
               Top 10 students
             </h3>
-            <p className="mt-2 text-sm text-slate-500">
+            <p className="mt-2 text-sm leading-5 text-slate-600">
               Ranked by average score percentage across submitted papers.
             </p>
           </div>

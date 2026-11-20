@@ -83,7 +83,7 @@ export default function ExamPins() {
     } catch { setBanner({ tone: "error", message: "Copy is unavailable. Select and copy the PINs from the table." }); }
   }
 
-  return <div className="space-y-6">
+  return <div className="ui-page">
     <StatusBanner {...banner} onClose={() => setBanner(null)} />
     <style>{`
       @media screen { .pin-print-sheet { display: none; } }
@@ -100,8 +100,8 @@ export default function ExamPins() {
         .pin-print-slip { break-inside: avoid; page-break-inside: avoid; border: 1px solid #94a3b8; padding: 7mm; border-radius: 7px; }
       }
     `}</style>
-    <section className="rounded-2xl bg-white p-6 shadow-sm">
-      <h2 className="text-2xl font-semibold text-slate-900">Personal exam PINs</h2>
+    <section className="ui-card">
+      <h2 className="ui-page-heading">Personal exam PINs</h2>
       <p className="mt-3 text-sm text-slate-600">Assign an exam to students and issue a separate PIN to each account. A student's PIN works only for that student and that exam.</p>
       <p className="mt-2 text-sm text-slate-500">
         PINs are stored as hashes on the server. A temporary readable copy is kept only
@@ -139,10 +139,10 @@ export default function ExamPins() {
     {result && <section className="rounded-2xl border border-amber-200 bg-amber-50 p-6">
       <div className="flex flex-wrap items-center justify-between gap-3"><h3 className="text-xl font-semibold">{result.examTitle}</h3>
         <div className="flex flex-wrap gap-2">
-          <button type="button" onClick={copyPins} className="rounded-xl border border-amber-300 bg-white px-4 py-2 text-sm">Copy PIN list</button>
-          <button type="button" onClick={downloadPins} className="rounded-xl border border-amber-300 bg-white px-4 py-2 text-sm">Download PIN CSV</button>
-          <button type="button" onClick={() => window.print()} className="rounded-xl border border-amber-300 bg-white px-4 py-2 text-sm">Print individual PIN slips</button>
-          <button type="button" onClick={forgetPins} className="rounded-xl border border-amber-300 bg-white px-4 py-2 text-sm">Forget local PIN list</button>
+          <button type="button" onClick={copyPins} className="ui-btn-secondary">Copy PIN list</button>
+          <button type="button" onClick={downloadPins} className="ui-btn-secondary">Download PIN CSV</button>
+          <button type="button" onClick={() => window.print()} className="ui-btn-secondary">Print individual PIN slips</button>
+          <button type="button" onClick={forgetPins} className="ui-btn-secondary">Forget local PIN list</button>
         </div></div>
       <p className="mt-3 text-sm text-amber-900">
         {result.pins.length} student PIN(s) available in this browser session. Keep this list private;
