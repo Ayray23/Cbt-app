@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { calculateExpression } from "../utils/examCalculator";
+import { toast } from "../utils/toast";
 
 const KEYS = [
   ["AC", "clear"], ["(", "normal"], [")", "normal"], ["⌫", "delete"],
@@ -15,10 +16,8 @@ const isNewNumber = (key) => /^[0-9.]$/.test(key) || key === "(";
 export default function ExamCalculator() {
   const [expression, setExpression] = useState("");
   const [justEvaluated, setJustEvaluated] = useState(false);
-  const [error, setError] = useState("");
 
   function press(key) {
-    setError("");
     if (key === "AC") {
       setExpression("");
       setJustEvaluated(false);
@@ -40,7 +39,7 @@ export default function ExamCalculator() {
         setExpression(answer);
         setJustEvaluated(true);
       } catch (err) {
-        setError(err.message);
+        toast.error(err.message);
       }
       return;
     }
@@ -103,7 +102,6 @@ export default function ExamCalculator() {
           {expression || "0"}
         </output>
       </div>
-      {error && <p role="alert" className="mt-2 text-xs font-semibold text-red-700">{error}</p>}
       <div className="mt-3 grid grid-cols-4 gap-1.5">
         {KEYS.map(([label, kind]) => (
           <button
