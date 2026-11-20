@@ -17,6 +17,8 @@ import {
   safeSession,
   shuffled,
   studentUsername,
+  schoolAdmissionNumber,
+  admissionAuthUsername,
   usernameEmail,
 } from "./domain.mjs";
 
@@ -98,7 +100,15 @@ export function createService({ db, auth, fields, now = Date.now }) {
 
   async function createStudent(user, input) {
     admin(user);
-    const username = studentUsername(input.username);
+    // New student accounts use their permanent admission number as the login ID.
+    // Existing integrations may still create legacy username accounts; those
+    // credentials remain valid until the school migrates them safely.
+    const admissionNumber = String(input.admissionNumber || "").trim()
+      ? schoolAdmissionNumber(input.admissionNumber) : "";
+    const username = admissionNumber || studentUsername(input.username);
+    const authUsername = admissionNumber
+      ? admissionAuthUsername(admissionNumber)
+      : studentUsername(input.username);
     const displayName = String(input.displayName || "").trim();
     const email = String(input.email || "")
       .trim()
@@ -133,10 +143,15 @@ export function createService({ db, auth, fields, now = Date.now }) {
         "Select a configured class, current academic session and enrolled subjects.",
       );
     }
+    if (admissionNumber) {
+      const existing = await db.collection("users")
+        .where("admissionNumber", "==", admissionNumber).limit(1).get();
+      assert(existing.empty, 409, "This admission number is already assigned to a student.");
+    }
     let account;
     try {
       account = await auth.createUser({
-        email: usernameEmail(username),
+        email: usernameEmail(authUsername),
         password: input.password,
         displayName,
       });
@@ -144,7 +159,9 @@ export function createService({ db, auth, fields, now = Date.now }) {
       assert(
         error.code !== "auth/email-already-exists",
         409,
-        "That username is already in use.",
+        admissionNumber
+          ? "This admission number already has an account."
+          : "That username is already in use.",
       );
       throw error;
     }
@@ -159,7 +176,8 @@ export function createService({ db, auth, fields, now = Date.now }) {
           .trim()
           .slice(0, 60),
         academicSession: String(input.academicSession || "").slice(0, 9),
-        admissionNumber: String(input.admissionNumber || "").slice(0, 60),
+        admissionNumber,
+        loginIdType: admissionNumber ? "admission" : "legacy",
         subjects: Array.isArray(input.subjects)
           ? input.subjects.map(String).slice(0, 100)
           : [],
@@ -171,7 +189,7 @@ export function createService({ db, auth, fields, now = Date.now }) {
       await auth.deleteUser(account.uid);
       throw error;
     }
-    return { uid: account.uid, username, displayName, email };
+    return { uid: account.uid, username, admissionNumber, displayName, email };
   }
 
   async function createStaff(user, input) {

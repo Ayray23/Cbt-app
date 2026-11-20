@@ -72,6 +72,24 @@ export function studentUsername(value) {
   return username;
 }
 
+// School admission numbers are permanent, case-insensitive login IDs.
+// Preserve separators such as RGIS/2026/001; never treat a student's name as an ID.
+// A deterministic opaque Firebase alias avoids special characters in auth email.
+export function schoolAdmissionNumber(value) {
+  const number = String(value || "").trim().toUpperCase();
+  assert(
+    /^[A-Z0-9][A-Z0-9._\/-]{2,59}$/.test(number),
+    400,
+    "Use an admission number of 3–60 letters, digits, dots, slashes, underscores or hyphens.",
+  );
+  return number;
+}
+
+export function admissionAuthUsername(value) {
+  const number = schoolAdmissionNumber(value);
+  return "adm-" + createHash("sha256").update(number).digest("hex").slice(0, 32);
+}
+
 // Firebase uses an internal login address; students only enter their username.
 export function usernameEmail(username) {
   return `${studentUsername(username)}@students.cbt.invalid`;
