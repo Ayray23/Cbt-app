@@ -27,3 +27,41 @@ body { font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
     display: none !important;
   }
 }
+
+
+/* Consistent, restrained polish across admin and student workspaces. */
+@layer base {
+  body { background: #f4f7fb; color: #17243a; -webkit-font-smoothing: antialiased; }
+  button, input, select, textarea { font: inherit; }
+  button, a, input, select, textarea { -webkit-tap-highlight-color: transparent; }
+  button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible {
+    outline: 3px solid #f5dc39;
+    outline-offset: 2px;
+  }
+  button:disabled { cursor: not-allowed; }
+}
+@layer components {
+  main > section, main > div > section { scroll-margin-top: 1.5rem; }
+  main section.rounded-3xl.bg-white,
+  main div.rounded-3xl.bg-white,
+  main section.rounded-2xl.bg-white,
+  main div.rounded-2xl.bg-white {
+    border: 1px solid #e5ebf3;
+    box-shadow: 0 6px 22px rgba(31, 48, 83, 0.045);
+  }
+  main :is(button, a)[class*="rounded"]:not(:disabled) {
+    transition: background-color 160ms ease, border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+  }
+  main button[class*="rounded"]:not(:disabled):active { transform: translateY(1px); }
+  main :is(input, select, textarea)[class*="border"] {
+    background-color: #fff;
+    transition: border-color 160ms ease, box-shadow 160ms ease;
+  }
+  main :is(input, select, textarea)[class*="border"]:focus {
+    border-color: #253371;
+    box-shadow: 0 0 0 3px rgba(37, 51, 113, .12);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { scroll-behavior: auto !important; transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; }
+}
