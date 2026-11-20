@@ -147,8 +147,8 @@ export default function CreateExam() {
           PINs to assign each student their own access code.
         </p>
         <Link
-          hidden={["teacher", "teacher_admin"].includes(role)}
-          to="/exam-pins"
+          hidden={role === "teacher"}
+          to="/exams/pins"
           className="mt-4 inline-block font-medium text-emerald-700 underline"
         >
           Manage personal exam PINs
@@ -201,7 +201,7 @@ export default function CreateExam() {
               {(school?.[key === "className" ? "classes" : "subjects"] || [])
                 .filter(
                   (v) =>
-                    !["teacher", "teacher_admin"].includes(role) ||
+                    role !== "teacher" ||
                     (
                       profile?.[
                         key === "className"
@@ -304,7 +304,7 @@ export default function CreateExam() {
             )}
           </div>
           <div className="flex flex-wrap gap-3">
-            {!["teacher", "teacher_admin"].includes(role) &&
+            {role !== "teacher" &&
               exam.status === "published" && (
                 <button
                   disabled={Boolean(busyId)}
@@ -314,7 +314,7 @@ export default function CreateExam() {
                   Move to draft
                 </button>
               )}
-            {!["teacher", "teacher_admin"].includes(role) &&
+            {role !== "teacher" &&
               (exam.status !== "published" || !exam.paperVersion) && (
                 <button
                   disabled={Boolean(busyId)}
@@ -329,7 +329,7 @@ export default function CreateExam() {
                 </button>
               )}
             <button
-              hidden={["teacher", "teacher_admin"].includes(role)}
+              hidden={role === "teacher"}
               disabled={Boolean(busyId)}
               onClick={() => setExamToDelete(exam)}
               className="rounded-xl bg-red-600 px-4 py-2 text-sm text-white disabled:opacity-50"

@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
-import { assert, documentId, examPaper } from "./domain.mjs";
-export const teacherRole = (role) =>
-  ["teacher", "teacher_admin"].includes(role);
+import { assert, canonicalRole, documentId, examPaper } from "./domain.mjs";
+// Accepts the retired "teacher_admin" name too (see canonicalRole).
+export const teacherRole = (role) => canonicalRole(role) === "teacher";
 export function teacherService({ db, auth, fields, now = Date.now }) {
   const stamp = () => fields.serverTimestamp();
   const audit = (tx, user, action, target, workspaceUid, details = {}) =>
@@ -47,7 +47,7 @@ export function teacherService({ db, auth, fields, now = Date.now }) {
       tx.create(ref, {
         displayName,
         email: account.email.toLowerCase(),
-        role: "teacher_admin",
+        role: "teacher",
         approvalStatus: "pending",
         registrationSource: "teacher-self-registration",
         assignedClasses: [],
@@ -74,15 +74,9 @@ export function teacherService({ db, auth, fields, now = Date.now }) {
     );
   const canAuthor = (user) =>
     assert(
-      [
-        "superadmin",
-        "admin",
-        "examofficer",
-        "teacher",
-        "teacher_admin",
-      ].includes(user.role),
+      ["superadmin", "admin", "teacher"].includes(canonicalRole(user.role)),
       403,
-      "Teacher administrator access required.",
+      "Teacher access required.",
     );
   function editable(user, exam) {
     canAuthor(user);

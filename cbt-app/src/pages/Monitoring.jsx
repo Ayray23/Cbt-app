@@ -6,6 +6,7 @@ import { db } from "/firebase";
 import StatusBanner from "../components/StatusBanner";
 
 import { callApi } from "../services/api";
+import { summarizeViolations } from "../utils/lockdown";
 
 function contactState(session, now) {
   if (session.status === "lan-reserved")
@@ -374,6 +375,11 @@ export default function Monitoring() {
                     </td>
                     <td className="px-4 py-4 text-slate-500">
                       {Number(session.tabSwitchCount || 0)}
+                      {summarizeViolations(session.integrityLog) && (
+                        <span className="mt-1 block text-xs">
+                          {summarizeViolations(session.integrityLog)}
+                        </span>
+                      )}
                     </td>
                     <td className="px-4 py-4 text-slate-500">
                       {session.submissionReason ?? "-"}

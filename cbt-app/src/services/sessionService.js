@@ -114,6 +114,7 @@ export async function saveExamProgress(examId, answers, metadata = {}) {
     revision: packet.revision,
     deviceEpoch: packet.session.deviceEpoch || 0,
     tabSwitchCount: metadata.tabSwitchCount || 0,
+    integrityLog: metadata.integrityLog || [],
   });
   if (result.expiresAtMs)
     deviceExamStore().deadline(currentUid(), examId, result.expiresAtMs);
@@ -197,6 +198,7 @@ export async function submitExamSession(examId, answers, metadata = {}) {
     deviceId: deviceId(),
     submissionReason: metadata.submissionReason || "manual",
     tabSwitchCount: Number(metadata.tabSwitchCount || 0),
+    integrityLog: metadata.integrityLog || [],
     closedAtMs: Date.now(),
     submissionId: window.crypto.randomUUID(),
   };

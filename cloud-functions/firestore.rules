@@ -4,8 +4,11 @@ service cloud.firestore {
     function signedIn() { return request.auth != null; }
     function profile() { return get(/databases/$(database)/documents/users/$(request.auth.uid)).data; }
     function enabled() { return signedIn() && exists(/databases/$(database)/documents/users/$(request.auth.uid)) && profile().get('loginDisabled', false) == false && profile().get('approvalStatus', 'approved') == 'approved'; }
-    function admin() { return enabled() && profile().role in ['admin', 'superadmin']; }
-    function examiner() { return enabled() && profile().role in ['admin', 'superadmin', 'examofficer']; }
+    // Four staff roles: superadmin, admin, teacher, invigilator. The retired names
+    // 'examofficer' (now admin) and 'teacher_admin' (now teacher) are still accepted
+    // so existing accounts keep working without a data migration.
+    function admin() { return enabled() && profile().role in ['admin', 'superadmin', 'examofficer']; }
+    function examiner() { return admin(); }
     function invigilator() { return enabled() && profile().role in ['admin', 'superadmin', 'examofficer', 'invigilator']; }
     function teacher() { return enabled() && profile().role in ['teacher', 'teacher_admin']; }
     function draftOwner(examId) {

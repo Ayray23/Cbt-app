@@ -11,6 +11,46 @@ export function assert(condition, status, message) {
   if (!condition) throw new HttpError(status, message);
 }
 
+// The school uses four staff roles plus students. Older accounts may still
+// carry a retired role name in Firestore; they are translated here so no data
+// migration is needed: examofficer -> admin, teacher_admin -> teacher.
+export const STAFF_ROLES = ["superadmin", "admin", "teacher", "invigilator"];
+export const ASSIGNABLE_ROLES = ["admin", "teacher", "invigilator"];
+const LEGACY_ROLES = { examofficer: "admin", teacher_admin: "teacher" };
+export function canonicalRole(role) {
+  return LEGACY_ROLES[role] || role;
+}
+export function validRole(role) {
+  const value = canonicalRole(role);
+  return value === "student" || STAFF_ROLES.includes(value);
+}
+
+const INTEGRITY_EVENT_TYPES = ["tab-hidden", "window-blur", "fullscreen-exit"];
+const MAX_INTEGRITY_EVENTS = 25;
+
+// The exam page reports why it counted each rule break. Only known event types
+// and sane timestamps are kept, and the list is capped, so a client cannot bloat
+// the session record.
+export function cleanIntegrityLog(value) {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter(
+      (entry) =>
+        entry &&
+        INTEGRITY_EVENT_TYPES.includes(entry.type) &&
+        Number.isFinite(Number(entry.atMs)),
+    )
+    .map((entry) => ({ type: entry.type, atMs: Math.trunc(Number(entry.atMs)) }))
+    .slice(-MAX_INTEGRITY_EVENTS);
+}
+
+// A log only grows during an attempt, so the longer one is the newer one.
+export function newerIntegrityLog(stored, reported) {
+  const kept = cleanIntegrityLog(stored);
+  const incoming = cleanIntegrityLog(reported);
+  return incoming.length >= kept.length ? incoming : kept;
+}
+
 export function documentId(value) {
   assert(
     typeof value === "string" && /^[A-Za-z0-9_-]{1,128}$/.test(value),
@@ -193,6 +233,7 @@ export function safeSession(data, id) {
     "expiresAtMs",
     "tabSwitchCount",
     "integrityWarnings",
+    "integrityLog",
     "lastActivityAtMs",
     "submittedAtMs",
     "submissionReason",

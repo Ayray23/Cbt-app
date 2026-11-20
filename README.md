@@ -6,6 +6,16 @@ Students use admin-issued usernames and passwords; a personal email is optional.
 
 See [Secure Rollout](docs/SECURE-ROLLOUT.md) for required server credentials, existing-data migration, rules, staging checks and deployment order. This update requires coordinating the frontend/API deployment and Firestore rules.
 
+## Roles
+
+There are four staff roles plus students: **superadmin** (owner, teacher oversight, LAN), **admin** (school setup, students, exams, PINs, results, audit), **teacher** (their own papers and questions; publishing is done by an admin) and **invigilator** (live monitoring). Accounts created earlier with the retired names `examofficer` and `teacher_admin` keep working and are treated as admin and teacher; no data migration is required. New staff can only be created with the four current roles.
+
+Staff find everything about an exam under one **Exams** area: Papers, Add Questions, Question Bank and (admins) Exam PINs. Old addresses such as `/exam-pins` redirect there.
+
+## Exam lockdown
+
+While a student sits an exam the page requires full screen, blocks copy, paste, right-click, drag, text selection, printing and developer-tool shortcuts, and keeps the attempt to one tab. Leaving full screen, switching tabs or switching windows shows the student a warning and is logged by type and time; invigilators see the count and a short summary in Monitoring. Nothing is auto-submitted: this deters casual cheating but is not a substitute for supervision, and it does not include webcam proctoring. It applies to the cloud exam page; the offline LAN student page has its own, separate checks.
+
 ## Local development
 
 Install dependencies in `cbt-app` with `npm install`. Put `FIREBASE_SERVICE_ACCOUNT_JSON` in a gitignored repository-root `.env.local`; use the existing `VITE_FIREBASE_*` configuration in `cbt-app/.env.local`.

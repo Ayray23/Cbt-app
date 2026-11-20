@@ -2,9 +2,12 @@ import { lanService } from "./lan.mjs";
 import { teacherService } from "./teachers.mjs";
 import { randomUUID, createHash } from "node:crypto";
 import {
+  ASSIGNABLE_ROLES,
   assert,
+  canonicalRole,
   cleanAnswers,
   documentId,
+  newerIntegrityLog,
   examPaper,
   grade,
   newPin,
@@ -36,16 +39,9 @@ export function createService({ db, auth, fields, now = Date.now }) {
       "Your account has not been created by an administrator.",
     );
     const user = { ...profile.data(), uid: claims.uid };
+    user.role = canonicalRole(user.role);
     assert(
-      [
-        "student",
-        "teacher",
-        "teacher_admin",
-        "invigilator",
-        "examofficer",
-        "admin",
-        "superadmin",
-      ].includes(user.role),
+      ["student", ...ASSIGNABLE_ROLES, "superadmin"].includes(user.role),
       403,
       "Your account role is invalid.",
     );
@@ -73,27 +69,21 @@ export function createService({ db, auth, fields, now = Date.now }) {
   }
   function examiner(user) {
     assert(
-      ["admin", "superadmin", "examofficer"].includes(user.role),
+      ["admin", "superadmin"].includes(user.role),
       403,
-      "Examination officer access required.",
+      "Administrator access required.",
     );
   }
   function author(user) {
     assert(
-      [
-        "admin",
-        "superadmin",
-        "examofficer",
-        "teacher",
-        "teacher_admin",
-      ].includes(user.role),
+      ["admin", "superadmin", "teacher"].includes(user.role),
       403,
       "Teacher access required.",
     );
   }
   function invigilate(user) {
     assert(
-      ["admin", "superadmin", "examofficer", "invigilator"].includes(user.role),
+      ["admin", "superadmin", "invigilator"].includes(user.role),
       403,
       "Invigilator access required.",
     );
@@ -190,17 +180,7 @@ export function createService({ db, auth, fields, now = Date.now }) {
       403,
       "Owner access required to create staff.",
     );
-    assert(
-      [
-        "admin",
-        "teacher",
-        "teacher_admin",
-        "examofficer",
-        "invigilator",
-      ].includes(input.role),
-      400,
-      "Select a staff role.",
-    );
+    assert(ASSIGNABLE_ROLES.includes(input.role), 400, "Select a staff role.");
     const username = studentUsername(input.username),
       displayName = String(input.displayName || "").trim(),
       email = String(input.email || "")
@@ -327,9 +307,7 @@ export function createService({ db, auth, fields, now = Date.now }) {
   async function setRole(user, input) {
     assert(user.role === "superadmin", 403, "Superadmin access required.");
     assert(
-      ["student", "admin", "teacher", "examofficer", "invigilator"].includes(
-        input.role,
-      ),
+      ["student", ...ASSIGNABLE_ROLES].includes(input.role),
       400,
       "Invalid role.",
     );
@@ -674,6 +652,7 @@ export function createService({ db, auth, fields, now = Date.now }) {
         expiresAtMs: now() + Number(exam.data().duration) * 60000,
         tabSwitchCount: 0,
         integrityWarnings: 0,
+        integrityLog: [],
         lastActivityAtMs: now(),
         lastSeenAt: stamp(),
         startedAt: stamp(),
@@ -768,6 +747,7 @@ export function createService({ db, auth, fields, now = Date.now }) {
         progressRevision: revision,
         tabSwitchCount: count,
         integrityWarnings: count,
+        integrityLog: newerIntegrityLog(session.integrityLog, input.integrityLog),
         lastActivityAtMs: now(),
         lastSeenAt: stamp(),
         updatedAt: stamp(),
@@ -858,6 +838,7 @@ export function createService({ db, auth, fields, now = Date.now }) {
         submissionReason,
         tabSwitchCount,
         integrityWarnings: tabSwitchCount,
+        integrityLog: newerIntegrityLog(session.integrityLog, input.integrityLog),
         submittedAtMs: now(),
         clientReportedSubmittedAtMs: Number(input.closedAtMs) || null,
         lateSync,

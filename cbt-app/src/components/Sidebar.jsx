@@ -19,10 +19,7 @@ export default function Sidebar() {
     { to: "/dashboard", label: "Overview" },
     { to: "/monitoring", label: "Monitoring" },
     { to: "/students", label: "Students" },
-    { to: "/exams/create", label: "Exams" },
-    { to: "/exam-pins", label: "Exam PINs" },
-    { to: "/questions/add", label: "Add Questions" },
-    { to: "/questions", label: "Question Bank" },
+    { to: "/exams", label: "Exams" },
     { to: "/results", label: "Results" },
   ];
 
@@ -37,8 +34,8 @@ export default function Sidebar() {
       <div className="mb-8">
         <AppLogo size="md" tone="light" />
         <h1 className="mt-4 text-2xl font-semibold">
-          {["teacher", "teacher_admin"].includes(role)
-            ? "Teacher admin"
+          {role === "teacher"
+            ? "Teacher workspace"
             : role !== "student"
               ? "Staff workspace"
               : "Exam Portal"}
@@ -53,22 +50,13 @@ export default function Sidebar() {
       <nav className="space-y-2">
         {(isAdmin
           ? adminLinks
-          : ["teacher", "teacher_admin"].includes(role)
+          : role === "teacher"
             ? adminLinks.filter((l) =>
-                [
-                  "/exams/create",
-                  "/questions/add",
-                  "/questions",
-                  "/teacher-account",
-                ].includes(l.to),
+                ["/exams", "/teacher-account"].includes(l.to),
               )
-            : role === "examofficer"
-              ? adminLinks.filter(
-                  (l) => !["/school", "/students", "/dashboard"].includes(l.to),
-                )
-              : role === "invigilator"
-                ? adminLinks.filter((l) => l.to === "/monitoring")
-                : studentLinks
+            : role === "invigilator"
+              ? adminLinks.filter((l) => l.to === "/monitoring")
+              : studentLinks
         ).map((link) => (
           <NavLink key={link.to} to={link.to} className={linkClassName}>
             {link.label}

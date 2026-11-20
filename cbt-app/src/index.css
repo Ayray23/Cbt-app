@@ -12,3 +12,15 @@ body { font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
   table { width: 100%; border-collapse: collapse; }
   tr { break-inside: avoid; }
 }
+
+
+/* Exam lockdown: no text selection on the paper, nothing printed from it. */
+.exam-locked {
+  -webkit-user-select: none;
+  user-select: none;
+}
+@media print {
+  .exam-locked {
+    display: none !important;
+  }
+}
