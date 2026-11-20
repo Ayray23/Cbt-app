@@ -7,6 +7,7 @@ import AppLogo from "../../components/AppLogo";
 import { callApi } from "../../services/api";
 import { toast } from "../../utils/toast";
 import { friendlyAuthError } from "../../utils/authErrors";
+import { studentAdmissionAuthEmail, isLegacyUsername } from "../../utils/studentLogin";
 
 export default function Login() {
   const navigate = useNavigate();
@@ -29,10 +30,26 @@ export default function Login() {
 
     try {
       const identifier = email.trim().toLowerCase();
-      const loginAddress = identifier.includes("@")
-        ? identifier
-        : `${identifier}@students.cbt.invalid`;
-      await signInWithEmailAndPassword(auth, loginAddress, password);
+      if (identifier.includes("@")) {
+        // Staff and teachers still sign in with their actual Firebase email.
+        await signInWithEmailAndPassword(auth, identifier, password);
+      } else {
+        // New school accounts use admission numbers, preserving RGIS/2026/001
+        // and leading zeros. Old student usernames remain usable as a fallback.
+        const schoolAddress = await studentAdmissionAuthEmail(identifier);
+        try {
+          await signInWithEmailAndPassword(auth, schoolAddress, password);
+        } catch (error) {
+          const badCredentials = [
+            "auth/invalid-credential", "auth/user-not-found",
+            "auth/invalid-login-credentials",
+          ].includes(error?.code);
+          if (!badCredentials || !isLegacyUsername(identifier)) throw error;
+          await signInWithEmailAndPassword(
+            auth, `${identifier}@students.cbt.invalid`, password,
+          );
+        }
+      }
       await callApi("account.verify");
       navigate("/");
     } catch (loginError) {
@@ -56,8 +73,9 @@ export default function Login() {
         <AppLogo size="lg" />
         <h1 className="mt-3 text-3xl font-semibold text-slate-900">Sign in</h1>
         <p className="mt-2 text-sm text-slate-500">
-          Students use the username and password issued by their school.
-          Existing email accounts can still sign in.
+          Students: enter your permanent Admission Number / Student ID and
+          school-issued password. Teachers and staff: sign in with your email.
+          Existing student usernames still work.
         </p>
 
         <form onSubmit={handleLogin} className="mt-6 space-y-4">
@@ -65,8 +83,8 @@ export default function Login() {
             type="text"
             autoComplete="username"
             autoCapitalize="none"
-            aria-label="Username or email"
-            placeholder="Username or email address"
+            aria-label="Admission number or email"
+            placeholder="Admission Number / Student ID or email"
             value={email}
             onChange={(event) => setEmail(event.target.value)}
             className="w-full rounded-xl border border-slate-300 px-4 py-3"
