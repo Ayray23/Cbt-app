@@ -61,6 +61,10 @@ try {
   await page.getByRole('button', { name: 'Edit', exact: true }).first().click();
   const editModal = page.getByRole('dialog', { name: 'Edit draft question' });
   await editModal.waitFor();
+  const questionEditor = editModal.getByLabel('Question text');
+  await questionEditor.focus();
+  await questionEditor.pressSequentially(' Extra', { delay: 10 });
+  assert.match(await questionEditor.inputValue(), /Extra$/, 'Modal keeps focus while editing');
   await editModal.getByRole('button', { name: 'Close dialog' }).click();
   assert.equal(await editModal.count(), 0, 'Question editor closes without changing the question');
   await page.getByRole('link', { name: 'Add Questions', exact: true }).click();
