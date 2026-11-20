@@ -5,26 +5,26 @@ import { signInWithEmailAndPassword, signOut } from "firebase/auth";
 import { auth } from "/firebase";
 import AppLogo from "../../components/AppLogo";
 import { callApi } from "../../services/api";
+import { toast } from "../../utils/toast";
+import { friendlyAuthError } from "../../utils/authErrors";
 
 export default function Login() {
   const navigate = useNavigate();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
-  const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     const loginError = window.sessionStorage.getItem("cbt_login_error");
     if (loginError) {
-      setError(loginError);
+      toast.error(loginError);
       window.sessionStorage.removeItem("cbt_login_error");
     }
   }, []);
 
   async function handleLogin(event) {
     event.preventDefault();
-    setError("");
     setLoading(true);
 
     try {
@@ -43,12 +43,8 @@ export default function Login() {
         navigate("/signup");
         return;
       }
-      await signOut(auth);
-      setError(
-        loginError.code?.startsWith("auth/")
-          ? "Invalid username, email or password."
-          : loginError.message,
-      );
+      await signOut(auth).catch(() => {});
+      toast.error(friendlyAuthError(loginError, "Sign in failed. Check your details and try again."));
     } finally {
       setLoading(false);
     }
@@ -63,12 +59,6 @@ export default function Login() {
           Students use the username and password issued by their school.
           Existing email accounts can still sign in.
         </p>
-
-        {error && (
-          <p className="mt-4 rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">
-            {error}
-          </p>
-        )}
 
         <form onSubmit={handleLogin} className="mt-6 space-y-4">
           <input
@@ -156,7 +146,7 @@ export default function Login() {
             } catch {
               /* Same response avoids exposing account existence. */
             }
-            window.alert(
+            toast.info(
               "If this email can receive a reset link, check its inbox and spam folder. For username accounts, contact the superadmin.",
             );
           }}
