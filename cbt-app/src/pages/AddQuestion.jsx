@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { collection, onSnapshot, query, where } from "firebase/firestore";
 import { db } from "/firebase";
 import StatusBanner from "../components/StatusBanner";
-import { parseQuestionText } from "../utils/questionImport";
+import { parseQuestionText, validateQuestionImportFile } from "../utils/questionImport";
 import { downloadCsv } from "../utils/csv";
 import { addQuestion } from "../services/cbtService";
 
@@ -11,6 +11,7 @@ export default function AddQuestion() {
   const requestId = useRef(null);
   const { role, user } = useAuth();
   const [preview, setPreview] = useState([]);
+  const [entryMethod, setEntryMethod] = useState("import");
   const [image, setImage] = useState("");
   const [imageAlt, setImageAlt] = useState("");
   const [exams, setExams] = useState([]);
@@ -124,9 +125,9 @@ export default function AddQuestion() {
     setLoading(true);
 
     try {
-      if (!/\\.(docx|xlsx)$/i.test(importFile.name) || !importFile.size || importFile.size > 2000000)
-        throw new Error("Choose a DOCX or XLSX file smaller than 2 MB.");
-      const excel = /\\.xlsx$/i.test(importFile.name);
+      const fileError = validateQuestionImportFile(importFile);
+      if (fileError) throw new Error(fileError);
+      const excel = importFile.name.toLowerCase().endsWith(".xlsx");
       const raw = excel
         ? await import("../utils/excelImport").then((m) => m.readExcelTable(importFile, 300))
         : await (async () => {
@@ -282,6 +283,35 @@ export default function AddQuestion() {
       </section>
 
       <section className="rounded-2xl bg-white p-6 shadow-sm">
+        <h3 className="text-lg font-semibold text-slate-900">Choose how to add questions</h3>
+        <p className="mt-2 text-sm text-slate-600">
+          Select an exam above, then choose a method. Word and Excel files
+          upload in their own section, not through the manual diagram picker.
+        </p>
+        <div className="mt-4 grid gap-3 sm:grid-cols-2" aria-label="Question entry method">
+          <button
+            type="button"
+            aria-pressed={entryMethod === "import"}
+            onClick={() => { setEntryMethod("import"); setBanner(null); }}
+            className={`rounded-xl border-2 p-4 text-left transition-colors ${entryMethod === "import" ? "border-emerald-600 bg-emerald-50 text-emerald-950" : "border-slate-200 bg-white text-slate-800 hover:border-slate-400"}`}
+          >
+            <span className="block text-base font-semibold">Upload Word or Excel</span>
+            <span className="mt-1 block text-sm">Import multiple questions from a .docx or .xlsx file (up to 2 MB).</span>
+          </button>
+          <button
+            type="button"
+            aria-pressed={entryMethod === "manual"}
+            onClick={() => { setEntryMethod("manual"); setBanner(null); }}
+            className={`rounded-xl border-2 p-4 text-left transition-colors ${entryMethod === "manual" ? "border-slate-800 bg-slate-100 text-slate-950" : "border-slate-200 bg-white text-slate-800 hover:border-slate-400"}`}
+          >
+            <span className="block text-base font-semibold">Type a question manually</span>
+            <span className="mt-1 block text-sm">Enter one question, four options, and its correct answer.</span>
+          </button>
+        </div>
+      </section>
+
+      {entryMethod === "manual" && (
+      <section className="rounded-2xl bg-white p-6 shadow-sm">
         <h3 className="text-lg font-semibold text-slate-900">Manual entry</h3>
 
         <div className="mt-4 space-y-4">
@@ -293,7 +323,7 @@ export default function AddQuestion() {
           />
 
           <label className="block">
-            Question diagram (optional; PNG/JPEG/WebP, 100 KB maximum)
+            Optional image for this single question (PNG/JPEG/WebP, up to 100 KB)
             <input
               type="file"
               accept="image/png,image/jpeg,image/webp"
@@ -317,9 +347,9 @@ export default function AddQuestion() {
             </>
           )}
           <p className="text-sm text-slate-500">
-            Use line breaks for passages and Unicode for language accents,
-            fractions and scientific symbols. DOCX import extracts text; add
-            diagrams separately.
+            This image picker is not for Word documents. To upload a .docx or
+            .xlsx file containing questions, choose "Upload Word or Excel" above.
+            Use line breaks for passages and Unicode for special characters.
           </p>
           <div className="grid gap-4 md:grid-cols-2">
             {["A", "B", "C", "D"].map((optionKey) => (
@@ -369,9 +399,11 @@ export default function AddQuestion() {
           </div>
         </div>
       </section>
+      )}
 
-      <section className="rounded-2xl bg-white p-6 shadow-sm">
-        <h3 className="text-lg font-semibold text-slate-900">Word / Excel question import</h3>
+      {entryMethod === "import" && (
+      <section className="rounded-2xl border-2 border-emerald-200 bg-white p-6 shadow-sm">
+        <h3 className="text-xl font-semibold text-slate-900">Upload Word or Excel questions</h3>
         <p className="mt-2 text-sm text-slate-500">
           Word accepts numbered questions with A–D options. Excel .xlsx uses
           columns: question, optionA, optionB, optionC, optionD, correctAnswer,
@@ -389,17 +421,26 @@ export default function AddQuestion() {
         >
           Download Excel-ready question template
         </button>
-        <div className="mt-4 flex flex-col gap-4 md:flex-row md:items-center">
+        <div className="mt-5 rounded-xl border border-dashed border-emerald-300 bg-emerald-50/50 p-4">
+          <label htmlFor="question-import-file" className="mb-2 block font-medium text-slate-800">
+            Select your question document (.docx or .xlsx, maximum 2 MB)
+          </label>
           <input
+            id="question-import-file"
             ref={importFileInputRef}
             type="file"
             accept=".docx,.xlsx"
             onChange={(event) => setWordFile(event.target.files?.[0] ?? null)}
-            className="flex-1 text-sm"
+            className="block w-full text-sm text-slate-700"
           />
+          <p className="mt-2 text-xs text-slate-600">
+            Word and Excel questions only. For diagrams attached to an individual question,
+            use manual entry.
+          </p>
 
-          <div className="flex gap-3">
+          <div className="mt-4 flex flex-wrap gap-3">
             <button
+              type="button"
               onClick={handleImportUpload}
               disabled={loading || !importFile}
               className="rounded-xl bg-emerald-600 px-5 py-3 text-sm font-medium text-white disabled:opacity-60"
@@ -408,6 +449,7 @@ export default function AddQuestion() {
             </button>
 
             <button
+              type="button"
               onClick={handleCancelImportUpload}
               disabled={loading || !importFile}
               className="rounded-xl border border-slate-300 px-5 py-3 text-sm font-medium text-slate-700 disabled:opacity-60"
@@ -501,6 +543,7 @@ export default function AddQuestion() {
           </p>
         )}
       </section>
+      )}
     </div>
   );
 }
