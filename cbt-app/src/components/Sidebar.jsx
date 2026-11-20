@@ -4,8 +4,8 @@ import AppLogo from "./AppLogo";
 
 function linkClassName({ isActive }) {
   return [
-    "block rounded-lg px-3 py-2 text-sm font-medium transition",
-    isActive ? "bg-yellow-100 text-[#253371]" : "text-blue-100 hover:bg-blue-900",
+    "flex min-h-11 items-center rounded-xl px-3.5 py-2.5 text-sm font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-yellow-300",
+    isActive ? "bg-yellow-300 text-[#253371] shadow-sm" : "text-blue-50 hover:bg-white/10 hover:text-white",
   ].join(" ");
 }
 
@@ -30,24 +30,24 @@ export default function Sidebar() {
   ];
 
   return (
-    <aside className="bg-[#253371] px-4 py-6 text-white md:sticky md:top-0 md:h-screen md:overflow-y-auto md:w-72">
-      <div className="mb-8">
+    <aside className="border-r border-blue-950/20 bg-[#253371] px-4 py-6 text-white md:sticky md:top-0 md:h-screen md:w-72 md:shrink-0 md:overflow-y-auto">
+      <div className="mb-6 border-b border-white/15 pb-6">
         <AppLogo size="md" tone="light" />
-        <h1 className="mt-4 text-2xl font-semibold">
+        <h1 className="mt-5 text-xl font-extrabold tracking-tight">
           {role === "teacher"
             ? "Teacher workspace"
             : role !== "student"
               ? "Staff workspace"
               : "Exam Portal"}
         </h1>
-        <p className="mt-2 text-sm text-blue-100">
+        <p className="mt-2 text-xs leading-5 text-blue-100/90">
           {role !== "student"
             ? "Create exams, manage candidates, and review submissions."
             : "Start published exams and submit your answers once."}
         </p>
       </div>
 
-      <nav className="space-y-2">
+      <nav aria-label="Main navigation" className="space-y-1.5">
         {(isAdmin
           ? adminLinks
           : role === "teacher"
