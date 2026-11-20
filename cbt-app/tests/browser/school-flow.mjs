@@ -56,6 +56,16 @@ try {
   }
   assert.equal(await page.locator('select').first().inputValue() !== '', true, 'Selected exam remains ready for the next question');
   assert.equal(await page.locator('select').nth(1).inputValue(), '', 'Correct-answer selection resets');
+  // Question editor is an accessible floating modal, with a real close control.
+  await page.getByRole('link', { name: 'Question Bank', exact: true }).click();
+  await page.getByRole('button', { name: 'Edit', exact: true }).first().click();
+  const editModal = page.getByRole('dialog', { name: 'Edit draft question' });
+  await editModal.waitFor();
+  await editModal.getByRole('button', { name: 'Close dialog' }).click();
+  assert.equal(await editModal.count(), 0, 'Question editor closes without changing the question');
+  await page.getByRole('link', { name: 'Add Questions', exact: true }).click();
+  await page.getByRole('button', { name: 'Type a question manually' }).click();
+  await page.locator('select').first().selectOption({ label: 'Mathematics Pilot' });
   await page.getByPlaceholder('Type the question prompt').fill('What is 3 + 3?');
   for (const [key, value] of Object.entries({ A: '5', B: '6', C: '7', D: '8' })) {
     await page.getByPlaceholder(`Option ${key}`, { exact: true }).fill(value);
