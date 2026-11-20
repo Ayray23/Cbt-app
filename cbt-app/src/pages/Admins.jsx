@@ -110,10 +110,10 @@ export default function Admins() {
     }
   }
   return (
-    <div className="space-y-5">
+    <div className="ui-page">
       <StatusBanner {...banner} />
       <form
-        className="bg-white rounded-2xl p-6 space-y-4"
+        className="ui-card space-y-4"
         onSubmit={async (e) => {
           e.preventDefault();
           staffRequest.current ||= crypto.randomUUID();
@@ -128,7 +128,7 @@ export default function Admins() {
           }
         }}
       >
-        <h2 className="text-2xl font-semibold">Staff access</h2>
+        <h2 className="ui-page-heading">Staff access</h2>
         <p>
           Teacher admins register independently, verify their email and request
           approval. Their workspaces are private; only the superadmin has
@@ -160,14 +160,14 @@ export default function Admins() {
               minLength={key === "password" ? 8 : undefined}
               value={form[key]}
               onChange={(e) => setForm({ ...form, [key]: e.target.value })}
-              className="block border rounded-xl w-full p-3"
+              className="ui-field"
             />
           </label>
         ))}
         <label>
           Role
           <select
-            className="block border p-3 rounded-xl"
+            className="ui-field"
             value={form.role}
             onChange={(e) => setForm({ ...form, role: e.target.value })}
           >
@@ -180,15 +180,15 @@ export default function Admins() {
         </label>
         <button
           disabled={busy}
-          className="bg-slate-900 text-white p-3 rounded-xl"
+          className="ui-btn-primary"
         >
           Create staff account
         </button>
       </form>
-      <section className="bg-white rounded-2xl p-6 space-y-4">
-        <h3 className="text-xl font-semibold">Staff register</h3>
+      <section className="ui-card space-y-4">
+        <h3 className="ui-section-heading">Staff register</h3>
         {staff.map((s) => (
-          <article className="border-b py-3" key={s.id}>
+          <article className="rounded-xl border border-slate-200 bg-slate-50/50 p-4 transition hover:border-blue-200" key={s.id}>
             <strong>{s.displayName || s.email}</strong>
             <p>
               {s.username || s.email} ·{" "}
@@ -321,7 +321,7 @@ export default function Admins() {
           ))}
           <button
             disabled={busy}
-            className="bg-slate-900 text-white p-3 rounded-xl"
+            className="ui-btn-primary"
           >
             Save teacher access
           </button>
@@ -335,8 +335,8 @@ export default function Admins() {
         </form>
       )}
       {inspect && (
-        <section className="bg-white rounded-2xl p-6 space-y-4">
-          <h3 className="text-2xl font-semibold">
+        <section className="ui-card space-y-4">
+          <h3 className="ui-page-heading">
             Work by {inspect.displayName || inspect.email}
           </h3>
           <p>
