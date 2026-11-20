@@ -56,7 +56,11 @@ function canonicalHeader(label) {
   const aliases = {
     fullname:"displayName", studentname:"displayName", name:"displayName",
     displayname:"displayName", username:"username", admissionno:"admissionNumber",
-    admissionnumber:"admissionNumber", classname:"className", class:"className",
+    admissionnumber:"admissionNumber",
+    admissionid:"admissionNumber", studentid:"admissionNumber",
+    studentnumber:"admissionNumber", registrationnumber:"admissionNumber",
+    regno:"admissionNumber", matricno:"admissionNumber",
+    matricnumber:"admissionNumber", classname:"className", class:"className",
     subjects:"subjects", subject:"subjects", password:"password", email:"email",
     question:"question", questiontext:"question",
     a:"optionA", b:"optionB", c:"optionC", d:"optionD",
