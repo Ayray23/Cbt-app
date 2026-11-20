@@ -30,11 +30,15 @@ export default function TakeExam() {
   const [error, setError] = useState("");
   const [saveStatus, setSaveStatus] = useState("Answers save on this device.");
   const [needsFullscreen, setNeedsFullscreen] = useState(false);
+  const [confirmation, setConfirmation] = useState(null);
+  const [acknowledged, setAcknowledged] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
   const answersRef = useRef({});
   const packetRef = useRef(null);
   const closedRef = useRef(false);
   const warningsRef = useRef(0);
   const enteredFullscreenRef = useRef(Boolean(document.fullscreenElement));
+  const examLoaded = Boolean(packet);
 
   useEffect(() => {
     let cancelled = false;
@@ -83,6 +87,8 @@ export default function TakeExam() {
     async (reason = "manual") => {
       if (closedRef.current || !packetRef.current) return;
       closedRef.current = true;
+      setConfirmation(null);
+      setSubmitting(true);
       try {
         await submitExamSession(examId, answersRef.current, {
           submissionReason: reason,
@@ -99,6 +105,7 @@ export default function TakeExam() {
           void document.exitFullscreen().catch(() => {});
       } catch (saveError) {
         closedRef.current = false;
+        setSubmitting(false);
         setError(
           `Could not save your submission on this device. Keep this page open and contact your supervisor. ${saveError.message}`,
         );
@@ -273,6 +280,63 @@ export default function TakeExam() {
     };
   }, [examId, user.uid, navigate, finish, persistProgress]);
 
+  // Browser reloads/closing the tab must use the browser's native warning.
+  // Browsers do not allow customized beforeunload text.
+  useEffect(() => {
+    if (!examLoaded) return undefined;
+    function beforeUnload(event) {
+      if (closedRef.current) return;
+      event.preventDefault();
+      event.returnValue = "";
+    }
+    window.addEventListener("beforeunload", beforeUnload);
+    return () => window.removeEventListener("beforeunload", beforeUnload);
+  }, [examLoaded]);
+
+  // Back navigation inside the SPA does not trigger beforeunload. Add a same-URL
+  // history checkpoint, then show the exam-specific warning when Back is pressed.
+  useEffect(() => {
+    if (!examLoaded) return undefined;
+    const currentUrl = window.location.href;
+    const attemptKey = `cbt:${user.uid}:${examId}`;
+    window.history.pushState({ cbtExamGuard: attemptKey }, "", currentUrl);
+    function backPressed() {
+      if (closedRef.current) return;
+      window.history.pushState({ cbtExamGuard: attemptKey }, "", currentUrl);
+      setAcknowledged(false);
+      setConfirmation("exit");
+    }
+    window.addEventListener("popstate", backPressed);
+    return () => window.removeEventListener("popstate", backPressed);
+  }, [examLoaded, examId, user.uid]);
+
+  function askConfirmation(action) {
+    if (closedRef.current || submitting) return;
+    setAcknowledged(false);
+    setConfirmation(action);
+  }
+
+  function keepWriting() {
+    setConfirmation(null);
+    setAcknowledged(false);
+  }
+
+  function leaveExam() {
+    if (!acknowledged || closedRef.current) return;
+    try {
+      saveLocalExamDraft(examId, answersRef.current, {
+        tabSwitchCount: warningsRef.current,
+      });
+      setConfirmation(null);
+      navigate("/portal", { replace: true });
+    } catch (saveError) {
+      setConfirmation(null);
+      setError(
+        `Could not safely save answers before leaving. Stay on the exam and contact your supervisor. ${saveError.message}`,
+      );
+    }
+  }
+
   function choose(questionId, value) {
     if (closedRef.current) return;
     const next = { ...answersRef.current, [questionId]: value };
@@ -373,6 +437,14 @@ export default function TakeExam() {
           <p className="mt-1 text-xs text-slate-500" role="status">
             {saveStatus}
           </p>
+          <button
+            type="button"
+            onClick={() => askConfirmation("exit")}
+            disabled={submitting}
+            className="mt-4 rounded-xl border-2 border-rose-500 px-4 py-2 text-sm font-semibold text-rose-800 hover:bg-rose-50 disabled:opacity-50"
+          >
+            Leave exam / Back to exams
+          </button>
         </div>
         <div className="rounded-2xl bg-slate-100 p-4">
           <p className="text-sm">Time left</p>
@@ -453,24 +525,100 @@ export default function TakeExam() {
                 </button>
               )}
             </div>
-            {index === questions.length - 1 && (
-              <button
-                onClick={() => {
-                  if (
-                    window.confirm(
-                      `Submit now? ${answeredCount} of ${questions.length} questions answered. This cannot be undone.`,
-                    )
-                  )
-                    finish("manual");
-                }}
-                className="rounded-xl bg-emerald-600 px-5 py-3 text-sm text-white"
-              >
-                Submit exam
-              </button>
-            )}
+            <button
+              type="button"
+              disabled={submitting}
+              onClick={() => askConfirmation("submit")}
+              className="rounded-xl bg-rose-700 px-5 py-3 text-sm font-semibold text-white hover:bg-rose-800 disabled:opacity-60"
+            >
+              {submitting ? "Saving submission..." : "Submit exam"}
+            </button>
           </div>
         </section>
       </section>
+
+      {confirmation && !submitting && (
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center overflow-y-auto bg-slate-950/85 p-4"
+          role="presentation"
+        >
+          <section
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="exam-warning-title"
+            aria-describedby="exam-warning-description"
+            className="w-full max-w-lg rounded-3xl border-4 border-red-600 bg-white p-6 shadow-2xl sm:p-8"
+          >
+            <p className="text-sm font-black uppercase tracking-widest text-red-700">
+              Important examination warning
+            </p>
+            <h2 id="exam-warning-title" className="mt-2 text-2xl font-extrabold text-slate-950">
+              {confirmation === "submit"
+                ? answeredCount < questions.length
+                  ? "You have not finished your examination!"
+                  : "Final submission — cannot be undone"
+                : "Leaving will NOT stop your exam timer!"}
+            </h2>
+            <p id="exam-warning-description" className="mt-4 text-base leading-7 text-slate-800">
+              {confirmation === "submit"
+                ? answeredCount < questions.length
+                  ? `You answered only ${answeredCount} of ${questions.length} questions. ${questions.length - answeredCount} question(s) will be submitted unanswered and receive no marks. Once you confirm, the examination closes permanently. You cannot return to answer them.`
+                  : `You answered all ${questions.length} questions. Submitting permanently closes this examination. You cannot change any answer afterward.`
+                : `You answered ${answeredCount} of ${questions.length} questions. Your saved answers stay on this device, but your exam continues counting down even after you leave. If time expires, you may lose the chance to finish. Return before the deadline or ask an invigilator for help.`}
+            </p>
+            {confirmation === "submit" && answeredCount < questions.length && (
+              <p className="mt-3 rounded-xl bg-red-50 p-4 text-sm font-semibold text-red-900">
+                Unanswered questions: {questions.map((question, position) =>
+                  !answers[question.id] ? position + 1 : null).filter(Boolean).join(", ")}
+              </p>
+            )}
+            <label className="mt-5 flex cursor-pointer items-start gap-3 rounded-xl border border-red-300 bg-red-50 p-4 text-sm font-semibold text-slate-950">
+              <input
+                autoFocus
+                type="checkbox"
+                checked={acknowledged}
+                onChange={(event) => setAcknowledged(event.target.checked)}
+                className="mt-1 h-5 w-5 accent-red-700"
+              />
+              <span>
+                I understand {confirmation === "submit"
+                  ? "this submission is final and unanswered questions will receive no marks."
+                  : "the timer will continue and leaving does not submit my examination."}
+              </span>
+            </label>
+            <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+              <button
+                type="button"
+                onClick={keepWriting}
+                className="rounded-xl bg-slate-950 px-5 py-3 text-sm font-bold text-white"
+              >
+                Stay and continue exam
+              </button>
+              {confirmation === "submit" && answeredCount < questions.length && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const firstUnanswered = questions.findIndex((question) => !answers[question.id]);
+                    if (firstUnanswered >= 0) setIndex(firstUnanswered);
+                    keepWriting();
+                  }}
+                  className="rounded-xl border-2 border-emerald-700 px-5 py-3 text-sm font-bold text-emerald-800"
+                >
+                  Review unanswered
+                </button>
+              )}
+              <button
+                type="button"
+                disabled={!acknowledged}
+                onClick={() => confirmation === "submit" ? void finish("manual") : leaveExam()}
+                className="rounded-xl border border-red-700 bg-red-700 px-5 py-3 text-sm font-bold text-white hover:bg-red-800 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                {confirmation === "submit" ? "Submit exam permanently" : "Leave exam anyway"}
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
     </div>
   );
 }

@@ -28,7 +28,7 @@ try {
   await page.getByRole('link', { name: 'Students', exact: true }).click();
   await page.getByLabel('Full name', { exact: true }).fill('Alice Student'); await page.getByLabel('Permanent username').fill('alice-school'); await page.getByLabel('Temporary password').fill(password); await page.getByLabel(/^Class/).selectOption('JSS1 A'); await page.getByLabel('Mathematics', { exact: true }).check();
   await page.getByRole('button', { name: 'Create student', exact: true }).click(); await page.getByText('Student created.', { exact: false }).waitFor();
-  await page.getByRole('link', { name: 'Exams', exact: true }).click(); await page.getByLabel('Exam title').fill('Mathematics Pilot'); await page.getByLabel('Duration in minutes').fill('15'); await page.getByLabel(/^Class/).selectOption('JSS1 A'); await page.getByLabel(/^Subject/).selectOption('Mathematics'); await page.getByRole('button', { name: 'Create exam', exact: true }).click(); await page.getByText('Exam created.', { exact: false }).waitFor();
+  await page.getByRole('link', { name: 'Exams', exact: true }).click(); await page.getByLabel('Exam title').fill('Mathematics Pilot'); await page.getByLabel('Duration in minutes').fill('15'); await page.getByLabel(/^Class/).selectOption('JSS1 A'); await page.getByLabel(/^Subject/).selectOption('Mathematics'); await page.getByLabel('Allow built-in calculator').check(); await page.getByRole('button', { name: 'Create exam', exact: true }).click(); await page.getByText('Exam created.', { exact: false }).waitFor();
   await page.getByRole('link', { name: 'Add Questions', exact: true }).click();
   // Word/Excel bulk upload is the prominent default and uses a separate file picker.
   await page.getByRole('heading', { name: 'Upload Word or Excel questions', exact: true }).waitFor();
@@ -46,6 +46,13 @@ try {
   }
   assert.equal(await page.locator('select').first().inputValue() !== '', true, 'Selected exam remains ready for the next question');
   assert.equal(await page.locator('select').nth(1).inputValue(), '', 'Correct-answer selection resets');
+  await page.getByPlaceholder('Type the question prompt').fill('What is 3 + 3?');
+  for (const [key, value] of Object.entries({ A: '5', B: '6', C: '7', D: '8' })) {
+    await page.getByPlaceholder(`Option ${key}`, { exact: true }).fill(value);
+  }
+  await page.locator('select').nth(1).selectOption('B');
+  await page.getByRole('button', { name: 'Save question', exact: true }).click();
+  await page.getByText('Question saved successfully.').waitFor();
   await page.getByRole('link', { name: 'Exams', exact: true }).click(); await page.getByRole('button', { name: 'Publish', exact: true }).click(); await page.getByText('Exam published.', { exact: false }).waitFor();
   await page.getByRole('link', { name: 'Exam PINs', exact: true }).click(); await page.waitForURL('**/exam-pins'); await page.getByRole('combobox', { name: /^Exam/ }).selectOption({ label: 'Mathematics Pilot (published)' }); await page.getByLabel('Alice Student', { exact: false }).check(); await page.getByRole('button', { name: 'Assign exam and generate PINs' }).click();
   const pinCell = page.locator('td.font-mono'); await pinCell.waitFor(); const pin = (await pinCell.textContent()).trim();
@@ -67,6 +74,14 @@ try {
   await login('alice-school'); await page.waitForURL('**/portal'); await page.getByPlaceholder('Enter your personal PIN').fill(pin); await page.getByRole('button', { name: 'Start exam', exact: true }).click(); await page.waitForURL('**/exam/**');
   await page.locator('input[type=radio][value=B]').waitFor();
   if (await page.getByRole('button', { name: 'Open exam', exact: true }).isVisible()) await page.getByRole('button', { name: 'Open exam', exact: true }).click();
+  const calculator = page.locator('[data-exam-calculator]');
+  for (const label of ['2', '+', '3']) await calculator.getByRole('button', { name: label, exact: true }).click();
+  await calculator.getByRole('button', { name: 'Equals' }).click();
+  assert.equal((await calculator.getByLabel('Calculator display').textContent()).trim(), '5');
+  await calculator.getByRole('button', { name: 'Clear calculator' }).click();
+  for (const label of ['2', '0', '0', '×', '1', '0', '%']) await calculator.getByRole('button', { name: label, exact: true }).click();
+  await calculator.getByRole('button', { name: 'Equals' }).click();
+  assert.equal((await calculator.getByLabel('Calculator display').textContent()).trim(), '20');
   const duplicate = await page.context().newPage();
   await duplicate.goto(page.url());
   await duplicate.getByText('This exam is already open in another tab.', { exact: false }).waitFor();
@@ -74,6 +89,22 @@ try {
   await page.bringToFront();
   if (await page.getByRole('button', { name: 'Open exam', exact: true }).isVisible()) await page.getByRole('button', { name: 'Open exam', exact: true }).click();
   await page.locator('input[type=radio][value=B]').check();
+  await page.getByRole('button', { name: 'Leave exam / Back to exams' }).click();
+  const exitWarning = page.getByRole('alertdialog');
+  await exitWarning.getByText('Leaving will NOT stop your exam timer!').waitFor();
+  assert.equal(await exitWarning.getByRole('button', { name: 'Leave exam anyway' }).isDisabled(), true);
+  await exitWarning.getByRole('button', { name: 'Stay and continue exam' }).click();
+  await page.goBack();
+  await page.getByRole('alertdialog').getByText('Leaving will NOT stop your exam timer!').waitFor();
+  await page.getByRole('alertdialog').getByRole('button', { name: 'Stay and continue exam' }).click();
+  assert.match(page.url(), /\/exam\//, 'Browser Back keeps the exam open until explicitly confirmed');
+  await page.getByRole('button', { name: 'Submit exam' }).click();
+  const unfinishedWarning = page.getByRole('alertdialog');
+  await unfinishedWarning.getByText('You have not finished your examination!').waitFor();
+  await unfinishedWarning.getByText('1 question(s) will be submitted unanswered', { exact: false }).waitFor();
+  assert.equal(await unfinishedWarning.getByRole('button', { name: 'Submit exam permanently' }).isDisabled(), true);
+  await unfinishedWarning.getByRole('button', { name: 'Stay and continue exam' }).click();
+  page.on('dialog', d => d.accept());
   await page.reload();
   await page.locator('input[type=radio][value=B]').waitFor();
   if (await page.getByRole('button', { name: 'Open exam', exact: true }).isVisible()) await page.getByRole('button', { name: 'Open exam', exact: true }).click();
@@ -82,7 +113,11 @@ try {
   await context.setOffline(true); await page.reload(); await page.locator('input[type=radio][value=B]').waitFor();
   if(await page.getByRole('button',{name:'Open exam',exact:true}).isVisible())await page.getByRole('button',{name:'Open exam',exact:true}).click();
   assert(await page.locator('input[type=radio][value=B]').isChecked(),'Production PWA offline reload preserves answer');
-  page.on('dialog', d => d.accept()); await page.getByRole('button', { name: 'Submit exam', exact: true }).click(); await page.waitForURL('**/portal');
+  await page.getByRole('button', { name: 'Submit exam', exact: true }).click();
+  await page.getByRole('alertdialog').getByText('You have not finished your examination!').waitFor();
+  await page.getByRole('alertdialog').getByRole('checkbox').check();
+  await page.getByRole('alertdialog').getByRole('button', { name: 'Submit exam permanently' }).click();
+  await page.waitForURL('**/portal');
   await page.getByText('Saved submissions waiting to upload:',{exact:false}).waitFor();
   await page.reload();await page.getByText('Saved submissions waiting to upload:',{exact:false}).waitFor();
   await context.setOffline(false); await page.getByRole('button',{name:'Retry upload',exact:true}).click();
