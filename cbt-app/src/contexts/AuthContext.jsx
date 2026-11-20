@@ -5,6 +5,7 @@ import { onAuthStateChanged, signOut } from "firebase/auth";
 import { auth, db } from "/firebase";
 import { flushPendingSubmissions } from "../services/sessionService";
 import { clearPinRosterCaches } from "../services/pinRosterStore";
+import { canonicalRole, isKnownRole } from "../utils/roles";
 
 const AuthContext = createContext(null);
 
@@ -43,7 +44,7 @@ export function AuthProvider({ children }) {
           } catch { /* Continue with the authoritative profile lookup. */ }
           if (window.navigator.onLine) return;
         }
-        if (!record || !["student", "admin", "superadmin", "teacher", "teacher_admin", "invigilator", "examofficer"].includes(record.role)) {
+        if (!record || !isKnownRole(record.role)) {
           setAuthError("Your account has not been provisioned. Contact your school administrator.");
           setRole(null);
           setProfile(null);
@@ -57,8 +58,9 @@ export function AuthProvider({ children }) {
               username: record.username || "", email: record.email || "", loginDisabled: false })); }
             catch { /* The exam page reports storage failures before accepting answers. */ }
           }
-          setProfile(record);
-          setRole(record.role);
+          const staffRole = canonicalRole(record.role);
+          setProfile({ ...record, role: staffRole });
+          setRole(staffRole);
           setAuthError("");
         }
         setLoading(false);

@@ -54,12 +54,12 @@ try {
   await page.getByRole('button', { name: 'Save question', exact: true }).click();
   await page.getByText('Question saved successfully.').waitFor();
   await page.getByRole('link', { name: 'Exams', exact: true }).click(); await page.getByRole('button', { name: 'Publish', exact: true }).click(); await page.getByText('Exam published.', { exact: false }).waitFor();
-  await page.getByRole('link', { name: 'Exam PINs', exact: true }).click(); await page.waitForURL('**/exam-pins'); await page.getByRole('combobox', { name: /^Exam/ }).selectOption({ label: 'Mathematics Pilot (published)' }); await page.getByLabel('Alice Student', { exact: false }).check(); await page.getByRole('button', { name: 'Assign exam and generate PINs' }).click();
+  await page.getByRole('link', { name: 'Exam PINs', exact: true }).click(); await page.waitForURL('**/exams/pins'); await page.getByRole('combobox', { name: /^Exam/ }).selectOption({ label: 'Mathematics Pilot (published)' }); await page.getByLabel('Alice Student', { exact: false }).check(); await page.getByRole('button', { name: 'Assign exam and generate PINs' }).click();
   const pinCell = page.locator('td.font-mono'); await pinCell.waitFor(); const pin = (await pinCell.textContent()).trim();
   // Admin can switch sections or refresh and still reprint the same PIN, without generating a replacement.
   await page.getByRole('link', { name: 'Exams', exact: true }).click();
   await page.getByRole('link', { name: 'Exam PINs', exact: true }).click();
-  await page.waitForURL('**/exam-pins');
+  await page.waitForURL('**/exams/pins');
   await page.locator('td.font-mono').waitFor();
   assert.equal((await page.locator('td.font-mono').textContent()).trim(), pin, 'PIN restored after changing pages');
   await page.reload();
@@ -132,7 +132,7 @@ try {
   await page.getByRole('button', { name: 'Create teacher account', exact: true }).click(); await page.waitForURL('**/teacher-access');
   await page.getByText('pending', { exact: true }).waitFor();
   const teacher = await auth.getUserByEmail('teacher-alice@example.test');
-  assert.equal((await db.doc(`users/${teacher.uid}`).get()).data().role, 'teacher_admin');
+  assert.equal((await db.doc(`users/${teacher.uid}`).get()).data().role, 'teacher');
   // Simulate following the emulator verification link; real email delivery is a staging check.
   await auth.updateUser(teacher.uid, { emailVerified: true });
   await page.getByRole('button', { name: 'Sign out', exact: true }).click(); await login('owner@example.test'); await page.waitForURL('**/dashboard');
@@ -141,7 +141,7 @@ try {
   await page.getByLabel('Reason', { exact: true }).fill('Verified school employee');
   await page.getByRole('checkbox', { name: 'JSS1 A', exact: true }).check(); await page.getByRole('checkbox', { name: 'Mathematics', exact: true }).check();
   await page.getByRole('button', { name: 'Save teacher access', exact: true }).click(); await page.getByText('Staff record saved.', { exact: true }).waitFor();
-  await page.getByRole('button', { name: 'Sign out', exact: true }).click(); await login('teacher-alice@example.test'); await page.waitForURL('**/exams/create');
+  await page.getByRole('button', { name: 'Sign out', exact: true }).click(); await login('teacher-alice@example.test'); await page.waitForURL('**/exams/papers');
   await page.getByLabel('Exam title').fill('Private teacher paper'); await page.getByLabel('Duration in minutes').fill('20');
   await page.getByLabel(/^Class/).selectOption('JSS1 A'); await page.getByLabel(/^Subject/).selectOption('Mathematics');
   await page.getByRole('button', { name: 'Create exam', exact: true }).click(); await page.getByText('Exam created.', { exact: false }).waitFor();

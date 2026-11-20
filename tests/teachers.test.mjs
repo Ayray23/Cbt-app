@@ -12,9 +12,9 @@ function setup() {
 test('self-registration is idempotent, pending and cannot grant a chosen role or overwrite an existing account', async () => {
   const { service, records } = setup();
   await service.registerTeacher('alice', { displayName: 'Alice Teacher', role: 'superadmin', approvalStatus: 'approved' });
-  assert.equal(records.get('users/alice').role, 'teacher_admin'); assert.equal(records.get('users/alice').approvalStatus, 'pending');
+  assert.equal(records.get('users/alice').role, 'teacher'); assert.equal(records.get('users/alice').approvalStatus, 'pending');
   await assert.rejects(service.identity('alice'), { status: 403 });
-  assert.equal((await service.identity('alice', { allowPending: true })).role, 'teacher_admin');
+  assert.equal((await service.identity('alice', { allowPending: true })).role, 'teacher');
   await service.registerTeacher('alice', { displayName: 'Second name' });
   assert.equal(records.get('users/alice').displayName, 'Alice Teacher');
   records.set('users/bob', { role: 'student' });
@@ -35,7 +35,7 @@ test('only superadmin can approve verified teachers with teaching assignments; s
 });
 test('teacher admins can author their own papers but cannot create, copy or delete another teacher question', async () => {
   const { service, records } = setup();
-  const alice = { uid: 'alice', role: 'teacher_admin', assignedClasses: ['JSS1'], assignedSubjects: ['Maths'] };
+  const alice = { uid: 'alice', role: 'teacher', assignedClasses: ['JSS1'], assignedSubjects: ['Maths'] };
   records.set('exams/a', { createdBy: 'alice', status: 'draft', className: 'JSS1', subject: 'Maths' });
   records.set('exams/b', { createdBy: 'bob', status: 'draft', className: 'JSS1', subject: 'Maths' });
   const question = { question: '2+2?', options: { A: '1', B: '2', C: '3', D: '4' }, correctAnswer: 'D', marks: 1 };

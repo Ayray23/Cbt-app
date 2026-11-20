@@ -33,6 +33,7 @@ const CreateExam = lazy(() => import("./pages/CreateExam"));
 const AddQuestion = lazy(() => import("./pages/AddQuestion"));
 const Monitoring = lazy(() => import("./pages/Monitoring"));
 const ExamPins = lazy(() => import("./pages/ExamPins"));
+const ExamsHub = lazy(() => import("./pages/ExamsHub"));
 const Login = lazy(() => import("./pages/auth/Login"));
 const TakeExam = lazy(() => import("./pages/TakeExam"));
 
@@ -58,10 +59,8 @@ function LandingRedirect() {
 
   if (profile?.approvalStatus && profile.approvalStatus !== "approved")
     return <Navigate to="/teacher-access" replace />;
-  if (["teacher", "teacher_admin"].includes(role))
-    return <Navigate to="/exams/create" replace />;
+  if (role === "teacher") return <Navigate to="/exams" replace />;
   if (role === "invigilator") return <Navigate to="/monitoring" replace />;
-  if (role === "examofficer") return <Navigate to="/exams/create" replace />;
   if (role === "superadmin" || role === "admin" || isAdmin) {
     return <Navigate to="/dashboard" replace />;
   }
@@ -281,30 +280,42 @@ export default function App() {
               <Route
                 element={
                   <RequireRole
-                    allowedRoles={[
-                      "admin",
-                      "superadmin",
-                      "teacher",
-                      "teacher_admin",
-                      "examofficer",
-                    ]}
+                    allowedRoles={["admin", "superadmin", "teacher"]}
                   />
                 }
               >
                 <Route path="/teacher-account" element={<StudentAccount />} />
-                <Route path="/exams/create" element={<CreateExam />} />
-                <Route path="/questions/add" element={<AddQuestion />} />
-                <Route path="/questions" element={<Questions />} />
+                <Route path="/exams" element={<ExamsHub />}>
+                  <Route index element={<Navigate to="papers" replace />} />
+                  <Route path="papers" element={<CreateExam />} />
+                  <Route path="questions/add" element={<AddQuestion />} />
+                  <Route path="questions" element={<Questions />} />
+                  <Route
+                    element={
+                      <RequireRole allowedRoles={["admin", "superadmin"]} />
+                    }
+                  >
+                    <Route path="pins" element={<ExamPins />} />
+                  </Route>
+                </Route>
+                {/* Old addresses still work for bookmarks and saved links. */}
+                <Route
+                  path="/exams/create"
+                  element={<Navigate to="/exams/papers" replace />}
+                />
+                <Route
+                  path="/questions/add"
+                  element={<Navigate to="/exams/questions/add" replace />}
+                />
+                <Route
+                  path="/questions"
+                  element={<Navigate to="/exams/questions" replace />}
+                />
               </Route>
               <Route
                 element={
                   <RequireRole
-                    allowedRoles={[
-                      "admin",
-                      "superadmin",
-                      "examofficer",
-                      "invigilator",
-                    ]}
+                    allowedRoles={["admin", "superadmin", "invigilator"]}
                   />
                 }
               >
@@ -312,12 +323,13 @@ export default function App() {
               </Route>
               <Route
                 element={
-                  <RequireRole
-                    allowedRoles={["admin", "superadmin", "examofficer"]}
-                  />
+                  <RequireRole allowedRoles={["admin", "superadmin"]} />
                 }
               >
-                <Route path="/exam-pins" element={<ExamPins />} />
+                <Route
+                  path="/exam-pins"
+                  element={<Navigate to="/exams/pins" replace />}
+                />
                 <Route path="/results" element={<Results />} />
                 <Route path="/audit" element={<AuditLogs />} />
               </Route>

@@ -13,6 +13,7 @@ import { db } from "/firebase";
 import { callApi } from "../services/api";
 import { useSchool } from "../hooks/useSchool";
 import StatusBanner from "../components/StatusBanner";
+import { ASSIGNABLE_ROLES, canonicalRole, roleLabel } from "../utils/roles";
 const initial = {
   displayName: "",
   username: "",
@@ -80,6 +81,7 @@ export default function Admins() {
       onSnapshot(
         query(
           collection(db, "users"),
+          // Retired role names are included so older accounts still appear.
           where("role", "in", [
             "admin",
             "superadmin",
@@ -169,14 +171,10 @@ export default function Admins() {
             value={form.role}
             onChange={(e) => setForm({ ...form, role: e.target.value })}
           >
-            {[
-              "teacher",
-              "teacher_admin",
-              "examofficer",
-              "invigilator",
-              "admin",
-            ].map((r) => (
-              <option key={r}>{r}</option>
+            {ASSIGNABLE_ROLES.map((r) => (
+              <option key={r} value={r}>
+                {roleLabel(r)}
+              </option>
             ))}
           </select>
         </label>
@@ -194,7 +192,7 @@ export default function Admins() {
             <strong>{s.displayName || s.email}</strong>
             <p>
               {s.username || s.email} ·{" "}
-              {s.role === "teacher_admin" ? "Teacher admin" : s.role} ·{" "}
+              {roleLabel(s.role)} ·{" "}
               {s.approvalStatus || "approved"}
             </p>
             <button
@@ -223,7 +221,7 @@ export default function Admins() {
             >
               Inspect work
             </button>
-            {["teacher", "teacher_admin"].includes(s.role) && (
+            {canonicalRole(s.role) === "teacher" && (
               <button
                 className="underline"
                 onClick={() =>

@@ -7,7 +7,7 @@ import { parseQuestionText } from "../cbt-app/src/utils/questionImport.js";
 const owner = { uid: "owner", role: "superadmin" };
 const teacher = {
   uid: "t",
-  role: "teacher_admin",
+  role: "teacher",
   assignedClasses: ["JSS1"],
   assignedSubjects: ["Math"],
 };

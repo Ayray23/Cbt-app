@@ -11,6 +11,14 @@ import {
 import StatusBanner from "../components/StatusBanner";
 
 import ExamCalculator from "../components/ExamCalculator";
+import {
+  VIOLATION_LABELS,
+  VIOLATION_LIMIT,
+  appendViolation,
+  integrityMeta,
+  isBlockedKey,
+  longerLog,
+} from "../utils/lockdown";
 
 const LABELS = ["A", "B", "C", "D"];
 
@@ -30,6 +38,7 @@ export default function TakeExam() {
   const [error, setError] = useState("");
   const [saveStatus, setSaveStatus] = useState("Answers save on this device.");
   const [needsFullscreen, setNeedsFullscreen] = useState(false);
+  const [warning, setWarning] = useState(null);
   const [confirmation, setConfirmation] = useState(null);
   const [acknowledged, setAcknowledged] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -37,6 +46,7 @@ export default function TakeExam() {
   const packetRef = useRef(null);
   const closedRef = useRef(false);
   const warningsRef = useRef(0);
+  const logRef = useRef([]);
   const enteredFullscreenRef = useRef(Boolean(document.fullscreenElement));
   const examLoaded = Boolean(packet);
 
@@ -92,7 +102,7 @@ export default function TakeExam() {
       try {
         await submitExamSession(examId, answersRef.current, {
           submissionReason: reason,
-          tabSwitchCount: warningsRef.current,
+          ...integrityMeta(warningsRef, logRef),
         });
         navigate("/portal", {
           replace: true,
@@ -126,6 +136,10 @@ export default function TakeExam() {
         warningsRef.current = Math.max(
           loaded.session.tabSwitchCount || 0,
           loaded.metadata?.tabSwitchCount || 0,
+        );
+        logRef.current = longerLog(
+          loaded.session.integrityLog,
+          loaded.metadata?.integrityLog,
         );
         setPacket(loaded);
         setAnswers(answersRef.current);
@@ -164,7 +178,7 @@ export default function TakeExam() {
     if (!packetRef.current || closedRef.current) return;
     try {
       const result = await saveExamProgress(examId, answersRef.current, {
-        tabSwitchCount: warningsRef.current,
+        ...integrityMeta(warningsRef, logRef),
       });
       if (closedRef.current) return;
       if (result.closed) {
@@ -212,29 +226,53 @@ export default function TakeExam() {
   }, [packet, persistProgress]);
 
   useEffect(() => {
+    let blurTimer;
+    // Every rule break is counted, logged with its type and time, saved on the
+    // device and sent to the server so invigilators can see what happened.
+    function recordViolation(type) {
+      if (closedRef.current || !packetRef.current) return;
+      warningsRef.current++;
+      logRef.current = appendViolation(logRef.current, type, Date.now());
+      setWarning({ type, count: warningsRef.current });
+      saveLocalExamDraft(
+        examId,
+        answersRef.current,
+        integrityMeta(warningsRef, logRef),
+      );
+      void persistProgress();
+    }
     function fullscreenChanged() {
       if (document.fullscreenElement) {
         enteredFullscreenRef.current = true;
         setNeedsFullscreen(false);
       } else if (enteredFullscreenRef.current && !closedRef.current) {
-        warningsRef.current++;
         setNeedsFullscreen(true);
-        void persistProgress();
+        recordViolation("fullscreen-exit");
       }
     }
     function visibilityChanged() {
       if (!document.hidden || closedRef.current || !packetRef.current) return;
-      warningsRef.current++;
-      saveLocalExamDraft(examId, answersRef.current, {
-        tabSwitchCount: warningsRef.current,
-      });
-      void persistProgress();
+      recordViolation("tab-hidden");
+    }
+    // Catches switching to another window or app while the tab stays visible
+    // (split screen, a second window on top). A short delay lets a normal tab
+    // switch be counted once, as "tab-hidden", instead of twice.
+    function windowBlurred() {
+      if (closedRef.current || !packetRef.current) return;
+      window.clearTimeout(blurTimer);
+      blurTimer = window.setTimeout(() => {
+        if (!document.hidden && !document.hasFocus())
+          recordViolation("window-blur");
+      }, 400);
+    }
+    function windowFocused() {
+      window.clearTimeout(blurTimer);
     }
     function pageHidden() {
       if (packetRef.current && !closedRef.current) {
         try {
           saveLocalExamDraft(examId, answersRef.current, {
-            tabSwitchCount: warningsRef.current,
+            ...integrityMeta(warningsRef, logRef),
           });
         } catch {
           /* Already saved on each answer input. */
@@ -254,27 +292,28 @@ export default function TakeExam() {
       event.preventDefault();
     }
     function preventShortcut(event) {
-      if (
-        (event.ctrlKey || event.metaKey) &&
-        ["c", "v", "x", "a", "s", "p"].includes(event.key.toLowerCase())
-      )
-        event.preventDefault();
+      if (isBlockedKey(event)) event.preventDefault();
     }
     document.addEventListener("fullscreenchange", fullscreenChanged);
     document.addEventListener("visibilitychange", visibilityChanged);
     window.addEventListener("pagehide", pageHidden);
     window.addEventListener("popstate", routeChanged);
     window.addEventListener("storage", storageChanged);
-    for (const event of ["copy", "paste", "cut", "contextmenu"])
+    for (const event of ["copy", "paste", "cut", "contextmenu", "dragstart"])
       window.addEventListener(event, preventClipboard);
     window.addEventListener("keydown", preventShortcut);
+    window.addEventListener("blur", windowBlurred);
+    window.addEventListener("focus", windowFocused);
     return () => {
+      window.clearTimeout(blurTimer);
+      window.removeEventListener("blur", windowBlurred);
+      window.removeEventListener("focus", windowFocused);
       document.removeEventListener("fullscreenchange", fullscreenChanged);
       document.removeEventListener("visibilitychange", visibilityChanged);
       window.removeEventListener("pagehide", pageHidden);
       window.removeEventListener("popstate", routeChanged);
       window.removeEventListener("storage", storageChanged);
-      for (const event of ["copy", "paste", "cut", "contextmenu"])
+      for (const event of ["copy", "paste", "cut", "contextmenu", "dragstart"])
         window.removeEventListener(event, preventClipboard);
       window.removeEventListener("keydown", preventShortcut);
     };
@@ -325,7 +364,7 @@ export default function TakeExam() {
     if (!acknowledged || closedRef.current) return;
     try {
       saveLocalExamDraft(examId, answersRef.current, {
-        tabSwitchCount: warningsRef.current,
+        ...integrityMeta(warningsRef, logRef),
       });
       setConfirmation(null);
       navigate("/portal", { replace: true });
@@ -342,7 +381,7 @@ export default function TakeExam() {
     const next = { ...answersRef.current, [questionId]: value };
     try {
       // Save on the input event itself, before the network debounce or next render.
-      saveLocalExamDraft(examId, next, { tabSwitchCount: warningsRef.current });
+      saveLocalExamDraft(examId, next, { ...integrityMeta(warningsRef, logRef) });
       answersRef.current = next;
       setAnswers(next);
       setError("");
@@ -402,8 +441,38 @@ export default function TakeExam() {
   ).length;
 
   return (
-    <div className="space-y-6">
+    <div className="exam-locked space-y-6">
       <StatusBanner tone="error" message={error} />
+      {warning && !needsFullscreen && (
+        <div
+          role="alertdialog"
+          aria-labelledby="exam-warning-title"
+          className="fixed inset-0 z-50 grid place-items-center bg-slate-950/70 p-4"
+        >
+          <section className="max-w-md rounded-3xl bg-white p-8">
+            <h2 id="exam-warning-title" className="text-2xl font-semibold">
+              Exam rule warning {warning.count}
+            </h2>
+            <p className="mt-3 text-sm text-slate-600">
+              You {VIOLATION_LABELS[warning.type] || "broke an exam rule"}. Stay
+              in full screen on this tab until you submit. Your timer is still
+              running.
+            </p>
+            {warning.count >= VIOLATION_LIMIT && (
+              <p className="mt-3 text-sm font-medium text-red-700">
+                This is warning {warning.count}. Your invigilator can see it and
+                will review your attempt.
+              </p>
+            )}
+            <button
+              onClick={() => setWarning(null)}
+              className="mt-5 rounded-xl bg-slate-900 px-5 py-3 text-white"
+            >
+              I understand
+            </button>
+          </section>
+        </div>
+      )}
       {needsFullscreen && (
         <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/70 p-4">
           <section className="max-w-md rounded-3xl bg-white p-8">

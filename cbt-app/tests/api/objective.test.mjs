@@ -97,6 +97,6 @@ test('LAN grant HTTP synchronization authenticates its own credential, isolates 
  const result=(await db.doc(`examResults/${exam.id}_${student.uid}`).get()).data();assert.equal(result.finalScore,2);assert.equal(result.requiresReview,true);assert.equal(result.released,false);
 });
 test('staff provisioning retries return one account and final staff role',async()=>{
- const input={requestId:'staff-http-id',username:'staff-http',displayName:'Staff HTTP',email:'staff-contact@example.test',password,role:'teacher_admin'};
- const first=await api(ownerToken,'staff.create',input);const second=await api(ownerToken,'staff.create',input);assert.equal(first.uid,second.uid);assert.equal((await db.doc(`users/${first.uid}`).get()).data().role,'teacher_admin');assert.equal((await auth.getUser(first.uid)).email,'staff-http@students.cbt.invalid');
+ const input={requestId:'staff-http-id',username:'staff-http',displayName:'Staff HTTP',email:'staff-contact@example.test',password,role:'teacher'};
+ const first=await api(ownerToken,'staff.create',input);const second=await api(ownerToken,'staff.create',input);assert.equal(first.uid,second.uid);assert.equal((await db.doc(`users/${first.uid}`).get()).data().role,'teacher');assert.equal((await auth.getUser(first.uid)).email,'staff-http@students.cbt.invalid');
 });
