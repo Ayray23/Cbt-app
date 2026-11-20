@@ -94,6 +94,10 @@ try {
   await exitWarning.getByText('Leaving will NOT stop your exam timer!').waitFor();
   assert.equal(await exitWarning.getByRole('button', { name: 'Leave exam anyway' }).isDisabled(), true);
   await exitWarning.getByRole('button', { name: 'Stay and continue exam' }).click();
+  await page.goBack();
+  await page.getByRole('alertdialog').getByText('Leaving will NOT stop your exam timer!').waitFor();
+  await page.getByRole('alertdialog').getByRole('button', { name: 'Stay and continue exam' }).click();
+  assert.match(page.url(), /\/exam\//, 'Browser Back keeps the exam open until explicitly confirmed');
   await page.getByRole('button', { name: 'Submit exam' }).click();
   const unfinishedWarning = page.getByRole('alertdialog');
   await unfinishedWarning.getByText('You have not finished your examination!').waitFor();
