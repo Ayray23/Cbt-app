@@ -110,25 +110,25 @@ function StudentShell() {
   const inExam = useLocation().pathname.startsWith("/exam/");
 
   return (
-    <div className="min-h-screen bg-slate-100">
-      <header className="border-b border-slate-200 bg-white px-4 py-4 md:px-8">
+    <div className="min-h-screen bg-[#f5f7fb]">
+      <header className="border-b border-slate-200/80 bg-white/95 px-4 py-4 shadow-sm shadow-slate-900/5 md:px-8">
         <div className="mx-auto flex max-w-6xl flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div>
             <AppLogo size="sm" />
             <p className="mt-3 text-xs uppercase tracking-[0.3em] text-slate-400">
               Student Portal
             </p>
-            <h1 className="text-2xl font-semibold text-slate-900">
+            <h1 className="text-xl font-extrabold tracking-tight text-slate-900 sm:text-2xl">
               {profile?.displayName ?? profile?.username ?? "CBT Portal"}
             </h1>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3">
             {!inExam && (
               <>
                 <InstallAppButton />
-                <Link to="/portal">Exams</Link>
-                <Link to="/my-results">Results</Link>
+                <Link to="/portal" className="ui-btn-secondary">Exams</Link>
+                <Link to="/my-results" className="ui-btn-secondary">Results</Link>
               </>
             )}
             <p className="text-sm font-medium text-slate-700">
@@ -137,7 +137,7 @@ function StudentShell() {
             {!inExam && (
               <button
                 onClick={logout}
-                className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white"
+                className="ui-btn-primary"
               >
                 Sign out
               </button>
@@ -146,7 +146,7 @@ function StudentShell() {
         </div>
       </header>
 
-      <main className="mx-auto max-w-6xl p-4 md:p-8">
+      <main className="mx-auto max-w-6xl p-4 pb-12 md:p-8">
         <NetworkStatusBanner />
         <Outlet />
       </main>
@@ -158,25 +158,25 @@ function AdminShell() {
   const { user, role, profile, logout } = useAuth();
 
   return (
-    <div className="min-h-screen bg-slate-100 md:flex">
+    <div className="min-h-screen bg-[#f5f7fb] md:flex">
       <Sidebar />
 
       <div className="flex-1">
-        <header className="border-b border-slate-200 bg-white px-4 py-4 md:px-8">
+        <header className="border-b border-slate-200/80 bg-white/95 px-4 py-4 shadow-sm shadow-slate-900/5 md:px-8">
           <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
             <div>
               <AppLogo size="sm" />
-              <p className="text-xs uppercase tracking-[0.3em] text-slate-400">
+              <p className="ui-eyebrow">
                 {role === "superadmin" || role === "admin"
                   ? "Admin Workspace"
                   : "Staff Workspace"}
               </p>
-              <h1 className="text-2xl font-semibold text-slate-900">
+              <h1 className="text-xl font-extrabold tracking-tight text-slate-900 sm:text-2xl">
                 {profile?.displayName ?? user?.email ?? "CBT Portal"}
               </h1>
             </div>
 
-            <div className="flex items-center gap-3">
+            <div className="flex flex-wrap items-center gap-3">
               <InstallAppButton />
               <div className="text-right">
                 <p className="text-sm font-medium text-slate-700">
@@ -189,7 +189,7 @@ function AdminShell() {
 
               <button
                 onClick={logout}
-                className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white"
+                className="ui-btn-primary"
               >
                 Sign out
               </button>
@@ -197,7 +197,7 @@ function AdminShell() {
           </div>
         </header>
 
-        <main className="p-4 md:p-8">
+        <main className="mx-auto w-full max-w-7xl p-4 pb-12 md:p-8">
           <NetworkStatusBanner />
           <Outlet />
         </main>
