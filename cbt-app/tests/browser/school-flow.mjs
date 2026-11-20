@@ -24,6 +24,16 @@ try {
   const context = await browser.newContext(); const page = await context.newPage(); const errors = []; page.on('pageerror', e => { errors.push(e.message); console.error('BROWSER ERROR:', e.stack); }); page.on('console', message => { if (message.type() === 'error') console.error('BROWSER CONSOLE:', message.text()); });
   async function login(identifier) { await page.goto('http://127.0.0.1:5173/login'); console.log('LOGIN PAGE:', await page.title(), await page.locator('body').innerText()); await page.getByLabel('Username or email').fill(identifier); await page.getByPlaceholder('Password', { exact: true }).fill(password); await page.getByRole('button', { name: 'Sign in', exact: true }).click(); }
   await login('owner@example.test'); await page.waitForURL('**/dashboard');
+  const crest = page.getByRole('img', { name: 'Radiant Glory International Schools logo' }).first();
+  await crest.waitFor();
+  assert.equal(await crest.evaluate((image) => image.complete && image.naturalWidth > 0), true, 'Current school crest loads');
+  await page.evaluate(() => window.dispatchEvent(new CustomEvent('cbt:toast', {
+    detail: { tone: 'error', message: 'Test Firebase network failure toast' },
+  })));
+  const toastAlert = page.getByRole('alert').filter({ hasText: 'Test Firebase network failure toast' });
+  await toastAlert.waitFor();
+  await toastAlert.getByRole('button', { name: 'Dismiss notification' }).click();
+  assert.equal(await toastAlert.count(), 0, 'Error toast dismisses cleanly');
   await page.getByRole('link', { name: 'School setup', exact: true }).click(); await page.getByLabel(/^name$/i).fill('Pilot Secondary School'); await page.getByRole('button', { name: 'Save school settings' }).click(); await page.getByText('School settings saved.', { exact: false }).waitFor();
   await page.getByRole('link', { name: 'Students', exact: true }).click();
   await page.getByLabel('Full name', { exact: true }).fill('Alice Student'); await page.getByLabel('Permanent username').fill('alice-school'); await page.getByLabel('Temporary password').fill(password); await page.getByLabel(/^Class/).selectOption('JSS1 A'); await page.getByLabel('Mathematics', { exact: true }).check();

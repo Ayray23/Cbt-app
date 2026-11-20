@@ -14,6 +14,7 @@ import SplashScreen from "./components/SplashScreen";
 import InstallAppButton from "./components/InstallAppButton";
 import NetworkStatusBanner from "./components/NetworkStatusBanner";
 import AppLogo from "./components/AppLogo";
+import ToastViewport from "./components/ToastViewport";
 
 const OfflineRecovery = lazy(() => import("./pages/OfflineRecovery"));
 const LanExams = lazy(() => import("./pages/LanExams"));
@@ -247,6 +248,8 @@ function AccountErrorScreen() {
 
 export default function App() {
   return (
+    <>
+    <ToastViewport />
     <BrowserRouter>
       <Suspense
         fallback={
@@ -359,5 +362,6 @@ export default function App() {
         </Routes>
       </Suspense>
     </BrowserRouter>
+    </>
   );
 }
