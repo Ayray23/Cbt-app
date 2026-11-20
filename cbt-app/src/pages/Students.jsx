@@ -7,7 +7,7 @@ import { parseCsv, downloadCsv } from "../utils/csv";
 import StatusBanner from "../components/StatusBanner";
 const empty = {
   displayName: "",
-  username: "",
+  username: "", // Retained for legacy student account edits only.
   email: "",
   password: "",
   className: "",
@@ -47,7 +47,7 @@ export default function Students() {
       { ...form, studentId: editing, academicSession: school.academicSession },
       editing
         ? "Student updated. Historical exam records are unchanged."
-        : "Student created. Give the student their username and temporary password securely.",
+        : "Student created. Give the student their Admission Number and temporary password privately.",
     );
     if (ok) {
       setForm(empty);
@@ -69,19 +69,24 @@ export default function Students() {
         : parseCsv(await file.text());
       if (rows.length > 200)
         throw new Error("Import at most 200 students per file.");
-      const seen = new Set(students.map((s) => s.username));
+      const seen = new Set(
+        students.map((s) => String(s.admissionNumber || "").trim().toUpperCase()).filter(Boolean),
+      );
       setImports(
         rows.map((r, i) => {
-          const username = (r.username || "").toLowerCase();
+          const admissionNumber = String(r.admissionNumber || "").trim().toUpperCase();
           const subjects = (r.subjects || "")
             .split("|")
             .map((s) => s.trim())
             .filter(Boolean);
           const errors = [];
-          if (!r.displayName || !/^[a-z0-9][a-z0-9._-]{2,39}$/.test(username))
-            errors.push("Name/username invalid");
-          if (seen.has(username)) errors.push("Duplicate username");
-          seen.add(username);
+          if (!String(r.displayName || "").trim())
+            errors.push("Full name required");
+          if (!/^[A-Z0-9][A-Z0-9._\/-]{2,59}$/.test(admissionNumber))
+            errors.push("Valid admission number required (3–60 letters/numbers/separators)");
+          if (seen.has(admissionNumber))
+            errors.push("Duplicate admission number");
+          seen.add(admissionNumber);
           if ((r.password || "").length < 8)
             errors.push("Password needs 8 characters");
           if (!school?.classes.includes(r.className))
@@ -93,7 +98,7 @@ export default function Students() {
             errors.push("Unknown/missing subject");
           return {
             ...r,
-            username,
+            admissionNumber,
             subjects,
             row: r.__rowNumber || i + 2,
             error: errors.join("; "),
@@ -144,25 +149,25 @@ export default function Students() {
           {editing ? "Edit student / promote class" : "Create student"}
         </h2>
         <p>
-          Enrolment session: {school?.academicSession}. Username remains
-          permanent when the class changes.
+          Enrolment session: {school?.academicSession}. Every new student signs in
+          using their unique Admission Number / Student ID and temporary password.
+          Full names can repeat. Existing username-based accounts remain valid.
         </p>
         <div className="grid md:grid-cols-2 gap-4">
-          {["displayName", "username", "admissionNumber", "email"].map(
+          {["displayName", "admissionNumber", "email"].map(
             (key) => (
               <label key={key}>
                 {
                   {
                     displayName: "Full name",
-                    username: "Permanent username",
-                    admissionNumber: "Admission number",
-                    email: "Contact email (optional)",
+                    admissionNumber: "Admission Number / Student ID",
+                    email: "Contact email (optional — not a login identifier)",
                   }[key]
                 }
                 <input
                   className={field}
-                  required={["displayName", "username"].includes(key)}
-                  disabled={editing && key === "username"}
+                  required={key === "displayName" || (!editing && key === "admissionNumber")}
+                  disabled={Boolean(editing && key === "admissionNumber" && form.loginIdType === "admission")}
                   type={key === "email" ? "email" : "text"}
                   value={form[key]}
                   onChange={(e) => setForm({ ...form, [key]: e.target.value })}
@@ -245,9 +250,9 @@ export default function Students() {
         <p>
           Upload an Excel .xlsx workbook directly, or a CSV file. Use the
           downloadable template's column names. Separate multiple subjects
-          with |. Format usernames/admission numbers as Text in Excel to
-          preserve leading zeros. Passwords remain in memory during preview
-          and are not stored as plaintext in Firestore.
+          with |. Format admission numbers as Text in Excel to preserve leading
+          zeros. Each admission number must be unique. Passwords remain in memory
+          during preview and are not stored as plaintext in Firestore.
         </p>
         <button
           className="underline"
@@ -255,7 +260,6 @@ export default function Students() {
             downloadCsv("student-template.csv", [
               [
                 "displayName",
-                "username",
                 "admissionNumber",
                 "className",
                 "subjects",
@@ -264,8 +268,7 @@ export default function Students() {
               ],
               [
                 "Example Student",
-                "student001",
-                "SCH001",
+                "RGIS/2026/001",
                 school?.classes[0] || "JSS1 A",
                 school?.subjects.join("|") || "Mathematics",
                 "ReplaceThisPassword",
@@ -329,7 +332,7 @@ export default function Students() {
             <div>
               <strong>{s.displayName}</strong>
               <p>
-                {s.username || s.email} · {s.className || "Class not assigned"}{" "}
+                {s.admissionNumber || s.username || s.email} · {s.className || "Class not assigned"}{" "}
                 · {s.academicSession} · {s.loginDisabled ? "Blocked" : "Active"}
               </p>
             </div>
@@ -383,8 +386,10 @@ export default function Students() {
           </article>
         ))}
         <p>
-          Search covers this page. Duplicate usernames are also rejected by the
-          server.
+          Search covers this page. New admissions are unique and verified on the
+          server. Existing accounts with legacy usernames continue using them.
+          Admission-based login IDs cannot be edited here because doing so could
+          lock students out of their accounts.
         </p>
         <RecordPager records={records} />
       </section>
