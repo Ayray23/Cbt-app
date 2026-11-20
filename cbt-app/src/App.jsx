@@ -110,8 +110,8 @@ function StudentShell() {
   const inExam = useLocation().pathname.startsWith("/exam/");
 
   return (
-    <div className="min-h-screen bg-slate-100">
-      <header className="border-b border-slate-200 bg-white px-4 py-4 md:px-8">
+    <div className="min-h-screen bg-[#f4f7fb]">
+      <header className="border-b border-slate-200/80 bg-white/95 px-4 py-4 shadow-sm md:px-8">
         <div className="mx-auto flex max-w-6xl flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div>
             <AppLogo size="sm" />
@@ -123,12 +123,12 @@ function StudentShell() {
             </h1>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3">
             {!inExam && (
               <>
                 <InstallAppButton />
-                <Link to="/portal">Exams</Link>
-                <Link to="/my-results">Results</Link>
+                <Link className="rounded-xl px-3 py-2 text-sm font-semibold text-[#253371] hover:bg-blue-50" to="/portal">Exams</Link>
+                <Link className="rounded-xl px-3 py-2 text-sm font-semibold text-[#253371] hover:bg-blue-50" to="/my-results">Results</Link>
               </>
             )}
             <p className="text-sm font-medium text-slate-700">
@@ -137,7 +137,7 @@ function StudentShell() {
             {!inExam && (
               <button
                 onClick={logout}
-                className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white"
+                className="rounded-xl bg-[#253371] px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-900 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-yellow-400"
               >
                 Sign out
               </button>
@@ -158,11 +158,11 @@ function AdminShell() {
   const { user, role, profile, logout } = useAuth();
 
   return (
-    <div className="min-h-screen bg-slate-100 md:flex">
+    <div className="min-h-screen bg-[#f4f7fb] md:flex">
       <Sidebar />
 
-      <div className="flex-1">
-        <header className="border-b border-slate-200 bg-white px-4 py-4 md:px-8">
+      <div className="min-w-0 flex-1">
+        <header className="border-b border-slate-200/80 bg-white/95 px-4 py-4 shadow-sm md:px-8">
           <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
             <div>
               <AppLogo size="sm" />
@@ -176,7 +176,7 @@ function AdminShell() {
               </h1>
             </div>
 
-            <div className="flex items-center gap-3">
+            <div className="flex flex-wrap items-center gap-3">
               <InstallAppButton />
               <div className="text-right">
                 <p className="text-sm font-medium text-slate-700">
@@ -189,7 +189,7 @@ function AdminShell() {
 
               <button
                 onClick={logout}
-                className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white"
+                className="rounded-xl bg-[#253371] px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-900 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-yellow-400"
               >
                 Sign out
               </button>
@@ -197,7 +197,7 @@ function AdminShell() {
           </div>
         </header>
 
-        <main className="p-4 md:p-8">
+        <main className="mx-auto w-full max-w-[1600px] p-4 md:p-8">
           <NetworkStatusBanner />
           <Outlet />
         </main>
