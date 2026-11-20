@@ -16,6 +16,8 @@ export default function ModalShell({
 }) {
   const id = useId();
   const closeRef = useRef(null);
+  const closeHandler = useRef(onClose);
+  closeHandler.current = onClose;
   useEffect(() => {
     if (!open) return undefined;
     const previous = document.activeElement;
@@ -25,7 +27,7 @@ export default function ModalShell({
     function onKeyDown(event) {
       if (event.key === "Escape") {
         event.preventDefault();
-        onClose?.();
+        closeHandler.current?.();
       }
       // Keep keyboard focus in the dialog while it is open.
       if (event.key === "Tab") {
@@ -48,7 +50,7 @@ export default function ModalShell({
       window.removeEventListener("keydown", onKeyDown);
       previous?.focus?.();
     };
-  }, [open, onClose]);
+  }, [open]);
   if (!open) return null;
 
   return (
