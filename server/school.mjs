@@ -2,6 +2,7 @@ import { teacherRole } from "./teachers.mjs";
 import { randomUUID } from "node:crypto";
 import {
   assert,
+  schoolAdmissionNumber,
   documentId,
   cleanAnswers,
   grade,
@@ -478,14 +479,25 @@ export function schoolActions({
           400,
           "Select a configured class and subjects.",
         );
+        // The admission ID is the Firebase login identity for new accounts.
+        // Changing it in Firestore alone would lock the student out, so keep
+        // it immutable until an explicit verified account-migration flow exists.
+        const current = existing.data();
+        if (current.loginIdType === "admission") {
+          assert(
+            schoolAdmissionNumber(input.admissionNumber) === current.admissionNumber,
+            409,
+            "Admission number is the permanent login ID and cannot be changed here. Contact the system administrator for an account migration.",
+          );
+        }
         const value = {
           displayName,
           email,
           className: input.className,
           academicSession: settings.data().academicSession,
-          admissionNumber: String(input.admissionNumber || "")
-            .trim()
-            .slice(0, 60),
+          admissionNumber: current.loginIdType === "admission"
+            ? current.admissionNumber
+            : String(input.admissionNumber || "").trim().slice(0, 60),
           subjects,
           updatedAt: stamp(),
         };
