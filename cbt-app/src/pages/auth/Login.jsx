@@ -128,7 +128,7 @@ export default function Login() {
           <button
             type="submit"
             disabled={loading}
-            className="w-full rounded-xl bg-slate-900 px-4 py-3 text-sm font-medium text-white disabled:opacity-60"
+            className="w-full rounded-xl bg-blue-900 px-4 py-3 text-sm font-semibold text-white hover:bg-blue-950 disabled:opacity-60"
           >
             {loading ? "Signing in..." : "Sign in"}
           </button>
@@ -155,7 +155,7 @@ export default function Login() {
         </button>
         <p className="mt-6 text-sm text-slate-500">
           Teacher?{" "}
-          <Link to="/signup" className="font-semibold underline">
+          <Link to="/signup" className="font-semibold text-blue-800 underline">
             Create your teacher account
           </Link>
           . Students should contact the school administrator.
