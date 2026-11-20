@@ -14,6 +14,7 @@ import { db } from "/firebase";
 import { callApi } from "../services/api";
 import ConfirmDialog from "../components/ConfirmDialog";
 import StatusBanner from "../components/StatusBanner";
+import ModalShell from "../components/ModalShell";
 
 export default function Questions() {
   const copies = useRef(new Map());
@@ -79,27 +80,27 @@ export default function Questions() {
         onClose={() => setBanner(null)}
       />
 
-      <section className="rounded-2xl bg-white p-6 shadow-sm">
-        <h2 className="text-2xl font-semibold text-slate-900">Question bank</h2>
+      <section className="ui-card">
+        <h2 className="ui-page-heading">Question bank</h2>
         <p className="mt-2 text-sm text-slate-500">
           Review questions before publishing any exam. Every question is tied to
           a single exam.
         </p>
       </section>
 
-      <section className="bg-white p-6 rounded-2xl space-y-3">
+      <section className="ui-card space-y-3">
         <input
           placeholder="Search question bank"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          className="border p-3 rounded-xl w-full"
+          className="ui-field"
         />
         <label>
           Copy target (draft paper)
           <select
             value={targetExam}
             onChange={(e) => setTargetExam(e.target.value)}
-            className="block border p-3 rounded-xl"
+            className="ui-field"
           >
             <option value="">Select draft</option>
             {Object.entries(examsById)
@@ -115,8 +116,9 @@ export default function Questions() {
       <RecordPager records={records} />
       <p>Search applies to the current page.</p>
       {editing && (
+        <ModalShell open title="Edit draft question" description="Update the question and answer options before publishing this exam." onClose={() => setEditing(null)} size="lg">
         <form
-          className="bg-white p-6 space-y-3"
+          className="space-y-4"
           onSubmit={async (e) => {
             e.preventDefault();
             try {
@@ -131,10 +133,10 @@ export default function Questions() {
             }
           }}
         >
-          <h3>Edit draft question</h3>
+          <p className="ui-eyebrow">Question editor</p>
           <textarea
             aria-label="Question text"
-            className="border p-3 w-full"
+            className="ui-field"
             required
             value={editing.text}
             onChange={(e) => setEditing({ ...editing, text: e.target.value })}
@@ -179,13 +181,14 @@ export default function Questions() {
               }
             />
           </label>
-          <button>Save question changes</button>
-          <button type="button" onClick={() => setEditing(null)}>
+          <button type="submit" className="ui-btn-primary">Save question changes</button>
+          <button className="ui-btn-secondary ml-2" type="button" onClick={() => setEditing(null)}>
             Cancel
           </button>
         </form>
+        </ModalShell>
       )}
-      <section className="overflow-hidden rounded-2xl bg-white shadow-sm">
+      <section className="ui-card overflow-hidden !p-0">
         <div className="overflow-x-auto">
           <table className="min-w-full text-left text-sm">
             <thead className="bg-slate-50 text-slate-500">
