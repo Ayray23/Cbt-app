@@ -184,12 +184,12 @@ export default function StudentDashboard() {
           </button>
         </section>
       )}
-      <section className="rounded-3xl bg-white p-6 shadow-sm">
-        <p className="text-sm uppercase tracking-[0.25em] text-slate-400">
+      <section className="ui-card">
+        <p className="ui-eyebrow">
           Student portal
         </p>
-        <p className="text-xs break-all">Computer device ID: {deviceId()}</p>
-        <h2 className="mt-2 text-3xl font-semibold text-slate-900">
+        <details className="mt-3 text-xs text-slate-500"><summary className="cursor-pointer font-semibold hover:text-blue-800">Device details for invigilator</summary><p className="mt-2 break-all font-mono">{deviceId()}</p></details>
+        <h2 className="mt-2 text-2xl font-extrabold tracking-tight text-blue-950 sm:text-3xl">
           Your assigned exams
         </h2>
         <p className="mt-3 text-sm text-slate-500">
@@ -197,13 +197,13 @@ export default function StudentDashboard() {
         </p>
       </section>
       <section className="grid gap-6 lg:grid-cols-[280px_1fr]">
-        <div className="space-y-3 rounded-3xl bg-white p-6 shadow-sm">
+        <div className="ui-card space-y-3">
           {available.map((exam) => (
             <button
               key={exam.id}
               disabled={starting}
               onClick={() => selectExam(exam.id)}
-              className={`w-full rounded-2xl border p-4 text-left ${selected?.id === exam.id ? "border-slate-900 bg-slate-900 text-white" : "border-slate-200 text-slate-700"}`}
+              className={`w-full rounded-2xl border p-4 text-left ${selected?.id === exam.id ? "border-blue-900 bg-blue-900 text-white shadow-sm" : "border-slate-200 bg-slate-50 text-slate-700 hover:border-blue-300 hover:bg-blue-50"}`}
             >
               <p className="font-medium">{exam.title}</p>
               <p className="mt-1 text-sm">{exam.duration} minutes</p>
@@ -216,7 +216,7 @@ export default function StudentDashboard() {
           )}
         </div>
         {selected && (
-          <div className="rounded-3xl bg-white p-6 shadow-sm md:p-8">
+          <div className="ui-card sm:p-8">
             <h3 className="text-2xl font-semibold text-slate-900">
               {selected.title}
             </h3>
@@ -251,7 +251,7 @@ export default function StudentDashboard() {
                   value={pin}
                   onChange={(event) => setPin(event.target.value)}
                   disabled={starting}
-                  className="mt-2 w-full rounded-xl border border-slate-300 px-4 py-3"
+                  className="ui-field"
                   placeholder="Enter your personal PIN"
                 />
               </label>
@@ -269,7 +269,7 @@ export default function StudentDashboard() {
                 starting ||
                 (!started && !pin.trim())
               }
-              className="mt-6 rounded-xl bg-emerald-600 px-5 py-3 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
+              className="ui-btn-primary mt-6 w-full sm:w-auto"
             >
               {closed
                 ? "Attempted"
