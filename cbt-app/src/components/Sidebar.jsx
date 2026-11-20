@@ -5,7 +5,7 @@ import AppLogo from "./AppLogo";
 function linkClassName({ isActive }) {
   return [
     "block rounded-lg px-3 py-2 text-sm font-medium transition",
-    isActive ? "bg-white text-slate-900" : "text-slate-200 hover:bg-slate-800",
+    isActive ? "bg-yellow-100 text-[#253371]" : "text-blue-100 hover:bg-blue-900",
   ].join(" ");
 }
 
@@ -30,7 +30,7 @@ export default function Sidebar() {
   ];
 
   return (
-    <aside className="bg-slate-950 px-4 py-6 text-white md:sticky md:top-0 md:h-screen md:overflow-y-auto md:w-72">
+    <aside className="bg-[#253371] px-4 py-6 text-white md:sticky md:top-0 md:h-screen md:overflow-y-auto md:w-72">
       <div className="mb-8">
         <AppLogo size="md" tone="light" />
         <h1 className="mt-4 text-2xl font-semibold">
@@ -40,7 +40,7 @@ export default function Sidebar() {
               ? "Staff workspace"
               : "Exam Portal"}
         </h1>
-        <p className="mt-2 text-sm text-slate-400">
+        <p className="mt-2 text-sm text-blue-100">
           {role !== "student"
             ? "Create exams, manage candidates, and review submissions."
             : "Start published exams and submit your answers once."}
