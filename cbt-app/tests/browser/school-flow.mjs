@@ -49,7 +49,22 @@ try {
   await page.getByRole('link', { name: 'Exams', exact: true }).click(); await page.getByRole('button', { name: 'Publish', exact: true }).click(); await page.getByText('Exam published.', { exact: false }).waitFor();
   await page.getByRole('link', { name: 'Exam PINs', exact: true }).click(); await page.waitForURL('**/exam-pins'); await page.getByRole('combobox', { name: /^Exam/ }).selectOption({ label: 'Mathematics Pilot (published)' }); await page.getByLabel('Alice Student', { exact: false }).check(); await page.getByRole('button', { name: 'Assign exam and generate PINs' }).click();
   const pinCell = page.locator('td.font-mono'); await pinCell.waitFor(); const pin = (await pinCell.textContent()).trim();
-  await page.getByRole('button', { name: 'Sign out', exact: true }).click(); await login('alice-school'); await page.waitForURL('**/portal'); await page.getByPlaceholder('Enter your personal PIN').fill(pin); await page.getByRole('button', { name: 'Start exam', exact: true }).click(); await page.waitForURL('**/exam/**');
+  // Admin can switch sections or refresh and still reprint the same PIN, without generating a replacement.
+  await page.getByRole('link', { name: 'Exams', exact: true }).click();
+  await page.getByRole('link', { name: 'Exam PINs', exact: true }).click();
+  await page.waitForURL('**/exam-pins');
+  await page.locator('td.font-mono').waitFor();
+  assert.equal((await page.locator('td.font-mono').textContent()).trim(), pin, 'PIN restored after changing pages');
+  await page.reload();
+  await page.locator('td.font-mono').waitFor();
+  assert.equal((await page.locator('td.font-mono').textContent()).trim(), pin, 'PIN restored after refresh');
+  await page.getByRole('button', { name: 'Sign out', exact: true }).click();
+  await page.waitForURL('**/login');
+  assert.equal(await page.evaluate(() => Array.from(
+    { length: sessionStorage.length },
+    (_, i) => sessionStorage.key(i),
+  ).some((key) => key.startsWith('cbt_exam_pin_rosters_v1:'))), false, 'PIN cache cleared at logout');
+  await login('alice-school'); await page.waitForURL('**/portal'); await page.getByPlaceholder('Enter your personal PIN').fill(pin); await page.getByRole('button', { name: 'Start exam', exact: true }).click(); await page.waitForURL('**/exam/**');
   await page.locator('input[type=radio][value=B]').waitFor();
   if (await page.getByRole('button', { name: 'Open exam', exact: true }).isVisible()) await page.getByRole('button', { name: 'Open exam', exact: true }).click();
   const duplicate = await page.context().newPage();
