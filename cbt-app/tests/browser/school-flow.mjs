@@ -29,7 +29,14 @@ try {
   await page.getByLabel('Full name', { exact: true }).fill('Alice Student'); await page.getByLabel('Permanent username').fill('alice-school'); await page.getByLabel('Temporary password').fill(password); await page.getByLabel(/^Class/).selectOption('JSS1 A'); await page.getByLabel('Mathematics', { exact: true }).check();
   await page.getByRole('button', { name: 'Create student', exact: true }).click(); await page.getByText('Student created.', { exact: false }).waitFor();
   await page.getByRole('link', { name: 'Exams', exact: true }).click(); await page.getByLabel('Exam title').fill('Mathematics Pilot'); await page.getByLabel('Duration in minutes').fill('15'); await page.getByLabel(/^Class/).selectOption('JSS1 A'); await page.getByLabel(/^Subject/).selectOption('Mathematics'); await page.getByRole('button', { name: 'Create exam', exact: true }).click(); await page.getByText('Exam created.', { exact: false }).waitFor();
-  await page.getByRole('link', { name: 'Add Questions', exact: true }).click(); await page.getByRole('heading', { name: 'Manual entry', exact: true }).waitFor(); await page.locator('select').first().selectOption({ label: 'Mathematics Pilot' }); await page.getByPlaceholder('Type the question prompt').fill('What is 2 + 2?');
+  await page.getByRole('link', { name: 'Add Questions', exact: true }).click();
+  // Word/Excel bulk upload is the prominent default and uses a separate file picker.
+  await page.getByRole('heading', { name: 'Upload Word or Excel questions', exact: true }).waitFor();
+  assert.equal(await page.locator('#question-import-file').getAttribute('accept'), '.docx,.xlsx');
+  await page.getByRole('button', { name: 'Type a question manually' }).click();
+  await page.getByRole('heading', { name: 'Manual entry', exact: true }).waitFor();
+  await page.locator('select').first().selectOption({ label: 'Mathematics Pilot' });
+  await page.getByPlaceholder('Type the question prompt').fill('What is 2 + 2?');
   for (const [key, value] of Object.entries({ A: '3', B: '4', C: '5', D: '6' })) await page.getByPlaceholder(`Option ${key}`, { exact: true }).fill(value);
   await page.locator('select').nth(1).selectOption('B'); await page.getByRole('button', { name: 'Save question', exact: true }).click(); await page.getByText('Question saved successfully.').waitFor();
   await page.getByRole('link', { name: 'Exams', exact: true }).click(); await page.getByRole('button', { name: 'Publish', exact: true }).click(); await page.getByText('Exam published.', { exact: false }).waitFor();
