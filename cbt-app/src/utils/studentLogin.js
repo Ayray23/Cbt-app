@@ -4,7 +4,7 @@
 // in authentication email addresses.
 export function normalizeAdmissionNumber(input) {
   const value = String(input || "").trim().toUpperCase();
-  if (!/^[A-Z0-9][A-Z0-9._\/-]{2,59}$/.test(value)) {
+  if (!new RegExp("^[A-Z0-9][A-Z0-9._/-]{2,59}$").test(value)) {
     throw new Error("Enter a valid Admission Number / Student ID (3–60 letters, numbers, dots, slashes, underscores or hyphens).");
   }
   return value;
