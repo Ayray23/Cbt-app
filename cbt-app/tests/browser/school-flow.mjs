@@ -167,6 +167,14 @@ try {
   // Simulate following the emulator verification link; real email delivery is a staging check.
   await auth.updateUser(teacher.uid, { emailVerified: true });
   await page.getByRole('button', { name: 'Sign out', exact: true }).click(); await login('owner@example.test'); await page.waitForURL('**/dashboard');
+  // Result decisions use a dismissible dialog, never unstyled browser prompts.
+  await page.getByRole('link', { name: 'Results', exact: true }).click();
+  await page.getByRole('button', { name: 'Correct score', exact: true }).first().click();
+  const resultModal = page.getByRole('dialog', { name: 'Correct examination score' });
+  await resultModal.waitFor();
+  await resultModal.getByLabel('Reason for decision').fill('Testing correction cancellation');
+  await resultModal.getByRole('button', { name: 'Cancel', exact: true }).click();
+  assert.equal(await resultModal.count(), 0, 'Result modal closes without changing grades');
   await page.getByRole('link', { name: 'Teacher oversight', exact: true }).click();
   await page.locator('article').filter({ hasText: 'Teacher Alice' }).getByRole('button', { name: 'Review access / teaching assignments' }).click();
   await page.getByLabel('Reason', { exact: true }).fill('Verified school employee');
