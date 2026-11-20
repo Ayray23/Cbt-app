@@ -39,6 +39,13 @@ try {
   await page.getByPlaceholder('Type the question prompt').fill('What is 2 + 2?');
   for (const [key, value] of Object.entries({ A: '3', B: '4', C: '5', D: '6' })) await page.getByPlaceholder(`Option ${key}`, { exact: true }).fill(value);
   await page.locator('select').nth(1).selectOption('B'); await page.getByRole('button', { name: 'Save question', exact: true }).click(); await page.getByText('Question saved successfully.').waitFor();
+  // A saved question must return the editor to a blank state without changing its exam.
+  assert.equal(await page.getByPlaceholder('Type the question prompt').inputValue(), '');
+  for (const key of ['A', 'B', 'C', 'D']) {
+    assert.equal(await page.getByPlaceholder(`Option ${key}`, { exact: true }).inputValue(), '');
+  }
+  assert.equal(await page.locator('select').first().inputValue() !== '', true, 'Selected exam remains ready for the next question');
+  assert.equal(await page.locator('select').nth(1).inputValue(), '', 'Correct-answer selection resets');
   await page.getByRole('link', { name: 'Exams', exact: true }).click(); await page.getByRole('button', { name: 'Publish', exact: true }).click(); await page.getByText('Exam published.', { exact: false }).waitFor();
   await page.getByRole('link', { name: 'Exam PINs', exact: true }).click(); await page.waitForURL('**/exam-pins'); await page.getByRole('combobox', { name: /^Exam/ }).selectOption({ label: 'Mathematics Pilot (published)' }); await page.getByLabel('Alice Student', { exact: false }).check(); await page.getByRole('button', { name: 'Assign exam and generate PINs' }).click();
   const pinCell = page.locator('td.font-mono'); await pinCell.waitFor(); const pin = (await pinCell.textContent()).trim();
