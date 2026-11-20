@@ -38,6 +38,7 @@ export default function TakeExam() {
   const closedRef = useRef(false);
   const warningsRef = useRef(0);
   const enteredFullscreenRef = useRef(Boolean(document.fullscreenElement));
+  const examLoaded = Boolean(packet);
 
   useEffect(() => {
     let cancelled = false;
@@ -282,7 +283,7 @@ export default function TakeExam() {
   // Browser reloads/closing the tab must use the browser's native warning.
   // Browsers do not allow customized beforeunload text.
   useEffect(() => {
-    if (!packet) return undefined;
+    if (!examLoaded) return undefined;
     function beforeUnload(event) {
       if (closedRef.current) return;
       event.preventDefault();
@@ -290,12 +291,12 @@ export default function TakeExam() {
     }
     window.addEventListener("beforeunload", beforeUnload);
     return () => window.removeEventListener("beforeunload", beforeUnload);
-  }, [Boolean(packet)]);
+  }, [examLoaded]);
 
   // Back navigation inside the SPA does not trigger beforeunload. Add a same-URL
   // history checkpoint, then show the exam-specific warning when Back is pressed.
   useEffect(() => {
-    if (!packet) return undefined;
+    if (!examLoaded) return undefined;
     const currentUrl = window.location.href;
     const attemptKey = `cbt:${user.uid}:${examId}`;
     window.history.pushState({ cbtExamGuard: attemptKey }, "", currentUrl);
@@ -307,7 +308,7 @@ export default function TakeExam() {
     }
     window.addEventListener("popstate", backPressed);
     return () => window.removeEventListener("popstate", backPressed);
-  }, [Boolean(packet), examId, user.uid]);
+  }, [examLoaded, examId, user.uid]);
 
   function askConfirmation(action) {
     if (closedRef.current || submitting) return;
