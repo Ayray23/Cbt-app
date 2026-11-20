@@ -22,7 +22,7 @@ try {
   await ready('http://127.0.0.1:5173');
   browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || undefined, headless: true, args: ['--no-sandbox'] });
   const context = await browser.newContext(); const page = await context.newPage(); const errors = []; page.on('pageerror', e => { errors.push(e.message); console.error('BROWSER ERROR:', e.stack); }); page.on('console', message => { if (message.type() === 'error') console.error('BROWSER CONSOLE:', message.text()); });
-  async function login(identifier) { await page.goto('http://127.0.0.1:5173/login'); console.log('LOGIN PAGE:', await page.title(), await page.locator('body').innerText()); await page.getByLabel('Username or email').fill(identifier); await page.getByPlaceholder('Password', { exact: true }).fill(password); await page.getByRole('button', { name: 'Sign in', exact: true }).click(); }
+  async function login(identifier) { await page.goto('http://127.0.0.1:5173/login'); console.log('LOGIN PAGE:', await page.title(), await page.locator('body').innerText()); await page.getByLabel('Admission number or email').fill(identifier); await page.getByPlaceholder('Password', { exact: true }).fill(password); await page.getByRole('button', { name: 'Sign in', exact: true }).click(); }
   await login('owner@example.test'); await page.waitForURL('**/dashboard');
   const crest = page.getByRole('img', { name: 'Radiant Glory International Schools logo' }).first();
   await crest.waitFor();
@@ -36,7 +36,7 @@ try {
   assert.equal(await toastAlert.count(), 0, 'Error toast dismisses cleanly');
   await page.getByRole('link', { name: 'School setup', exact: true }).click(); await page.getByLabel(/^name$/i).fill('Pilot Secondary School'); await page.getByRole('button', { name: 'Save school settings' }).click(); await page.getByText('School settings saved.', { exact: false }).waitFor();
   await page.getByRole('link', { name: 'Students', exact: true }).click();
-  await page.getByLabel('Full name', { exact: true }).fill('Alice Student'); await page.getByLabel('Permanent username').fill('alice-school'); await page.getByLabel('Temporary password').fill(password); await page.getByLabel(/^Class/).selectOption('JSS1 A'); await page.getByLabel('Mathematics', { exact: true }).check();
+  await page.getByLabel('Full name', { exact: true }).fill('Alice Student'); await page.getByLabel('Admission Number / Student ID').fill('RGIS/2026/001'); await page.getByLabel('Temporary password').fill(password); await page.getByLabel(/^Class/).selectOption('JSS1 A'); await page.getByLabel('Mathematics', { exact: true }).check();
   await page.getByRole('button', { name: 'Create student', exact: true }).click(); await page.getByText('Student created.', { exact: false }).waitFor();
   await page.getByRole('link', { name: 'Exams', exact: true }).click(); await page.getByLabel('Exam title').fill('Mathematics Pilot'); await page.getByLabel('Duration in minutes').fill('15'); await page.getByLabel(/^Class/).selectOption('JSS1 A'); await page.getByLabel(/^Subject/).selectOption('Mathematics'); await page.getByLabel('Allow built-in calculator').check(); await page.getByRole('button', { name: 'Create exam', exact: true }).click(); await page.getByText('Exam created.', { exact: false }).waitFor();
   await page.getByRole('link', { name: 'Add Questions', exact: true }).click();
@@ -81,7 +81,7 @@ try {
     { length: sessionStorage.length },
     (_, i) => sessionStorage.key(i),
   ).some((key) => key.startsWith('cbt_exam_pin_rosters_v1:'))), false, 'PIN cache cleared at logout');
-  await login('alice-school'); await page.waitForURL('**/portal');
+  await login('RGIS/2026/001'); await page.waitForURL('**/portal');
   // Keep the student exam dashboard focused; account support pages remain
   // available by direct URL for supervised recovery.
   assert.equal(await page.getByRole('link', { name: 'Device recovery' }).count(), 0);
