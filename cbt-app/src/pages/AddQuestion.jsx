@@ -257,21 +257,21 @@ export default function AddQuestion() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="ui-page">
       <StatusBanner
         tone={banner?.tone}
         message={banner?.message}
         onClose={() => setBanner(null)}
       />
 
-      <section className="rounded-2xl bg-white p-6 shadow-sm">
-        <h2 className="text-2xl font-semibold text-slate-900">Add questions</h2>
+      <section className="ui-card">
+        <h2 className="ui-page-heading">Add questions</h2>
         <p className="mt-2 text-sm text-slate-500">
           Build the question bank manually, import Word .docx, or upload an Excel .xlsx question sheet.
         </p>
       </section>
 
-      <section className="rounded-2xl bg-white p-6 shadow-sm">
+      <section className="ui-card">
         <label className="mb-2 block text-sm font-medium text-slate-700">
           Exam
         </label>
@@ -292,8 +292,8 @@ export default function AddQuestion() {
         </select>
       </section>
 
-      <section className="rounded-2xl bg-white p-6 shadow-sm">
-        <h3 className="text-lg font-semibold text-slate-900">Choose how to add questions</h3>
+      <section className="ui-card">
+        <h3 className="ui-section-heading">Choose how to add questions</h3>
         <p className="mt-2 text-sm text-slate-600">
           Select an exam above, then choose a method. Word and Excel files
           upload in their own section, not through the manual diagram picker.
@@ -321,8 +321,8 @@ export default function AddQuestion() {
       </section>
 
       {entryMethod === "manual" && (
-      <section className="rounded-2xl bg-white p-6 shadow-sm">
-        <h3 className="text-lg font-semibold text-slate-900">Manual entry</h3>
+      <section className="ui-card">
+        <h3 className="ui-section-heading">Manual entry</h3>
 
         <div className="mt-4 space-y-4">
           <textarea
@@ -422,8 +422,8 @@ export default function AddQuestion() {
       )}
 
       {entryMethod === "import" && (
-      <section className="rounded-2xl border-2 border-emerald-200 bg-white p-6 shadow-sm">
-        <h3 className="text-xl font-semibold text-slate-900">Upload Word or Excel questions</h3>
+      <section className="ui-card border-2 border-blue-200">
+        <h3 className="ui-section-heading">Upload Word or Excel questions</h3>
         <p className="mt-2 text-sm text-slate-500">
           Word accepts numbered questions with A–D options. Excel .xlsx uses
           columns: question, optionA, optionB, optionC, optionD, correctAnswer,

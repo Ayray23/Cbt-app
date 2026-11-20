@@ -261,8 +261,8 @@ export default function Monitoring() {
             : ""
         }
       />
-      <section className="rounded-2xl bg-white p-6 shadow-sm">
-        <h2 className="text-2xl font-semibold text-slate-900">
+      <section className="ui-card">
+        <h2 className="ui-page-heading">
           Live invigilation
         </h2>
         <p className="mt-2 text-sm text-slate-500">

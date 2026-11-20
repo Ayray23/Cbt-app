@@ -138,8 +138,8 @@ export default function CreateExam() {
   return (
     <div className="space-y-6">
       <StatusBanner {...banner} onClose={() => setBanner(null)} />
-      <section className="rounded-2xl bg-white p-6 shadow-sm">
-        <h2 className="text-2xl font-semibold text-slate-900">
+      <section className="ui-card">
+        <h2 className="ui-page-heading">
           Exam workspace
         </h2>
         <p className="mt-3 text-sm text-slate-600">
@@ -161,7 +161,7 @@ export default function CreateExam() {
       )}
       <form
         onSubmit={create}
-        className="grid gap-4 rounded-2xl bg-white p-6 shadow-sm md:grid-cols-2"
+        className="ui-card grid gap-4 md:grid-cols-2"
       >
         <input
           aria-label="Exam title"
@@ -169,7 +169,7 @@ export default function CreateExam() {
           required
           value={title}
           onChange={(event) => setTitle(event.target.value)}
-          className="rounded-xl border border-slate-300 px-4 py-3"
+          className="ui-field"
         />
         <input
           aria-label="Duration in minutes"
@@ -180,7 +180,7 @@ export default function CreateExam() {
           placeholder="Minutes"
           value={duration}
           onChange={(event) => setDuration(event.target.value)}
-          className="rounded-xl border border-slate-300 px-4 py-3"
+          className="ui-field"
         />
         <p className="md:col-span-2">
           {school?.academicSession} · {school?.term} term. Schedule times are
@@ -195,7 +195,7 @@ export default function CreateExam() {
               onChange={(e) =>
                 setAcademic({ ...academic, [key]: e.target.value })
               }
-              className="w-full border rounded-xl p-3"
+              className="ui-field"
             >
               <option value="">Select</option>
               {(school?.[key === "className" ? "classes" : "subjects"] || [])
@@ -223,7 +223,7 @@ export default function CreateExam() {
             onChange={(e) =>
               setAcademic({ ...academic, category: e.target.value })
             }
-            className="w-full border rounded-xl p-3"
+            className="ui-field"
           >
             {["ca", "exam", "practice", "mock"].map((v) => (
               <option key={v}>{v}</option>
@@ -241,7 +241,7 @@ export default function CreateExam() {
             onChange={(e) =>
               setAcademic({ ...academic, weight: Number(e.target.value) })
             }
-            className="w-full border rounded-xl p-3"
+            className="ui-field"
           />
         </label>
         {["start", "end"].map((key) => (
@@ -253,7 +253,7 @@ export default function CreateExam() {
               onChange={(e) =>
                 setAcademic({ ...academic, [key]: e.target.value })
               }
-              className="w-full border rounded-xl p-3"
+              className="ui-field"
             />
           </label>
         ))}
@@ -274,12 +274,12 @@ export default function CreateExam() {
             onChange={(e) =>
               setAcademic({ ...academic, instructions: e.target.value })
             }
-            className="w-full border rounded-xl p-3"
+            className="ui-field"
           />
         </label>
         <button
           disabled={creating || !school}
-          className="rounded-xl bg-slate-900 px-5 py-3 text-sm text-white disabled:opacity-60"
+          className="ui-btn-primary"
         >
           {creating ? "Creating..." : "Create exam"}
         </button>
@@ -287,10 +287,10 @@ export default function CreateExam() {
       {exams.map((exam) => (
         <article
           key={exam.id}
-          className="flex flex-wrap items-center justify-between gap-4 rounded-2xl bg-white p-6 shadow-sm"
+          className="ui-card flex flex-wrap items-center justify-between gap-4"
         >
           <div>
-            <h3 className="text-xl font-semibold">{exam.title}</h3>
+            <h3 className="ui-section-heading">{exam.title}</h3>
             <p className="mt-2 text-sm text-slate-500">
               {exam.academicSession} · {exam.term} · {exam.className} ·{" "}
               {exam.subject} · {exam.duration} minutes |{" "}
@@ -309,7 +309,7 @@ export default function CreateExam() {
                 <button
                   disabled={Boolean(busyId)}
                   onClick={() => changeStatus(exam, "draft")}
-                  className="rounded-xl border border-slate-300 px-4 py-2 text-sm disabled:opacity-50"
+                  className="ui-btn-secondary"
                 >
                   Move to draft
                 </button>
@@ -319,7 +319,7 @@ export default function CreateExam() {
                 <button
                   disabled={Boolean(busyId)}
                   onClick={() => changeStatus(exam, "published")}
-                  className="rounded-xl bg-emerald-600 px-4 py-2 text-sm text-white disabled:opacity-50"
+                  className="ui-btn-primary"
                 >
                   {busyId === exam.id
                     ? "Publishing..."
@@ -332,7 +332,7 @@ export default function CreateExam() {
               hidden={role === "teacher"}
               disabled={Boolean(busyId)}
               onClick={() => setExamToDelete(exam)}
-              className="rounded-xl bg-red-600 px-4 py-2 text-sm text-white disabled:opacity-50"
+              className="ui-btn-danger"
             >
               Archive
             </button>
@@ -340,7 +340,7 @@ export default function CreateExam() {
         </article>
       ))}
       {!exams.length && (
-        <p className="rounded-2xl bg-white p-6 text-sm text-slate-500">
+        <p className="ui-empty">
           No exams yet.
         </p>
       )}

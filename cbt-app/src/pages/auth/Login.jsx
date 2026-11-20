@@ -68,10 +68,10 @@ export default function Login() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-slate-100 px-4">
-      <div className="w-full max-w-md rounded-3xl bg-white p-8 shadow-xl shadow-slate-200/70">
+    <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-blue-50 via-white to-amber-50 px-4 py-10">
+      <div className="w-full max-w-md rounded-3xl border border-slate-200 bg-white p-6 shadow-xl shadow-blue-950/10 sm:p-8">
         <AppLogo size="lg" />
-        <h1 className="mt-3 text-3xl font-semibold text-slate-900">Sign in</h1>
+        <h1 className="mt-5 text-3xl font-extrabold tracking-tight text-blue-950">Sign in</h1>
         <p className="mt-2 text-sm text-slate-500">
           Students: enter your permanent Admission Number / Student ID and
           school-issued password. Teachers and staff: sign in with your email.
@@ -87,7 +87,7 @@ export default function Login() {
             placeholder="Admission Number / Student ID or email"
             value={email}
             onChange={(event) => setEmail(event.target.value)}
-            className="w-full rounded-xl border border-slate-300 px-4 py-3"
+            className="ui-field"
             required
           />
 

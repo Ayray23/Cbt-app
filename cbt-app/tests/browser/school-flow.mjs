@@ -56,6 +56,21 @@ try {
   }
   assert.equal(await page.locator('select').first().inputValue() !== '', true, 'Selected exam remains ready for the next question');
   assert.equal(await page.locator('select').nth(1).inputValue(), '', 'Correct-answer selection resets');
+  // Question editor is an accessible floating modal, with a real close control.
+  await page.getByRole('link', { name: 'Question Bank', exact: true }).click();
+  await page.getByRole('button', { name: 'Edit', exact: true }).first().click();
+  const editModal = page.getByRole('dialog', { name: 'Edit draft question' });
+  await editModal.waitFor();
+  const questionEditor = editModal.getByLabel('Question text');
+  await questionEditor.focus();
+  await questionEditor.press('End');
+  await questionEditor.pressSequentially(' Extra', { delay: 10 });
+  assert.match(await questionEditor.inputValue(), /Extra$/, 'Modal keeps focus while editing');
+  await editModal.getByRole('button', { name: 'Close dialog' }).click();
+  assert.equal(await editModal.count(), 0, 'Question editor closes without changing the question');
+  await page.getByRole('link', { name: 'Add Questions', exact: true }).click();
+  await page.getByRole('button', { name: 'Type a question manually' }).click();
+  await page.locator('select').first().selectOption({ label: 'Mathematics Pilot' });
   await page.getByPlaceholder('Type the question prompt').fill('What is 3 + 3?');
   for (const [key, value] of Object.entries({ A: '5', B: '6', C: '7', D: '8' })) {
     await page.getByPlaceholder(`Option ${key}`, { exact: true }).fill(value);
@@ -153,6 +168,14 @@ try {
   // Simulate following the emulator verification link; real email delivery is a staging check.
   await auth.updateUser(teacher.uid, { emailVerified: true });
   await page.getByRole('button', { name: 'Sign out', exact: true }).click(); await login('owner@example.test'); await page.waitForURL('**/dashboard');
+  // Result decisions use a dismissible dialog, never unstyled browser prompts.
+  await page.getByRole('link', { name: 'Results', exact: true }).click();
+  await page.getByRole('button', { name: 'Correct score', exact: true }).first().click();
+  const resultModal = page.getByRole('dialog', { name: 'Correct examination score' });
+  await resultModal.waitFor();
+  await resultModal.getByLabel('Reason for decision').fill('Testing correction cancellation');
+  await resultModal.getByRole('button', { name: 'Cancel', exact: true }).click();
+  assert.equal(await resultModal.count(), 0, 'Result modal closes without changing grades');
   await page.getByRole('link', { name: 'Teacher oversight', exact: true }).click();
   await page.locator('article').filter({ hasText: 'Teacher Alice' }).getByRole('button', { name: 'Review access / teaching assignments' }).click();
   await page.getByLabel('Reason', { exact: true }).fill('Verified school employee');

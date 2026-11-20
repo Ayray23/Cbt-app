@@ -6,6 +6,7 @@ import { callApi } from "../services/api";
 import { downloadCsv } from "../utils/csv";
 import { percentage, subjectTotals } from "../utils/results";
 import StatusBanner from "../components/StatusBanner";
+import ModalShell from "../components/ModalShell";
 export default function Results() {
   const { school } = useSchool();
   const [filters, setFilters] = useState({
@@ -16,6 +17,9 @@ export default function Results() {
   });
   const [banner, setBanner] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [decision, setDecision] = useState(null);
+  const [reason, setReason] = useState("");
+  const [correctedScore, setCorrectedScore] = useState("");
   const records = useRecords(
     "examResults",
     Object.entries(filters)
@@ -29,39 +33,43 @@ export default function Results() {
     Object.entries(filters).every(([k, v]) => !v || r[k] === v),
   );
   const totals = records.more || records.page ? [] : subjectTotals(filtered);
-  async function manage(r, operation) {
-    const reason = window.prompt("Reason for this result decision (required)");
-    if (!reason) return;
-    const input = { resultId: r.id, operation, reason };
+  function manage(result, operation) {
+    setDecision({ result, operation });
+    setCorrectedScore(String(result.finalScore ?? ""));
+    setReason("");
+  }
+
+  async function confirmDecision(event) {
+    event.preventDefault();
+    if (!decision || busy || !reason.trim()) return;
+    const { result, operation } = decision;
+    const input = { resultId: result.id, operation, reason: reason.trim() };
     if (operation === "correct") {
-      const value = window.prompt(
-        `Corrected score, between 0 and ${r.maxMarks}`,
-        r.finalScore,
-      );
-      if (value === null || value.trim() === "") return;
-      input.score = Number(value);
+      const score = Number(correctedScore);
+      if (!correctedScore.trim() || !Number.isFinite(score) ||
+          score < 0 || score > Number(result.maxMarks)) {
+        setBanner({ tone: "error", message: "Enter a valid corrected score within this paper's total marks." });
+        return;
+      }
+      input.score = score;
     }
     setBusy(true);
     try {
-      await callApi(
-        operation === "review" ? "results.review" : "results.manage",
-        input,
-      );
-      setBanner({
-        tone: "success",
-        message: "Result updated. Corrections require release again.",
-      });
-    } catch (e) {
-      setBanner({ tone: "error", message: e.message });
+      await callApi(operation === "review" ? "results.review" : "results.manage", input);
+      setBanner({ tone: "success", message: "Result updated. Corrections require release again." });
+      setDecision(null);
+    } catch (error) {
+      setBanner({ tone: "error", message: error.message });
     } finally {
       setBusy(false);
     }
   }
+
   return (
-    <div className="space-y-5">
+    <div className="ui-page">
       <StatusBanner {...banner} />
-      <section className="bg-white rounded-2xl p-6">
-        <h2 className="text-2xl font-semibold">
+      <section className="ui-card">
+        <h2 className="ui-page-heading">
           {school?.name || "School"} — Results
         </h2>
         <p>{school?.address}</p>
@@ -82,7 +90,7 @@ export default function Results() {
                 }[key]
               }
               <select
-                className="block border p-3 rounded-xl w-full"
+                className="ui-field"
                 value={filters[key]}
                 onChange={(e) =>
                   setFilters({ ...filters, [key]: e.target.value })
@@ -112,7 +120,7 @@ export default function Results() {
             </label>
           ))}
         </div>
-        <div className="flex gap-4 print:hidden">
+        <div className="flex flex-wrap gap-3 print:hidden">
           <button
             onClick={() =>
               downloadCsv("school-results.csv", [
@@ -148,13 +156,13 @@ export default function Results() {
                 ]),
               ])
             }
-            className="bg-slate-900 text-white p-3 rounded-xl"
+            className="ui-btn-primary"
           >
             Download CSV for Excel
           </button>
           <button
             onClick={() => window.print()}
-            className="border p-3 rounded-xl"
+            className="ui-btn-secondary"
           >
             Print / Save PDF
           </button>
@@ -165,11 +173,11 @@ export default function Results() {
         Export and paper scores cover this page. Filter by session, term, class
         and subject to view a complete assessment group.
       </p>
-      <section className="bg-white rounded-2xl p-6 overflow-x-auto">
-        <h3 className="text-xl font-semibold mb-3">
+      <section className="ui-card overflow-x-auto">
+        <h3 className="ui-section-heading mb-3">
           Paper scores ({filtered.length})
         </h3>
-        <table className="min-w-full text-sm text-left">
+        <table className="ui-table">
           <thead>
             <tr>
               {[
@@ -221,6 +229,8 @@ export default function Results() {
                   <div className="flex flex-wrap gap-3">
                     {r.requiresReview && (
                       <button
+                        type="button"
+                        className="ui-btn-secondary"
                         disabled={busy}
                         onClick={() => manage(r, "review")}
                       >
@@ -228,6 +238,8 @@ export default function Results() {
                       </button>
                     )}
                     <button
+                      type="button"
+                      className="ui-btn-secondary"
                       disabled={busy || r.requiresReview}
                       onClick={() =>
                         manage(r, r.released ? "withhold" : "release")
@@ -236,6 +248,8 @@ export default function Results() {
                       {r.released ? "Withhold" : "Release"}
                     </button>
                     <button
+                      type="button"
+                      className="ui-btn-secondary"
                       disabled={busy}
                       onClick={() => manage(r, "correct")}
                     >
@@ -248,8 +262,8 @@ export default function Results() {
           </tbody>
         </table>
       </section>
-      <section className="bg-white rounded-2xl p-6">
-        <h3 className="text-xl font-semibold">Weighted subject totals</h3>
+      <section className="ui-card">
+        <h3 className="ui-section-heading">Weighted subject totals</h3>
         <p className="text-sm my-3">
           Totals are shown only when the entire filtered group fits on the first
           page. Narrow the filters if totals are unavailable. CA and exam papers
@@ -281,6 +295,48 @@ export default function Results() {
           </div>
         ))}
       </section>
+      <ModalShell
+        open={Boolean(decision)}
+        title={decision?.operation === "correct" ? "Correct examination score"
+          : decision?.operation === "review" ? "Approve result review"
+          : decision?.operation === "release" ? "Release student result" : "Withhold student result"}
+        description={decision ? `${decision.result.studentName || "Student"} · ${decision.result.examTitle || "Exam"}. This change is recorded in the audit trail.` : ""}
+        onClose={() => { if (!busy) setDecision(null); }}
+      >
+        {decision && (
+          <form onSubmit={confirmDecision} className="space-y-4">
+            {decision.operation === "correct" && (
+              <label className="block text-sm font-semibold text-slate-700">
+                Corrected score (0–{decision.result.maxMarks})
+                <input
+                  aria-label="Corrected score"
+                  type="number" required min="0" max={decision.result.maxMarks}
+                  step="any" value={correctedScore}
+                  onChange={(event) => setCorrectedScore(event.target.value)}
+                  className="ui-field"
+                />
+              </label>
+            )}
+            <label className="block text-sm font-semibold text-slate-700">
+              Reason for this decision
+              <textarea
+                aria-label="Reason for decision"
+                required maxLength={1000} rows={3}
+                value={reason}
+                onChange={(event) => setReason(event.target.value)}
+                placeholder="Record a clear reason for the school audit trail"
+                className="ui-field resize-y"
+              />
+            </label>
+            <div className="flex flex-wrap justify-end gap-3 border-t border-slate-100 pt-4">
+              <button type="button" disabled={busy} className="ui-btn-secondary" onClick={() => setDecision(null)}>Cancel</button>
+              <button type="submit" disabled={busy || !reason.trim()} className="ui-btn-primary">
+                {busy ? "Saving…" : "Confirm decision"}
+              </button>
+            </div>
+          </form>
+        )}
+      </ModalShell>
     </div>
   );
 }
