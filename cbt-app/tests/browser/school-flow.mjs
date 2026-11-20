@@ -63,6 +63,7 @@ try {
   await editModal.waitFor();
   const questionEditor = editModal.getByLabel('Question text');
   await questionEditor.focus();
+  await questionEditor.press('End');
   await questionEditor.pressSequentially(' Extra', { delay: 10 });
   assert.match(await questionEditor.inputValue(), /Extra$/, 'Modal keeps focus while editing');
   await editModal.getByRole('button', { name: 'Close dialog' }).click();
