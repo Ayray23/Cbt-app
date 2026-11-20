@@ -82,7 +82,7 @@ export default function Students() {
           const errors = [];
           if (!String(r.displayName || "").trim())
             errors.push("Full name required");
-          if (!/^[A-Z0-9][A-Z0-9._\/-]{2,59}$/.test(admissionNumber))
+          if (!new RegExp("^[A-Z0-9][A-Z0-9._/-]{2,59}$").test(admissionNumber))
             errors.push("Valid admission number required (3–60 letters/numbers/separators)");
           if (seen.has(admissionNumber))
             errors.push("Duplicate admission number");
