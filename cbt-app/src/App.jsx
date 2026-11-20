@@ -128,8 +128,6 @@ function StudentShell() {
                 <InstallAppButton />
                 <Link to="/portal">Exams</Link>
                 <Link to="/my-results">Results</Link>
-                <Link to="/account">Password</Link>
-                <Link to="/recovery">Device recovery</Link>
               </>
             )}
             <p className="text-sm font-medium text-slate-700">
