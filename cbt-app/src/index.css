@@ -2,6 +2,9 @@
 @tailwind components;
 @tailwind utilities;
 
+:root { --school-primary: #253371; --school-accent: #f5dc39; }
+::selection { background: #f5dc39; color: #253371; }
+
 html, body, #root { height: 100%; }
 body { font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial; }
 
