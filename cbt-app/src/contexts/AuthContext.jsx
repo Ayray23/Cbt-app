@@ -4,6 +4,7 @@ import { doc, onSnapshot } from "firebase/firestore";
 import { onAuthStateChanged, signOut } from "firebase/auth";
 import { auth, db } from "/firebase";
 import { flushPendingSubmissions } from "../services/sessionService";
+import { clearPinRosterCaches } from "../services/pinRosterStore";
 
 const AuthContext = createContext(null);
 
@@ -23,7 +24,11 @@ export function AuthProvider({ children }) {
       setRole(null);
       setProfile(null);
       setAuthError("");
-      if (!currentUser) return;
+      if (!currentUser) {
+        // A shared staff device must not expose the previous administrator\u0027s PIN roster after logout.
+        clearPinRosterCaches();
+        return;
+      }
       unsubscribeProfile = onSnapshot(doc(db, "users", currentUser.uid), { includeMetadataChanges: true }, (snapshot) => {
         if (auth.currentUser?.uid !== currentUser.uid) return;
         const record = snapshot.data();
@@ -83,7 +88,10 @@ export function AuthProvider({ children }) {
     };
   }, [user, role, authError]);
 
-  return <AuthContext.Provider value={{ user, role, profile, loading, authError, logout: () => signOut(auth),
+  return <AuthContext.Provider value={{ user, role, profile, loading, authError, logout: () => {
+    clearPinRosterCaches();
+    return signOut(auth);
+  },
     isAdmin: role === "admin" || role === "superadmin" }}>{children}</AuthContext.Provider>;
 }
 
