@@ -24,6 +24,7 @@ export default function AddQuestion() {
   const [loading, setLoading] = useState(false);
   const [banner, setBanner] = useState(null);
   const importFileInputRef = useRef(null);
+  const diagramFileInputRef = useRef(null);
 
   useEffect(() => {
     const examsQuery = query(
@@ -96,6 +97,7 @@ export default function AddQuestion() {
       setQuestion("");
       setImage("");
       setImageAlt("");
+      if (diagramFileInputRef.current) diagramFileInputRef.current.value = "";
       setOptions({ A: "", B: "", C: "", D: "" });
       setCorrectAnswer("");
       setMarks(1);
@@ -210,7 +212,15 @@ export default function AddQuestion() {
         rows[i] = { ...rows[i], saved: true };
         setPreview([...rows]);
       }
-      setBanner({ tone: "success", message: "Preview questions saved." });
+      // Only clear the preview after every question has been saved successfully.
+      // On partial failure, keep the saved flags and the remaining rows for retry.
+      setPreview([]);
+      setWordFile(null);
+      if (importFileInputRef.current) importFileInputRef.current.value = "";
+      setBanner({
+        tone: "success",
+        message: `${rows.length} question(s) saved. The import form is ready for another file.`,
+      });
     } catch (e) {
       setBanner({
         tone: "error",
@@ -325,6 +335,7 @@ export default function AddQuestion() {
           <label className="block">
             Optional image for this single question (PNG/JPEG/WebP, up to 100 KB)
             <input
+              ref={diagramFileInputRef}
               type="file"
               accept="image/png,image/jpeg,image/webp"
               onChange={chooseImage}
@@ -343,7 +354,16 @@ export default function AddQuestion() {
                 onChange={(e) => setImageAlt(e.target.value)}
                 className="border p-3 rounded-xl w-full"
               />
-              <button onClick={() => setImage("")}>Remove image</button>
+              <button
+                  type="button"
+                  onClick={() => {
+                    setImage("");
+                    setImageAlt("");
+                    if (diagramFileInputRef.current) diagramFileInputRef.current.value = "";
+                  }}
+                >
+                  Remove image
+                </button>
             </>
           )}
           <p className="text-sm text-slate-500">
