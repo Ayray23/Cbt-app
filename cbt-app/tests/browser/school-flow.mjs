@@ -71,7 +71,14 @@ try {
     { length: sessionStorage.length },
     (_, i) => sessionStorage.key(i),
   ).some((key) => key.startsWith('cbt_exam_pin_rosters_v1:'))), false, 'PIN cache cleared at logout');
-  await login('alice-school'); await page.waitForURL('**/portal'); await page.getByPlaceholder('Enter your personal PIN').fill(pin); await page.getByRole('button', { name: 'Start exam', exact: true }).click(); await page.waitForURL('**/exam/**');
+  await login('alice-school'); await page.waitForURL('**/portal');
+  // Keep the student exam dashboard focused; account support pages remain
+  // available by direct URL for supervised recovery.
+  assert.equal(await page.getByRole('link', { name: 'Device recovery' }).count(), 0);
+  assert.equal(await page.getByRole('link', { name: 'Password', exact: true }).count(), 0);
+  await page.getByRole('link', { name: 'Exams', exact: true }).waitFor();
+  await page.getByRole('link', { name: 'Results', exact: true }).waitFor();
+  await page.getByPlaceholder('Enter your personal PIN').fill(pin); await page.getByRole('button', { name: 'Start exam', exact: true }).click(); await page.waitForURL('**/exam/**');
   await page.locator('input[type=radio][value=B]').waitFor();
   if (await page.getByRole('button', { name: 'Open exam', exact: true }).isVisible()) await page.getByRole('button', { name: 'Open exam', exact: true }).click();
   const calculator = page.locator('[data-exam-calculator]');
