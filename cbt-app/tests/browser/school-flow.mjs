@@ -89,7 +89,9 @@ try {
   await page.getByLabel(/^Class/).selectOption('JSS1 A'); await page.getByLabel(/^Subject/).selectOption('Mathematics');
   await page.getByRole('button', { name: 'Create exam', exact: true }).click(); await page.getByText('Exam created.', { exact: false }).waitFor();
   assert.equal(await page.getByText('Mathematics Pilot', { exact: true }).count(), 0, 'Teacher cannot see the owner paper');
-  await page.getByRole('link', { name: 'Add Questions', exact: true }).click(); await page.getByRole('heading', { name: 'Manual entry', exact: true }).waitFor();
+  await page.getByRole('link', { name: 'Add Questions', exact: true }).click();
+  await page.getByRole('button', { name: 'Type a question manually' }).click();
+  await page.getByRole('heading', { name: 'Manual entry', exact: true }).waitFor();
   await page.locator('select').first().selectOption({ label: 'Private teacher paper' }); await page.getByPlaceholder('Type the question prompt').fill('Private teacher question');
   for (const [key, value] of Object.entries({ A: 'Yes', B: 'No', C: 'Maybe', D: 'Never' })) await page.getByPlaceholder(`Option ${key}`, { exact: true }).fill(value);
   await page.locator('select').nth(1).selectOption('A'); await page.getByRole('button', { name: 'Save question', exact: true }).click(); await page.getByText('Question saved successfully.').waitFor();
