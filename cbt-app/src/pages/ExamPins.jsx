@@ -1,15 +1,25 @@
 import { useEffect, useState } from "react";
 import { collection, onSnapshot, query, where } from "firebase/firestore";
+import { useAuth } from "../contexts/AuthContext";
+import { downloadCsv } from "../utils/csv";
+import {
+  latestPinRosterExamId,
+  mergePinRoster,
+  readPinRosters,
+  writePinRosters,
+} from "../services/pinRosterStore";
 import { db } from "/firebase";
 import { callApi } from "../services/api";
 import StatusBanner from "../components/StatusBanner";
 
 export default function ExamPins() {
+  const { user } = useAuth();
+  const [rosters, setRosters] = useState(() => readPinRosters(user?.uid));
   const [exams, setExams] = useState([]);
   const [students, setStudents] = useState([]);
-  const [examId, setExamId] = useState("");
+  const [examId, setExamId] = useState(() => latestPinRosterExamId(readPinRosters(user?.uid)));
   const [selected, setSelected] = useState([]);
-  const [result, setResult] = useState(null);
+  const result = rosters[examId] || null;
   const [busy, setBusy] = useState(false);
   const [banner, setBanner] = useState(null);
 
@@ -27,12 +37,42 @@ export default function ExamPins() {
     event.preventDefault();
     setBusy(true);
     setBanner(null);
-    setResult(null);
     try {
-      setResult(await callApi("exams.assign", { examId, studentIds: selected }));
-      setBanner({ tone: "success", message: "Personal PINs created. Copy the PIN list now and give each student only their own PIN." });
+      const created = await callApi("exams.assign", { examId, studentIds: selected });
+      const merged = mergePinRoster(rosters, examId, created);
+      setRosters(merged);
+      setSelected([]);
+      const retained = writePinRosters(user?.uid, merged);
+      setBanner({
+        tone: retained ? "success" : "info",
+        message: retained
+          ? "PINs generated and saved temporarily in this browser tab. You can change pages and return. Download or print a private copy for longer-term use."
+          : "PINs generated, but this browser blocked temporary storage. Download or print the list now.",
+      });
     } catch (error) { setBanner({ tone: "error", message: error.message }); }
     finally { setBusy(false); }
+  }
+
+  function downloadPins() {
+    if (!result) return;
+    const safeExam = result.examTitle.toLowerCase().replace(/[^a-z0-9-_]+/g, "-").slice(0, 45) || "exam";
+    downloadCsv(`exam-pins-${safeExam}.csv`, [
+      ["Exam", "Student", "Username / email", "Personal PIN"],
+      ...result.pins.map((entry) => [result.examTitle, entry.name, entry.username || entry.email, entry.pin]),
+    ]);
+    setBanner({ tone: "success", message: "Private PIN list downloaded. Store it securely and share individual PINs only with their assigned students." });
+  }
+
+  function forgetPins() {
+    if (!result) return;
+    const remaining = { ...rosters };
+    delete remaining[examId];
+    setRosters(remaining);
+    writePinRosters(user?.uid, remaining);
+    setBanner({
+      tone: "info",
+      message: "This PIN list was cleared from the browser. Students' assigned PINs remain valid; this does not cancel or regenerate them.",
+    });
   }
 
   async function copyPins() {
@@ -63,10 +103,21 @@ export default function ExamPins() {
     <section className="rounded-2xl bg-white p-6 shadow-sm">
       <h2 className="text-2xl font-semibold text-slate-900">Personal exam PINs</h2>
       <p className="mt-3 text-sm text-slate-600">Assign an exam to students and issue a separate PIN to each account. A student's PIN works only for that student and that exam.</p>
-      <p className="mt-2 text-sm text-slate-500">PINs are shown once. You can regenerate a lost PIN before the student starts; PINs never reset a started or submitted attempt.</p>
+      <p className="mt-2 text-sm text-slate-500">
+        PINs are stored as hashes on the server. A temporary readable copy is kept only
+        in this browser tab for up to 8 hours, and is cleared when you sign out.
+        Download or print a private copy to keep them longer. Regenerating a PIN replaces
+        the old one for that student and exam and is allowed only before an attempt starts.
+      </p>
+      {Object.keys(rosters).length > 0 && (
+        <p className="mt-3 rounded-xl bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
+          Saved in this browser tab: {Object.values(rosters).map((entry) => entry.examTitle).join(", ")}.
+          Choose an exam below to reopen its latest PIN list.
+        </p>
+      )}
       <form onSubmit={generate} className="mt-6 space-y-5">
         <label className="block text-sm font-medium text-slate-700">Exam
-          <select required disabled={busy} value={examId} onChange={(event) => { setExamId(event.target.value); setSelected([]); setResult(null); }}
+          <select required disabled={busy} value={examId} onChange={(event) => { setExamId(event.target.value); setSelected([]); }}
             className="mt-2 w-full rounded-xl border border-slate-300 px-4 py-3">
             <option value="">Select exam</option>
             {exams.map((exam) => <option key={exam.id} value={exam.id}>{exam.title} ({exam.status})</option>)}
@@ -87,10 +138,16 @@ export default function ExamPins() {
     </section>
     {result && <section className="rounded-2xl border border-amber-200 bg-amber-50 p-6">
       <div className="flex flex-wrap items-center justify-between gap-3"><h3 className="text-xl font-semibold">{result.examTitle}</h3>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <button type="button" onClick={copyPins} className="rounded-xl border border-amber-300 bg-white px-4 py-2 text-sm">Copy PIN list</button>
+          <button type="button" onClick={downloadPins} className="rounded-xl border border-amber-300 bg-white px-4 py-2 text-sm">Download PIN CSV</button>
           <button type="button" onClick={() => window.print()} className="rounded-xl border border-amber-300 bg-white px-4 py-2 text-sm">Print individual PIN slips</button>
+          <button type="button" onClick={forgetPins} className="rounded-xl border border-amber-300 bg-white px-4 py-2 text-sm">Forget local PIN list</button>
         </div></div>
+      <p className="mt-3 text-sm text-amber-900">
+        {result.pins.length} student PIN(s) available in this browser session. Keep this list private;
+        downloaded files are not encrypted. A PIN regenerated elsewhere may invalidate a previously saved copy.
+      </p>
       <div className="mt-4 overflow-x-auto"><table className="min-w-full text-left text-sm"><thead><tr>
         <th className="py-3 pr-4">Student</th><th className="pr-4">Username / email</th><th>Personal PIN</th>
       </tr></thead><tbody>{result.pins.map((entry) => <tr key={entry.studentUid} className="border-t border-amber-200">
