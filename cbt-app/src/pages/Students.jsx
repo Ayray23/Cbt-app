@@ -1,4 +1,6 @@
 import { useState } from "react";
+import { useAuth } from "../contexts/AuthContext";
+import ModalShell from "../components/ModalShell";
 import { useRecords } from "../hooks/useRecords";
 import RecordPager from "../components/RecordPager";
 import { callApi } from "../services/api";
@@ -17,6 +19,10 @@ const empty = {
 const field = "ui-field";
 export default function Students() {
   const { school } = useSchool();
+  const { role } = useAuth();
+  const [selectedIds, setSelectedIds] = useState([]);
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [deletePhrase, setDeletePhrase] = useState("");
   const records = useRecords("users", [["role", "==", "student"]]);
   const students = records.rows;
   const [form, setForm] = useState(empty);
@@ -25,6 +31,32 @@ export default function Students() {
   const [banner, setBanner] = useState(null);
   const [busy, setBusy] = useState(false);
   const [imports, setImports] = useState([]);
+
+  async function deleteSelected() {
+    if (role !== "superadmin" || busy || !selectedIds.length ||
+      deletePhrase !== "DELETE SELECTED STUDENTS") return;
+    setBusy(true);
+    try {
+      const response = await callApi("students.deleteSelected", {
+        studentIds: selectedIds,
+        confirmation: deletePhrase,
+      });
+      setBanner({ tone: "success", message: `Deleted ${response.deletedStudents} selected student accounts and their associated exam records.` });
+      setSelectedIds([]);
+      setDeletePhrase("");
+      setShowDeleteDialog(false);
+    } catch (error) {
+      setBanner({ tone: "error", message: error.message || "Could not delete the selected students." });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function toggleStudent(id, checked) {
+    setSelectedIds((current) =>
+      checked ? [...new Set([...current, id])].slice(0, 20) : current.filter((item) => item !== id),
+    );
+  }
 
   async function act(action, data, message) {
     setBusy(true);
@@ -313,9 +345,21 @@ export default function Students() {
         )}
       </section>
       <section className="ui-card space-y-4">
-        <h3 className="ui-section-heading">
-          Student register ({filtered.length})
-        </h3>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h3 className="ui-section-heading">
+            Student register ({filtered.length})
+          </h3>
+          {role === "superadmin" && (
+            <button
+              type="button"
+              disabled={busy || !selectedIds.length}
+              onClick={() => { setDeletePhrase(""); setShowDeleteDialog(true); }}
+              className="rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 text-sm font-semibold text-red-700 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Delete selected students ({selectedIds.length})
+            </button>
+          )}
+        </div>
         <input
           className={field}
           placeholder="Search name, username, admission number or class"
@@ -324,17 +368,46 @@ export default function Students() {
             setSearch(e.target.value);
           }}
         />
+        {role === "superadmin" && filtered.length > 0 && (
+          <label className="flex items-center gap-2 text-sm font-medium text-slate-700">
+            <input
+              type="checkbox"
+              checked={filtered.length <= 20 && filtered.every((student) => selectedIds.includes(student.id))}
+              disabled={busy}
+              onChange={(event) => {
+                const ids = filtered.map((student) => student.id);
+                if (event.target.checked) {
+                  setSelectedIds((current) => [...new Set([...current, ...ids])].slice(0, 20));
+                } else {
+                  setSelectedIds((current) => current.filter((id) => !ids.includes(id)));
+                }
+              }}
+            />
+            Select current filtered page (maximum 20 students per deletion)
+          </label>
+        )}
         {filtered.map((s) => (
           <article
             key={s.id}
             className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white p-4 transition hover:border-blue-200 hover:bg-blue-50/40"
           >
-            <div>
+            <div className="flex min-w-0 items-center gap-3">
+              {role === "superadmin" && (
+                <input
+                  type="checkbox"
+                  aria-label={`Select ${s.displayName || s.admissionNumber || s.id} for deletion`}
+                  checked={selectedIds.includes(s.id)}
+                  disabled={busy || (!selectedIds.includes(s.id) && selectedIds.length >= 20)}
+                  onChange={(event) => toggleStudent(s.id, event.target.checked)}
+                />
+              )}
+              <div>
               <strong>{s.displayName}</strong>
               <p>
                 {s.admissionNumber || s.username || s.email} · {s.className || "Class not assigned"}{" "}
                 · {s.academicSession} · {s.loginDisabled ? "Blocked" : "Active"}
               </p>
+              </div>
             </div>
             <div className="flex flex-wrap gap-2">
               <button
@@ -393,6 +466,39 @@ export default function Students() {
         </p>
         <RecordPager records={records} />
       </section>
+      {role === "superadmin" && (
+        <ModalShell
+          open={showDeleteDialog}
+          title={`Delete ${selectedIds.length} selected student(s)?`}
+          description="Removes only the selected students from Firebase Authentication and Firestore, along with their assignments, exam PINs, sessions, proofs and results. Other students are not affected."
+          onClose={() => { if (!busy) { setShowDeleteDialog(false); setDeletePhrase(""); } }}
+        >
+          <div className="space-y-4">
+            <p className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+              This is permanent without a backup. Do not delete students with exams in progress or pending offline submissions. Past results for selected students will also be deleted.
+            </p>
+            <p className="text-sm font-semibold text-slate-700">{selectedIds.length} student(s) selected</p>
+            <label className="block text-sm font-semibold text-slate-700">
+              Type <strong>DELETE SELECTED STUDENTS</strong> to confirm
+              <input
+                className="ui-field mt-2"
+                autoComplete="off"
+                value={deletePhrase}
+                disabled={busy}
+                onChange={(event) => setDeletePhrase(event.target.value)}
+              />
+            </label>
+            <div className="flex flex-wrap justify-end gap-3">
+              <button type="button" className="ui-btn-secondary" disabled={busy} onClick={() => { setShowDeleteDialog(false); setDeletePhrase(""); }}>Cancel</button>
+              <button type="button" onClick={deleteSelected}
+                disabled={busy || !selectedIds.length || deletePhrase !== "DELETE SELECTED STUDENTS"}
+                className="rounded-xl bg-red-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-50">
+                {busy ? "Deleting..." : "Permanently delete selected"}
+              </button>
+            </div>
+          </div>
+        </ModalShell>
+      )}
     </div>
   );
 }
