@@ -54,7 +54,7 @@ export async function clearQuestionBank({ db, fields, now = Date.now }, user, in
     const batch = db.batch();
     for (const exam of exams.docs.slice(i, i + 200)) {
       batch.update(exam.ref, {
-        status: "draft",
+        ...(exam.data().status === "published" ? { status: "draft" } : {}),
         questionCount: 0,
         maxMarks: 0,
         paperVersion: fields.delete(),
