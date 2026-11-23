@@ -12,7 +12,7 @@ export async function clearQuestionBank({ db, fields, now = Date.now }, user, in
   assert(active.empty, 409,
     "An exam attempt is active or reserved. Resolve it before deleting questions.");
   // Offline LAN grants can submit later even when no online session has started.
-  const grants = await db.collection("lanGrants").limit(1).get();
+  const grants = await db.collection("lanGrants").where("revoked", "==", false).limit(1).get();
   assert(grants.empty, 409,
     "LAN exam grants exist. Revoke or resolve them before clearing question papers.");
 
