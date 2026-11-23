@@ -1,5 +1,6 @@
 import { lanService } from "./lan.mjs";
 import { teacherService } from "./teachers.mjs";
+import { clearQuestionBank } from "./question-maintenance.mjs";
 import { randomUUID, createHash } from "node:crypto";
 import {
   ASSIGNABLE_ROLES,
@@ -944,6 +945,7 @@ export function createService({ db, auth, fields, now = Date.now }) {
         await db.doc(`users/${account.uid}`).update({ lastLoginAt: stamp() });
         return { role: account.role };
       },
+      "questions.deleteAll": (user, input) => clearQuestionBank({ db, fields, now }, user, input),
       "staff.create": createStaff,
       "students.create": createStudent,
       "students.access": setAccess,
