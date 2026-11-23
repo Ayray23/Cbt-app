@@ -33,9 +33,8 @@ export async function deleteSelectedStudents({ db, auth, fields, now = Date.now 
   // Preflight *every* student before any deletion occurs.
   for (const uid of ids) {
     const sessions = await db.collection("examSessions")
-      .where("studentUid", "==", uid)
-      .where("status", "in", ["started", "lan-reserved"]).limit(1).get();
-    assert(sessions.empty, 409,
+      .where("studentUid", "==", uid).get();
+    assert(!sessions.docs.some((row) => ["started", "lan-reserved"].includes(row.data().status)), 409,
       "A selected student has an active exam or pending LAN reservation. Resolve it first.");
   }
 
