@@ -12,12 +12,20 @@ export function fakeBackend(initial = {}) {
       limit(limit) { return collection(path, filters, limit); }, doc(id) { return reference(`${path}/${id || `generated-${++sequence}`}`); },
       async get() {
         const docs = [...records.keys()].filter((key) => key.startsWith(`${path}/`) && key.split("/").length === path.split("/").length + 1)
-          .filter((key) => filters.every(([field, , value]) => records.get(key)[field] === value)).slice(0, max).map((key) => snapshot(reference(key)));
+          .filter((key) => filters.every(([field, op, value]) => op === "in" ? value.includes(records.get(key)[field]) : records.get(key)[field] === value)).slice(0, max).map((key) => snapshot(reference(key)));
         return { docs, empty: docs.length === 0 };
       } };
   }
   let transactionTail = Promise.resolve();
   const db = {
+    batch() {
+      const operations = [];
+      return {
+        delete(ref) { operations.push(() => records.delete(ref.path)); },
+        update(ref, data) { operations.push(() => records.set(ref.path, { ...records.get(ref.path), ...structuredClone(data) })); },
+        async commit() { operations.forEach(op => op()); },
+      };
+    },
     doc: reference, collection, getAll: async (...refs) => refs.map(snapshot),
     runTransaction(action) {
       const run = transactionTail.then(async () => {

@@ -30,6 +30,9 @@ export default function Questions() {
   const [examsById, setExamsById] = useState({});
   const [banner, setBanner] = useState(null);
   const [questionToDelete, setQuestionToDelete] = useState(null);
+  const [showClearDialog, setShowClearDialog] = useState(false);
+  const [clearConfirmation, setClearConfirmation] = useState("");
+  const [clearingQuestions, setClearingQuestions] = useState(false);
 
   useEffect(() => {
     const unsubscribeExams = onSnapshot(
@@ -50,6 +53,26 @@ export default function Questions() {
       unsubscribeExams();
     };
   }, [role, user.uid]);
+
+  async function handleClearQuestions() {
+    if (role !== "superadmin" || clearConfirmation !== "DELETE ALL QUESTIONS" || clearingQuestions) return;
+    setClearingQuestions(true);
+    try {
+      const result = await callApi("questions.deleteAll", { confirmation: clearConfirmation });
+      setShowClearDialog(false);
+      setClearConfirmation("");
+      setBanner({
+        tone: "success",
+        message: `Deleted ${result.deletedQuestions} questions and ${result.deletedPaperVersions} published paper snapshots. Published exams were returned to draft; archived exams remain archived.`,
+      });
+    } catch (error) {
+      setBanner({ tone: "error", message: error.message || "Could not clear the question bank." });
+      setShowClearDialog(false);
+      setClearConfirmation("");
+    } finally {
+      setClearingQuestions(false);
+    }
+  }
 
   async function handleDelete() {
     if (!questionToDelete) {
@@ -81,7 +104,18 @@ export default function Questions() {
       />
 
       <section className="ui-card">
-        <h2 className="ui-page-heading">Question bank</h2>
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <h2 className="ui-page-heading">Question bank</h2>
+          {role === "superadmin" && (
+            <button
+              type="button"
+              onClick={() => { setClearConfirmation(""); setShowClearDialog(true); }}
+              className="rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 text-sm font-semibold text-red-700 transition hover:bg-red-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-600"
+            >
+              Delete all questions
+            </button>
+          )}
+        </div>
         <p className="mt-2 text-sm text-slate-500">
           Review questions before publishing any exam. Every question is tied to
           a single exam.
@@ -301,6 +335,45 @@ export default function Questions() {
         )}
       </section>
 
+      {role === "superadmin" && (
+        <ModalShell
+          open={showClearDialog}
+          title="Delete the entire question bank?"
+          description="This action permanently removes all questions and published question snapshots from the database. Published exams will return to draft, archived exams remain archived, and every exam will have zero questions. Existing results and user accounts are retained."
+          onClose={() => { if (!clearingQuestions) { setShowClearDialog(false); setClearConfirmation(""); } }}
+        >
+          <div className="space-y-4">
+            <p className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+              Do not continue while students are taking exams or have offline submissions to upload. This operation cannot be undone without a database backup.
+            </p>
+            <label className="block text-sm font-medium text-slate-700">
+              Type <strong>DELETE ALL QUESTIONS</strong> to confirm
+              <input
+                className="ui-field mt-2"
+                autoComplete="off"
+                value={clearConfirmation}
+                disabled={clearingQuestions}
+                onChange={(event) => setClearConfirmation(event.target.value)}
+                placeholder="DELETE ALL QUESTIONS"
+              />
+            </label>
+            <div className="flex flex-wrap justify-end gap-3">
+              <button
+                type="button"
+                className="ui-btn-secondary"
+                disabled={clearingQuestions}
+                onClick={() => { setShowClearDialog(false); setClearConfirmation(""); }}
+              >Cancel</button>
+              <button
+                type="button"
+                onClick={handleClearQuestions}
+                disabled={clearingQuestions || clearConfirmation !== "DELETE ALL QUESTIONS"}
+                className="rounded-xl bg-red-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
+              >{clearingQuestions ? "Deleting..." : "Permanently delete all questions"}</button>
+            </div>
+          </div>
+        </ModalShell>
+      )}
       <ConfirmDialog
         open={Boolean(questionToDelete)}
         title="Delete question?"
