@@ -1,6 +1,7 @@
 import { lanService } from "./lan.mjs";
 import { teacherService } from "./teachers.mjs";
 import { clearQuestionBank } from "./question-maintenance.mjs";
+import { clearAllResults } from "./result-maintenance.mjs";
 import { randomUUID, createHash } from "node:crypto";
 import {
   ASSIGNABLE_ROLES,
@@ -946,6 +947,7 @@ export function createService({ db, auth, fields, now = Date.now }) {
         return { role: account.role };
       },
       "questions.deleteAll": (user, input) => clearQuestionBank({ db, fields, now }, user, input),
+      "results.deleteAll": (user, input) => clearAllResults({ db, fields, now }, user, input),
       "staff.create": createStaff,
       "students.create": createStudent,
       "students.access": setAccess,
