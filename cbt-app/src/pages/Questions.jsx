@@ -63,7 +63,7 @@ export default function Questions() {
       setClearConfirmation("");
       setBanner({
         tone: "success",
-        message: `Deleted ${result.deletedQuestions} questions and ${result.deletedPaperVersions} published paper snapshots. All exams were returned to draft.`,
+        message: `Deleted ${result.deletedQuestions} questions and ${result.deletedPaperVersions} published paper snapshots. Published exams were returned to draft; archived exams remain archived.`,
       });
     } catch (error) {
       setBanner({ tone: "error", message: error.message || "Could not clear the question bank." });
@@ -339,7 +339,7 @@ export default function Questions() {
         <ModalShell
           open={showClearDialog}
           title="Delete the entire question bank?"
-          description="This action permanently removes all questions and published question snapshots from the database. Every exam will return to draft with zero questions. Existing results and user accounts are retained."
+          description="This action permanently removes all questions and published question snapshots from the database. Published exams will return to draft, archived exams remain archived, and every exam will have zero questions. Existing results and user accounts are retained."
           onClose={() => { if (!clearingQuestions) { setShowClearDialog(false); setClearConfirmation(""); } }}
         >
           <div className="space-y-4">
