@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useAuth } from "../contexts/AuthContext";
 import { useRecords } from "../hooks/useRecords";
 import RecordPager from "../components/RecordPager";
 import { useSchool } from "../hooks/useSchool";
@@ -9,6 +10,10 @@ import StatusBanner from "../components/StatusBanner";
 import ModalShell from "../components/ModalShell";
 export default function Results() {
   const { school } = useSchool();
+  const { role } = useAuth();
+  const [showDeleteAll, setShowDeleteAll] = useState(false);
+  const [deleteConfirmation, setDeleteConfirmation] = useState("");
+  const [deletingAll, setDeletingAll] = useState(false);
   const [filters, setFilters] = useState({
     academicSession: "",
     term: "",
@@ -37,6 +42,24 @@ export default function Results() {
     setDecision({ result, operation });
     setCorrectedScore(String(result.finalScore ?? ""));
     setReason("");
+  }
+
+  async function deleteAllResults() {
+    if (role !== "superadmin" || deletingAll || deleteConfirmation !== "DELETE ALL RESULTS") return;
+    setDeletingAll(true);
+    try {
+      const result = await callApi("results.deleteAll", { confirmation: deleteConfirmation });
+      setBanner({
+        tone: "success",
+        message: `Permanently deleted ${result.deletedResults} results from the database.`,
+      });
+      setShowDeleteAll(false);
+      setDeleteConfirmation("");
+    } catch (error) {
+      setBanner({ tone: "error", message: error.message || "Could not delete results." });
+    } finally {
+      setDeletingAll(false);
+    }
   }
 
   async function confirmDecision(event) {
@@ -69,9 +92,20 @@ export default function Results() {
     <div className="ui-page">
       <StatusBanner {...banner} />
       <section className="ui-card">
-        <h2 className="ui-page-heading">
-          {school?.name || "School"} — Results
-        </h2>
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <h2 className="ui-page-heading">
+            {school?.name || "School"} — Results
+          </h2>
+          {role === "superadmin" && (
+            <button
+              type="button"
+              className="rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 text-sm font-semibold text-red-700 transition hover:bg-red-100 print:hidden"
+              onClick={() => { setDeleteConfirmation(""); setShowDeleteAll(true); }}
+            >
+              Delete all results
+            </button>
+          )}
+        </div>
         <p>{school?.address}</p>
         <p>
           Results remain private until released. Late submissions require
@@ -295,6 +329,49 @@ export default function Results() {
           </div>
         ))}
       </section>
+      {role === "superadmin" && (
+        <ModalShell
+          open={showDeleteAll}
+          title="Permanently delete all results?"
+          description="Deletes every saved exam result from the Firestore database, not just the results on this page. All filters are ignored. Student accounts, exams and exam attempt records are retained; this does not let students retake exams."
+          onClose={() => { if (!deletingAll) { setShowDeleteAll(false); setDeleteConfirmation(""); } }}
+        >
+          <div className="space-y-4">
+            <p className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+              Make a database backup first. Do not delete results while examinations or offline LAN submissions are in progress. Deleted marks cannot be recovered without a backup.
+            </p>
+            <label className="block text-sm font-semibold text-slate-700">
+              Type <strong>DELETE ALL RESULTS</strong> to confirm
+              <input
+                className="ui-field mt-2"
+                autoComplete="off"
+                value={deleteConfirmation}
+                onChange={(event) => setDeleteConfirmation(event.target.value)}
+                disabled={deletingAll}
+                placeholder="DELETE ALL RESULTS"
+              />
+            </label>
+            <div className="flex flex-wrap justify-end gap-3">
+              <button
+                type="button"
+                className="ui-btn-secondary"
+                disabled={deletingAll}
+                onClick={() => { setShowDeleteAll(false); setDeleteConfirmation(""); }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={deletingAll || deleteConfirmation !== "DELETE ALL RESULTS"}
+                onClick={deleteAllResults}
+                className="rounded-xl bg-red-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {deletingAll ? "Deleting results…" : "Permanently delete all results"}
+              </button>
+            </div>
+          </div>
+        </ModalShell>
+      )}
       <ModalShell
         open={Boolean(decision)}
         title={decision?.operation === "correct" ? "Correct examination score"
