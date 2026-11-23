@@ -41,7 +41,7 @@ test("active exam sessions and LAN grants prevent bulk deletion", async () => {
   records.set("examSessions/math_student", { status: "started" });
   await assert.rejects(service.execute(owner, "questions.deleteAll", { confirmation: "DELETE ALL QUESTIONS" }), { status: 409 });
   records.delete("examSessions/math_student");
-  records.set("lanGrants/grant-one", { examId: "math" });
+  records.set("lanGrants/grant-one", { examId: "math", revoked: false });
   await assert.rejects(service.execute(owner, "questions.deleteAll", { confirmation: "DELETE ALL QUESTIONS" }), { status: 409 });
   assert(records.has("questions/second"));
 });
