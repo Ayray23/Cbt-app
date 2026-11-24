@@ -15,6 +15,7 @@ import InstallAppButton from "./components/InstallAppButton";
 import NetworkStatusBanner from "./components/NetworkStatusBanner";
 import AppLogo from "./components/AppLogo";
 import ToastViewport from "./components/ToastViewport";
+import StaffIdleLogout from "./components/StaffIdleLogout";
 
 const OfflineRecovery = lazy(() => import("./pages/OfflineRecovery"));
 const LanExams = lazy(() => import("./pages/LanExams"));
@@ -160,6 +161,7 @@ function AdminShell() {
   return (
     <div className="min-h-screen bg-[#f4f7fb] md:flex">
       <Sidebar />
+      <StaffIdleLogout />
 
       <div className="min-w-0 flex-1">
         <header className="border-b border-slate-200/80 bg-white/95 px-4 py-4 shadow-sm md:px-8">
