@@ -23,6 +23,7 @@ export default function StaffIdleLogout() {
   const warning = useRef(false);
   const signingOut = useRef(false);
   const logoutRef = useRef(logout);
+  const dialogRef = useRef(null);
   logoutRef.current = logout;
 
   useEffect(() => {
@@ -48,6 +49,10 @@ export default function StaffIdleLogout() {
       // Only the explicit Stay signed in button can dismiss an open warning.
       if (warning.current || signingOut.current) return;
       const now = Date.now();
+      if (now - lastActivity.current >= STAFF_IDLE_MS) {
+        check();
+        return;
+      }
       if (now - lastActivity.current >= 1000) storeActivity(now);
     };
     const fromOtherTab = (event) => {
@@ -84,11 +89,23 @@ export default function StaffIdleLogout() {
     window.addEventListener("storage", fromOtherTab);
     window.addEventListener("focus", check);
     document.addEventListener("visibilitychange", check);
+    const protectModal = (event) => {
+      if (!warning.current) return;
+      if (event.key === "Escape") event.preventDefault();
+      if (event.key !== "Tab") return;
+      const controls = [...(dialogRef.current?.querySelectorAll("button:not([disabled])") || [])];
+      if (!controls.length) return;
+      const first = controls[0], last = controls[controls.length - 1];
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+    };
+    window.addEventListener("keydown", protectModal);
     const ticker = window.setInterval(check, 1000);
     check();
 
     return () => {
       window.clearInterval(ticker);
+      window.removeEventListener("keydown", protectModal);
       for (const name of ACTIVITY_EVENTS) window.removeEventListener(name, activity);
       window.removeEventListener("storage", fromOtherTab);
       window.removeEventListener("focus", check);
@@ -111,7 +128,7 @@ export default function StaffIdleLogout() {
   };
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/70 p-4" role="presentation">
-      <section role="alertdialog" aria-modal="true" aria-labelledby="staff-session-title"
+      <section ref={dialogRef} role="alertdialog" aria-modal="true" aria-labelledby="staff-session-title"
         aria-describedby="staff-session-description"
         className="w-full max-w-md rounded-2xl bg-white p-6 text-slate-900 shadow-2xl">
         <p className="text-sm font-bold uppercase tracking-wide text-amber-700">Session expiring</p>
