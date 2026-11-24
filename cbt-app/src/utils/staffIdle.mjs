@@ -1,4 +1,4 @@
-export const STAFF_IDLE_MS = 15 * 60 * 1000;
+export const STAFF_IDLE_MS = 8 * 30 * 1000;
 export const STAFF_WARNING_MS = 60 * 1000;
 
 export function secondsLeft(deadlineMs, nowMs) {
