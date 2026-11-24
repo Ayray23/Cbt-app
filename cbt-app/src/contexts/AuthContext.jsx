@@ -18,7 +18,13 @@ export function AuthProvider({ children }) {
 
   useEffect(() => {
     let unsubscribeProfile;
+    let previousUid = null;
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+      if (!currentUser && previousUid) {
+        try { window.localStorage.removeItem(`cbt_staff_last_activity:${previousUid}`); }
+        catch { /* Private mode may disable local storage. */ }
+      }
+      previousUid = currentUser?.uid || null;
       unsubscribeProfile?.();
       setLoading(Boolean(currentUser));
       setUser(currentUser);
@@ -92,6 +98,10 @@ export function AuthProvider({ children }) {
 
   return <AuthContext.Provider value={{ user, role, profile, loading, authError, logout: () => {
     clearPinRosterCaches();
+    if (user?.uid) {
+      try { window.localStorage.removeItem(`cbt_staff_last_activity:${user.uid}`); }
+      catch { /* Continue logout if storage is blocked. */ }
+    }
     return signOut(auth);
   },
     isAdmin: role === "admin" || role === "superadmin" }}>{children}</AuthContext.Provider>;
