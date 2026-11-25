@@ -17,6 +17,8 @@ export default function ExamPins() {
   const [rosters, setRosters] = useState(() => readPinRosters(user?.uid));
   const [exams, setExams] = useState([]);
   const [students, setStudents] = useState([]);
+  const [existingAssignments, setExistingAssignments] = useState(new Set());
+  const [assignmentsLoaded, setAssignmentsLoaded] = useState(false);
   const [examId, setExamId] = useState(() => latestPinRosterExamId(readPinRosters(user?.uid)));
   const [selected, setSelected] = useState([]);
   const result = rosters[examId] || null;
@@ -33,8 +35,34 @@ export default function ExamPins() {
     return () => stops.forEach((stop) => stop());
   }, []);
 
+  useEffect(() => {
+    setAssignmentsLoaded(false);
+    setExistingAssignments(new Set());
+    if (!examId) return undefined;
+    return onSnapshot(
+      query(collection(db, "examAssignments"), where("examId", "==", examId)),
+      (snapshot) => {
+        setExistingAssignments(new Set(snapshot.docs.map((item) => item.data().studentUid)));
+        setAssignmentsLoaded(true);
+      },
+      () => {
+        setAssignmentsLoaded(false);
+        setBanner({ tone: "error", message: "Could not check existing exam assignments. Do not regenerate PINs until the connection is restored." });
+      },
+    );
+  }, [examId]);
+
   async function generate(event) {
     event.preventDefault();
+    if (!assignmentsLoaded) {
+      setBanner({ tone: "error", message: "Exam assignments are still loading. Please check the connection before generating PINs." });
+      return;
+    }
+    const alreadyAssigned = selected.filter((id) => existingAssignments.has(id));
+    if (alreadyAssigned.length) {
+      setBanner({ tone: "error", message: "Some selected students already have exam assignments. Deselect them to avoid replacing their PINs." });
+      return;
+    }
     setBusy(true);
     setBanner(null);
     try {
@@ -123,14 +151,27 @@ export default function ExamPins() {
             {exams.map((exam) => <option key={exam.id} value={exam.id}>{exam.title} ({exam.status})</option>)}
           </select>
         </label>
-        <fieldset disabled={busy} className="space-y-3"><legend className="mb-3 text-sm font-medium text-slate-700">Students ({selected.length} selected, maximum 100)</legend>
-          {students.filter(student => { const exam = exams.find(e => e.id === examId); return exam && !student.loginDisabled && (!exam.className || student.className === exam.className) && (!exam.academicSession || student.academicSession === exam.academicSession) && (!exam.subject || student.subjects?.includes(exam.subject)); }).map((student) => <label key={student.id} className="flex items-center gap-3 rounded-xl border border-slate-200 p-3 text-sm">
-            <input type="checkbox" checked={selected.includes(student.id)} onChange={(event) => setSelected((current) =>
-              event.target.checked ? [...current, student.id] : current.filter((id) => id !== student.id))} />
-            <span>{student.displayName} <span className="text-slate-500">({student.username || student.email})</span></span>
-          </label>)}
+        {examId && (
+          <p className="rounded-xl border border-blue-200 bg-blue-50 p-3 text-sm text-blue-950">
+            {assignmentsLoaded
+              ? `${existingAssignments.size} student(s) already assigned to this exam. Only select students labelled Not assigned. An exam must be published AND assigned before it appears in the student's portal.`
+              : "Checking existing assignments. PIN generation is disabled until this finishes."}
+          </p>
+        )}
+        <fieldset disabled={busy || !assignmentsLoaded} className="space-y-3"><legend className="mb-3 text-sm font-medium text-slate-700">Students ({selected.length} selected, maximum 100)</legend>
+          {students.filter(student => { const exam = exams.find(e => e.id === examId); return exam && !student.loginDisabled && (!exam.className || student.className === exam.className) && (!exam.academicSession || student.academicSession === exam.academicSession) && (!exam.subject || student.subjects?.includes(exam.subject)); }).map((student) => (
+            <label key={student.id} className="flex items-center gap-3 rounded-xl border border-slate-200 p-3 text-sm">
+              <input type="checkbox" disabled={existingAssignments.has(student.id)} checked={selected.includes(student.id)}
+                onChange={(event) => setSelected((current) => event.target.checked
+                  ? [...current, student.id] : current.filter((id) => id !== student.id))} />
+              <span>{student.displayName} <span className="text-slate-500">({student.username || student.email})</span></span>
+              <span className={`ml-auto whitespace-nowrap text-xs font-bold ${existingAssignments.has(student.id) ? "text-emerald-700" : "text-amber-700"}`}>
+                {existingAssignments.has(student.id) ? "Already assigned" : "Not assigned"}
+              </span>
+            </label>
+          ))}
         </fieldset>
-        <button disabled={busy || !examId || !selected.length || selected.length > 100}
+        <button disabled={busy || !assignmentsLoaded || !examId || !selected.length || selected.length > 100}
           className="rounded-xl bg-slate-900 px-5 py-3 text-sm text-white disabled:opacity-50">
           {busy ? "Generating PINs..." : "Assign exam and generate PINs"}
         </button>
