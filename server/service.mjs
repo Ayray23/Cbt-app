@@ -4,6 +4,7 @@ import { clearQuestionBank } from "./question-maintenance.mjs";
 import { clearAllResults } from "./result-maintenance.mjs";
 import { deleteSelectedStudents } from "./student-maintenance.mjs";
 import { repairMissingStudentProfile } from "./student-recovery.mjs";
+import { finalizeExpiredForMonitoring } from "./expired-sessions.mjs";
 import { randomUUID, createHash } from "node:crypto";
 import {
   ASSIGNABLE_ROLES,
@@ -954,6 +955,7 @@ export function createService({ db, auth, fields, now = Date.now }) {
       "results.deleteAll": (user, input) => clearAllResults({ db, fields, now }, user, input),
       "students.deleteSelected": (user, input) => deleteSelectedStudents({ db, auth, fields, now }, user, input),
       "students.repairProfile": (user, input) => repairMissingStudentProfile({ db, auth, fields }, user, input),
+      "sessions.autoFinalizeExpired": (user, input) => finalizeExpiredForMonitoring({ db, fields, now }, user, input),
       "staff.create": createStaff,
       "students.create": createStudent,
       "students.access": setAccess,
