@@ -61,8 +61,18 @@ export async function finalizeExpiredForMonitoring(deps, user, input = {}) {
   const ids = [...new Set(input.sessionIds.map(documentId))];
   const results = [];
   for (const id of ids) {
-    const result = await finalizeExpiredSession(deps, id);
-    results.push({ id, ...result });
+    try {
+      const result = await finalizeExpiredSession(deps, id);
+      results.push({ id, ...result });
+    } catch (error) {
+      // One corrupt or legacy record cannot prevent other students from
+      // receiving their automatically finalized results.
+      results.push({
+        id,
+        status: "needs-review",
+        message: error.status ? error.message : "Server could not finalize this attempt.",
+      });
+    }
   }
   return { ok: true, results };
 }
