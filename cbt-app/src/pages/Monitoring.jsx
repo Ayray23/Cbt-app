@@ -16,7 +16,7 @@ function contactState(session, now) {
   if (session.status === "submitted")
     return session.requiresReview ? "Submitted - review required" : "Submitted";
   if (session.schemaVersion !== 2) return "Legacy attempt - review";
-  if (now >= session.expiresAtMs) return "Time elapsed — automatically finalizing saved answers";
+  if (now >= session.expiresAtMs) return "Time elapsed — final submission processing";
   const lastSeen = session.lastSeenAt?.seconds
     ? session.lastSeenAt.seconds * 1000
     : session.lastActivityAtMs || session.startedAtMs;
@@ -237,7 +237,9 @@ export default function Monitoring() {
       session.schemaVersion === 2 &&
       !session.lanGrantId &&
       Number.isFinite(session.expiresAtMs) &&
-      session.expiresAtMs <= now,
+      // Give the student's immediate upload 30 seconds to complete
+      // before fallback finalization freezes server-saved answers.
+      session.expiresAtMs + 30000 <= now,
     );
     if (!candidates.length) return;
     // Rotate through active pages so a damaged attempt cannot starve other
