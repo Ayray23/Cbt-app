@@ -100,15 +100,16 @@ export default function TakeExam() {
       setConfirmation(null);
       setSubmitting(true);
       try {
-        await submitExamSession(examId, answersRef.current, {
+        const receipt = await submitExamSession(examId, answersRef.current, {
           submissionReason: reason,
           ...integrityMeta(warningsRef, logRef),
         });
         navigate("/portal", {
           replace: true,
           state: {
-            message:
-              "Exam closed. Your answers are saved and will upload when connected.",
+            message: receipt.pendingSync
+              ? "Exam closed at the deadline. Answers are saved on this device and will upload when connected."
+              : "Exam submitted successfully. Your answers have reached the server.",
           },
         });
         if (document.fullscreenElement)
