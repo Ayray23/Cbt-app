@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { doc, onSnapshot } from "firebase/firestore";
 import { useRecords } from "../hooks/useRecords";
 import RecordPager from "../components/RecordPager";
@@ -16,7 +16,7 @@ function contactState(session, now) {
   if (session.status === "submitted")
     return session.requiresReview ? "Submitted - review required" : "Submitted";
   if (session.schemaVersion !== 2) return "Legacy attempt - review";
-  if (now >= session.expiresAtMs) return "Time elapsed - awaiting upload";
+  if (now >= session.expiresAtMs) return "Time elapsed — automatically finalizing saved answers";
   const lastSeen = session.lastSeenAt?.seconds
     ? session.lastSeenAt.seconds * 1000
     : session.lastActivityAtMs || session.startedAtMs;
@@ -162,6 +162,8 @@ export default function Monitoring() {
   const [now, setNow] = useState(Date.now);
   const [error, setError] = useState("");
   const [cached, setCached] = useState(false);
+  const finalizingRef = useRef(false);
+  const finalizeOffsetRef = useRef(0);
 
   useEffect(() => {
     const clock = window.setInterval(() => setNow(Date.now()), 15000);
@@ -225,6 +227,38 @@ export default function Monitoring() {
         }),
     [sessions, assignments, examFilter],
   );
+
+  // Finalize overdue online attempts from saved server answers even when the
+  // student's browser has closed. Never finalize LAN or legacy attempts.
+  useEffect(() => {
+    if (cached || finalizingRef.current || !window.navigator.onLine) return;
+    const candidates = orderedSessions.filter((session) =>
+      session.status === "started" &&
+      session.schemaVersion === 2 &&
+      !session.lanGrantId &&
+      Number.isFinite(session.expiresAtMs) &&
+      session.expiresAtMs <= now,
+    );
+    if (!candidates.length) return;
+    // Rotate through active pages so a damaged attempt cannot starve other
+    // expired students of an automatic submission.
+    const offset = finalizeOffsetRef.current % candidates.length;
+    const overdue = [...candidates.slice(offset), ...candidates.slice(0, offset)].slice(0, 5);
+    finalizeOffsetRef.current += overdue.length;
+    finalizingRef.current = true;
+    void callApi("sessions.autoFinalizeExpired", { sessionIds: overdue.map((s) => s.id) })
+      .then((response) => {
+        const errors = (response.results || []).filter((item) => item.status === "needs-review");
+        if (errors.length) setError(
+          `${errors.length} expired attempt(s) could not be automatically finalized and need administrator review. Other saved answers were submitted.`,
+        );
+        else setError("");
+      })
+      .catch((error) => setError(
+        `Automatic finalization failed. Saved answers remain protected. ${error.message}`,
+      ))
+      .finally(() => { finalizingRef.current = false; });
+  }, [orderedSessions, now, cached]);
 
   const analytics = useMemo(() => {
     const started = orderedSessions.filter(
