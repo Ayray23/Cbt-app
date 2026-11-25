@@ -56,8 +56,9 @@ test("unauthorized roles cannot auto-finalize and missing proof fails safely", a
       { sessionIds: ["math_alice"] }), { status: 403 });
   }
   records.delete("examSessionProofs/math_alice");
-  await assert.rejects(service.execute(owner, "sessions.autoFinalizeExpired",
-    { sessionIds: ["math_alice"] }), { status: 409 });
+  const failed = await service.execute(owner, "sessions.autoFinalizeExpired",
+    { sessionIds: ["math_alice"] });
+  assert.equal(failed.results[0].status, "needs-review");
   assert.equal(records.get("examSessions/math_alice").status, "started");
   assert(!records.has("examResults/math_alice"));
 });
