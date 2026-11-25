@@ -163,6 +163,7 @@ export default function Monitoring() {
   const [error, setError] = useState("");
   const [cached, setCached] = useState(false);
   const finalizingRef = useRef(false);
+  const finalizeOffsetRef = useRef(0);
 
   useEffect(() => {
     const clock = window.setInterval(() => setNow(Date.now()), 15000);
@@ -231,17 +232,28 @@ export default function Monitoring() {
   // student's browser has closed. Never finalize LAN or legacy attempts.
   useEffect(() => {
     if (cached || finalizingRef.current || !window.navigator.onLine) return;
-    const overdue = orderedSessions.filter((session) =>
+    const candidates = orderedSessions.filter((session) =>
       session.status === "started" &&
       session.schemaVersion === 2 &&
       !session.lanGrantId &&
       Number.isFinite(session.expiresAtMs) &&
       session.expiresAtMs <= now,
-    ).slice(0, 5);
-    if (!overdue.length) return;
+    );
+    if (!candidates.length) return;
+    // Rotate through active pages so a damaged attempt cannot starve other
+    // expired students of an automatic submission.
+    const offset = finalizeOffsetRef.current % candidates.length;
+    const overdue = [...candidates.slice(offset), ...candidates.slice(0, offset)].slice(0, 5);
+    finalizeOffsetRef.current += overdue.length;
     finalizingRef.current = true;
     void callApi("sessions.autoFinalizeExpired", { sessionIds: overdue.map((s) => s.id) })
-      .then(() => setError(""))
+      .then((response) => {
+        const errors = (response.results || []).filter((item) => item.status === "needs-review");
+        if (errors.length) setError(
+          `${errors.length} expired attempt(s) could not be automatically finalized and need administrator review. Other saved answers were submitted.`,
+        );
+        else setError("");
+      })
       .catch((error) => setError(
         `Automatic finalization failed. Saved answers remain protected. ${error.message}`,
       ))
