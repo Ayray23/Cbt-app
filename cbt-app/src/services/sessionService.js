@@ -149,6 +149,31 @@ export function flushPendingSubmissions() {
   const task = (async () => {
     await recoverDevicePackets(uid);
     importLegacyQueue(uid);
+    // A student may close the tab before the countdown callback runs.
+    // On reconnect/login, close and queue any locally saved overdue attempt.
+    for (const packet of deviceExamStore().list(uid)) {
+      const examId = packet.session?.examId;
+      if (!examId || packet.closed || !packet.questions?.length ||
+          !Number.isFinite(packet.session?.expiresAtMs) ||
+          Date.now() + (packet.offsetMs || 0) < packet.session.expiresAtMs) continue;
+      try {
+        const payload = {
+          examId,
+          answers: packet.answers || {},
+          deviceEpoch: packet.session.deviceEpoch || 0,
+          deviceId: deviceId(),
+          submissionReason: "timeout",
+          tabSwitchCount: Number(packet.metadata?.tabSwitchCount || 0),
+          integrityLog: packet.metadata?.integrityLog || [],
+          closedAtMs: Date.now(),
+          submissionId: window.crypto.randomUUID(),
+        };
+        const closed = deviceExamStore().close(uid, examId, payload);
+        await offlineStore.put(examRecordKey(uid, examId), closed);
+      } catch (error) {
+        console.error("Could not safely queue an expired local attempt", error);
+      }
+    }
     let synced = 0;
     for (const packet of deviceExamStore()
       .list(uid)
