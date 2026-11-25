@@ -29,7 +29,7 @@ export default function AddQuestion() {
   useEffect(() => {
     const examsQuery = query(
       collection(db, "exams"),
-      ...(role !== "superadmin"
+      ...(role === "teacher"
         ? [where("createdBy", "==", user.uid)]
         : [where("status", "in", ["draft", "published"])]),
     );
