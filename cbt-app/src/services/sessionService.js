@@ -205,11 +205,17 @@ export async function submitExamSession(examId, answers, metadata = {}) {
   const uid = currentUid();
   const closed = deviceExamStore().close(uid, examId, payload);
   await offlineStore.put(examRecordKey(uid, examId), closed);
-  // Persist the final answers before authentication refresh, network reads or writes.
-  void flushPendingSubmissions().catch((error) =>
-    console.error("Submission retry deferred", error),
-  );
-  return { pendingSync: true };
+  // Submit immediately while online instead of leaving a live exam queued
+  // after the timer hits zero. The durable device packet is retained on failure.
+  if (window.navigator.onLine) {
+    try {
+      await flushPendingSubmissions();
+    } catch (error) {
+      console.error("Submission retry deferred", error);
+    }
+  }
+  const pendingSync = Boolean(deviceExamStore().read(uid, examId)?.pending);
+  return { pendingSync };
 }
 
 export const setUserRole = (email, role) =>
