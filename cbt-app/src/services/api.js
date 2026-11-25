@@ -1,11 +1,6 @@
 import { auth } from "/firebase";
 
-// Exam assignment performs several Firestore reads and transactional writes.
-// Do not abort it at the 15-second default used for ordinary staff actions.
-export const API_TIMEOUT_MS = 15000;
-export const PIN_ASSIGN_TIMEOUT_MS = 90000;
-export const requestTimeoutMs = (action) =>
-  action === "exams.assign" ? PIN_ASSIGN_TIMEOUT_MS : API_TIMEOUT_MS;
+import { requestTimeoutMs } from "./apiTimeout.mjs";
 
 export async function callApi(action, input = {}) {
   const user = auth.currentUser;
