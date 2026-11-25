@@ -9,6 +9,7 @@ import {
   where,
 } from "firebase/firestore";
 import { db } from "/firebase";
+import { examOwnerFilter } from "../utils/examVisibility.mjs";
 import ConfirmDialog from "../components/ConfirmDialog";
 import StatusBanner from "../components/StatusBanner";
 import {
@@ -46,9 +47,7 @@ export default function CreateExam() {
       onSnapshot(
         query(
           collection(db, "exams"),
-          ...(role === "teacher"
-            ? [where("createdBy", "==", user.uid)]
-            : []),
+          ...examOwnerFilter(role, user.uid).map(([field, operator, value]) => where(field, operator, value)),
           orderBy("createdAt", "desc"),
         ),
         (snapshot) =>
