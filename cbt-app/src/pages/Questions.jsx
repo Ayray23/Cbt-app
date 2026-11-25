@@ -11,6 +11,7 @@ import {
 import { useRecords } from "../hooks/useRecords";
 import RecordPager from "../components/RecordPager";
 import { db } from "/firebase";
+import { examOwnerFilter } from "../utils/examVisibility.mjs";
 import { callApi } from "../services/api";
 import ConfirmDialog from "../components/ConfirmDialog";
 import StatusBanner from "../components/StatusBanner";
@@ -38,7 +39,7 @@ export default function Questions() {
     const unsubscribeExams = onSnapshot(
       query(
         collection(db, "exams"),
-        ...(role !== "superadmin" ? [where("createdBy", "==", user.uid)] : []),
+        ...examOwnerFilter(role, user.uid).map(([field, operator, value]) => where(field, operator, value)),
       ),
       (snapshot) => {
         const nextExams = {};

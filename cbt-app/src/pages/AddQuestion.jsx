@@ -2,6 +2,7 @@ import { useAuth } from "../contexts/AuthContext";
 import { useEffect, useRef, useState } from "react";
 import { collection, onSnapshot, query, where } from "firebase/firestore";
 import { db } from "/firebase";
+import { examOwnerFilter } from "../utils/examVisibility.mjs";
 import StatusBanner from "../components/StatusBanner";
 import { parseQuestionText, validateQuestionImportFile } from "../utils/questionImport";
 import { downloadCsv } from "../utils/csv";
@@ -29,8 +30,8 @@ export default function AddQuestion() {
   useEffect(() => {
     const examsQuery = query(
       collection(db, "exams"),
-      ...(role !== "superadmin"
-        ? [where("createdBy", "==", user.uid)]
+      ...(role === "teacher"
+        ? examOwnerFilter(role, user.uid).map(([field, operator, value]) => where(field, operator, value))
         : [where("status", "in", ["draft", "published"])]),
     );
 
