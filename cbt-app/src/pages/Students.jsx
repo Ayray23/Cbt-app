@@ -31,6 +31,17 @@ export default function Students() {
   const [banner, setBanner] = useState(null);
   const [busy, setBusy] = useState(false);
   const [imports, setImports] = useState([]);
+  const [repairOpen, setRepairOpen] = useState(false);
+  const [repair, setRepair] = useState({ studentUid: "", displayName: "", admissionNumber: "", className: "", subjects: [] });
+
+  async function recoverProfile(event) {
+    event.preventDefault();
+    if (!school || busy || role !== "superadmin") return;
+    const result = await act("students.repairProfile",
+      { ...repair, academicSession: school.academicSession },
+      "Student profile restored. The existing login and password remain unchanged.");
+    if (result) { setRepairOpen(false); setRepair({ studentUid: "", displayName: "", admissionNumber: "", className: "", subjects: [] }); }
+  }
 
   async function deleteSelected() {
     if (role !== "superadmin" || busy || !selectedIds.length ||
@@ -277,6 +288,11 @@ export default function Students() {
           </button>
         )}
       </form>
+      {role === "superadmin" && <section className="ui-card space-y-3">
+        <h3 className="ui-section-heading">Recover missing student login</h3>
+        <p className="text-sm text-slate-600">Use this only when an existing Firebase login has no Firestore student profile. No passwords are reset.</p>
+        <button type="button" className="ui-btn-secondary" onClick={() => setRepairOpen(true)}>Repair student profile</button>
+      </section>}
       <section className="ui-card space-y-4">
         <h3 className="ui-section-heading">Bulk enrolment</h3>
         <p>
@@ -466,6 +482,46 @@ export default function Students() {
         </p>
         <RecordPager records={records} />
       </section>
+      {role === "superadmin" && <ModalShell open={repairOpen}
+        title="Restore missing student profile"
+        description="Use the Firebase UID shown on the student's access-error screen. Existing authentication credentials remain unchanged."
+        onClose={() => { if (!busy) setRepairOpen(false); }}>
+        <form className="space-y-4" onSubmit={recoverProfile}>
+          {[
+            ["studentUid", "Firebase user UID"],
+            ["admissionNumber", "Admission Number / Student ID"],
+            ["displayName", "Student full name"],
+          ].map(([key, label]) => <label key={key} className="block text-sm font-semibold">
+            {label}
+            <input required className="ui-field mt-1" value={repair[key]}
+              onChange={(e) => setRepair({ ...repair, [key]: e.target.value })}/>
+          </label>)}
+          <label className="block text-sm font-semibold">Class
+            <select required className="ui-field mt-1" value={repair.className}
+              onChange={(e) => setRepair({ ...repair, className: e.target.value })}>
+              <option value="">Select class</option>
+              {school?.classes.map((name) => <option key={name}>{name}</option>)}
+            </select>
+          </label>
+          <fieldset>
+            <legend className="text-sm font-semibold">Enrolled subjects</legend>
+            <div className="mt-2 flex flex-wrap gap-3">{school?.subjects.map((subject) =>
+              <label key={subject} className="flex items-center gap-2 text-sm">
+                <input type="checkbox" checked={repair.subjects.includes(subject)}
+                  onChange={(e) => setRepair({ ...repair, subjects: e.target.checked
+                    ? [...repair.subjects, subject]
+                    : repair.subjects.filter((s) => s !== subject) })}/>
+                {subject}
+              </label>)}</div>
+          </fieldset>
+          <div className="flex justify-end gap-3">
+            <button type="button" disabled={busy} className="ui-btn-secondary"
+              onClick={() => setRepairOpen(false)}>Cancel</button>
+            <button disabled={busy || !school || !repair.subjects.length}
+              className="ui-btn-primary">{busy ? "Recovering..." : "Restore student profile"}</button>
+          </div>
+        </form>
+      </ModalShell>}
       {role === "superadmin" && (
         <ModalShell
           open={showDeleteDialog}

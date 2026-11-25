@@ -3,6 +3,7 @@ import { teacherService } from "./teachers.mjs";
 import { clearQuestionBank } from "./question-maintenance.mjs";
 import { clearAllResults } from "./result-maintenance.mjs";
 import { deleteSelectedStudents } from "./student-maintenance.mjs";
+import { repairMissingStudentProfile } from "./student-recovery.mjs";
 import { randomUUID, createHash } from "node:crypto";
 import {
   ASSIGNABLE_ROLES,
@@ -458,9 +459,11 @@ export function createService({ db, auth, fields, now = Date.now }) {
       const reservedTags = new Set(
         existingPins.docs.map((record) => record.data().pinTag),
       );
-      const sessions = [];
-      for (const uid of studentIds)
-        sessions.push(await tx.get(db.doc(`examSessions/${examId}_${uid}`)));
+      // A school roster may have 100 students. Read sessions concurrently
+      // rather than issuing one network round-trip per candidate.
+      const sessions = await Promise.all(
+        studentIds.map((uid) => tx.get(db.doc(`examSessions/${examId}_${uid}`))),
+      );
       assert(
         sessions.every((session) => !session.exists),
         409,
@@ -950,6 +953,7 @@ export function createService({ db, auth, fields, now = Date.now }) {
       "questions.deleteAll": (user, input) => clearQuestionBank({ db, fields, now }, user, input),
       "results.deleteAll": (user, input) => clearAllResults({ db, fields, now }, user, input),
       "students.deleteSelected": (user, input) => deleteSelectedStudents({ db, auth, fields, now }, user, input),
+      "students.repairProfile": (user, input) => repairMissingStudentProfile({ db, auth, fields }, user, input),
       "staff.create": createStaff,
       "students.create": createStudent,
       "students.access": setAccess,

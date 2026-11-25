@@ -232,10 +232,23 @@ function AccountErrorScreen() {
               "Unknown user"}
           </p>
           <p className="mt-2">
-            Contact your school administrator to verify this account's access.
+            Contact your school administrator. If this is a student account whose profile is missing,
+            the super-admin can use Students → Repair student profile without resetting the password.
           </p>
+          {user?.uid && (
+            <p className="mt-3 break-all font-mono text-xs text-slate-800">
+              Firebase user UID: <strong>{user.uid}</strong>
+            </p>
+          )}
         </div>
-        <div className="mt-8 flex gap-3">
+        <div className="mt-8 flex flex-wrap gap-3">
+          <button
+            type="button"
+            onClick={() => window.location.reload()}
+            className="rounded-xl bg-blue-900 px-5 py-3 text-sm font-semibold text-white"
+          >
+            Retry loading profile
+          </button>
           <button
             onClick={logout}
             className="rounded-xl bg-slate-900 px-5 py-3 text-sm font-medium text-white"
