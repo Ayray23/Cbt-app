@@ -38,7 +38,7 @@ export default function Questions() {
     const unsubscribeExams = onSnapshot(
       query(
         collection(db, "exams"),
-        ...(role !== "superadmin" ? [where("createdBy", "==", user.uid)] : []),
+        ...(role === "teacher" ? [where("createdBy", "==", user.uid)] : []),
       ),
       (snapshot) => {
         const nextExams = {};
