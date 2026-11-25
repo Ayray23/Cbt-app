@@ -822,8 +822,32 @@ export function createService({ db, auth, fields, now = Date.now }) {
         409,
         "This old attempt needs administrator migration. Your submission stays saved on this device.",
       );
-      if (session.status === "submitted")
+      if (session.status === "submitted") {
+        // A student device may have saved answers while offline, after the
+        // server auto-finalized its last synchronized answers at the deadline.
+        // Preserve that later upload for an invigilator to review; never
+        // change the original score based on untrusted late answers.
+        if (session.automaticFinalizationSource === "last-server-saved-answers" &&
+            !session.lateReportedAnswers) {
+          const paper = await tx.get(db.doc(`examPapers/${session.paperVersion}`));
+          const resultRef = db.doc(`examResults/${id}`);
+          const result = await tx.get(resultRef);
+          if (paper.exists && result.exists) {
+            const recovered = cleanAnswers(input.answers || {}, paper.data().questions);
+            if (JSON.stringify(recovered) !== JSON.stringify(session.answers || {})) {
+              const evidence = {
+                lateReportedAnswers: recovered,
+                clientReportedSubmittedAtMs: Number(input.closedAtMs) || null,
+                requiresReview: true,
+                updatedAt: stamp(),
+              };
+              tx.update(ref, evidence);
+              tx.update(resultRef, evidence);
+            }
+          }
+        }
         return { ok: true, alreadySubmitted: true };
+      }
       assert(
         session.schemaVersion === 2 && session.paperVersion,
         409,
