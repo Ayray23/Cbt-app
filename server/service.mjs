@@ -459,9 +459,11 @@ export function createService({ db, auth, fields, now = Date.now }) {
       const reservedTags = new Set(
         existingPins.docs.map((record) => record.data().pinTag),
       );
-      const sessions = [];
-      for (const uid of studentIds)
-        sessions.push(await tx.get(db.doc(`examSessions/${examId}_${uid}`)));
+      // A school roster may have 100 students. Read sessions concurrently
+      // rather than issuing one network round-trip per candidate.
+      const sessions = await Promise.all(
+        studentIds.map((uid) => tx.get(db.doc(`examSessions/${examId}_${uid}`))),
+      );
       assert(
         sessions.every((session) => !session.exists),
         409,
