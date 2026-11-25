@@ -46,7 +46,7 @@ export default function CreateExam() {
       onSnapshot(
         query(
           collection(db, "exams"),
-          ...(role !== "superadmin"
+          ...(role === "teacher"
             ? [where("createdBy", "==", user.uid)]
             : []),
           orderBy("createdAt", "desc"),
