@@ -230,17 +230,24 @@ export async function submitExamSession(examId, answers, metadata = {}) {
   const uid = currentUid();
   const closed = deviceExamStore().close(uid, examId, payload);
   await offlineStore.put(examRecordKey(uid, examId), closed);
-  // Submit immediately while online instead of leaving a live exam queued
-  // after the timer hits zero. The durable device packet is retained on failure.
+  // Upload THIS attempt immediately, without waiting for the general queue
+  // or its IndexedDB recovery. The local copy remains durable until the server
+  // confirms grading. Other queued exams can sync independently later.
+  let receipt = null;
   if (window.navigator.onLine) {
     try {
-      await flushPendingSubmissions();
+      receipt = await callApi("exam.submit", payload);
+      deviceExamStore().acknowledge(uid, examId, payload.submissionId);
     } catch (error) {
-      console.error("Submission retry deferred", error);
+      deviceExamStore().syncError(
+        uid,
+        examId,
+        error.message || "Submission queued. Keep this device until it syncs.",
+      );
     }
   }
   const pendingSync = Boolean(deviceExamStore().read(uid, examId)?.pending);
-  return { pendingSync };
+  return { pendingSync, submitted: !pendingSync, receipt };
 }
 
 export const setUserRole = (email, role) =>
