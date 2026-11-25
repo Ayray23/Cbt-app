@@ -213,3 +213,28 @@ test("a mismatched historical session cannot expose another student's attempt", 
     await assert.rejects(service.execute(alice, action, { deviceId: "test-device", revision: 1, examId: "math", answers: {} }), { status: 403 });
   }
 });
+
+
+test("exam deadline submission saves all answered questions and grades the final score immediately", async () => {
+  const { service, pins, setTime, records } = await setup();
+  const packet = await service.execute(alice, "exam.start", {
+    deviceId: "test-device", examId: "math", pin: pins[0].pin,
+  });
+  await service.execute(alice, "exam.progress", {
+    deviceId: "test-device", examId: "math", revision: 1, answers: { q1: "B" },
+  });
+  setTime(packet.session.expiresAtMs);
+  const receipt = await service.execute(alice, "exam.submit", {
+    deviceId: "test-device", examId: "math", answers: { q1: "B" },
+    submissionReason: "timeout",
+  });
+  assert.equal(receipt.ok, true);
+  const session = records.get("examSessions/math_alice");
+  const result = records.get("examResults/math_alice");
+  assert.equal(session.status, "submitted");
+  assert.equal(session.submissionReason, "timeout");
+  assert.deepEqual(result.answers, { q1: "B" });
+  assert.equal(result.finalScore, 2);
+  assert.equal(result.maxMarks, 2);
+  assert.equal(result.released, false);
+});

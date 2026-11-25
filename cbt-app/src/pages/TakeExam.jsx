@@ -43,6 +43,7 @@ export default function TakeExam() {
   const [acknowledged, setAcknowledged] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const answersRef = useRef({});
+  const answerSaveTimerRef = useRef(null);
   const packetRef = useRef(null);
   const closedRef = useRef(false);
   const warningsRef = useRef(0);
@@ -97,6 +98,7 @@ export default function TakeExam() {
     async (reason = "manual") => {
       if (closedRef.current || !packetRef.current) return;
       closedRef.current = true;
+      window.clearTimeout(answerSaveTimerRef.current);
       setConfirmation(null);
       setSubmitting(true);
       try {
@@ -217,11 +219,12 @@ export default function TakeExam() {
 
   useEffect(() => {
     if (!packet) return undefined;
-    const heartbeat = window.setInterval(() => void persistProgress(), 30000);
+    const heartbeat = window.setInterval(() => void persistProgress(), 5000);
     const reconnect = () => void persistProgress();
     window.addEventListener("online", reconnect);
     return () => {
       window.clearInterval(heartbeat);
+      window.clearTimeout(answerSaveTimerRef.current);
       window.removeEventListener("online", reconnect);
     };
   }, [packet, persistProgress]);
@@ -386,6 +389,13 @@ export default function TakeExam() {
       answersRef.current = next;
       setAnswers(next);
       setError("");
+      // The local save happens synchronously above. Send the latest full
+      // answer snapshot soon after each click, so the server has a near-final
+      // copy even if the browser closes at the deadline.
+      window.clearTimeout(answerSaveTimerRef.current);
+      answerSaveTimerRef.current = window.setTimeout(() => {
+        if (!closedRef.current) void persistProgress();
+      }, 350);
     } catch {
       setError(
         "Your device could not save this answer. Contact your supervisor before continuing.",
