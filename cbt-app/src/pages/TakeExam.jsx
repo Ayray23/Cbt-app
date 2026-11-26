@@ -219,7 +219,7 @@ export default function TakeExam() {
 
   useEffect(() => {
     if (!packet) return undefined;
-    const heartbeat = window.setInterval(() => void persistProgress(), 5000);
+    // Exam-day load-shedding: local answers still save immediately, but the\n    // server gets fewer background progress requests. Final submission is not throttled.\n    const heartbeat = window.setInterval(() => void persistProgress(), 30000);
     const reconnect = () => void persistProgress();
     window.addEventListener("online", reconnect);
     return () => {
@@ -395,7 +395,7 @@ export default function TakeExam() {
       window.clearTimeout(answerSaveTimerRef.current);
       answerSaveTimerRef.current = window.setTimeout(() => {
         if (!closedRef.current) void persistProgress();
-      }, 350);
+      }, 5000);
     } catch {
       setError(
         "Your device could not save this answer. Contact your supervisor before continuing.",
