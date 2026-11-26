@@ -164,6 +164,15 @@ export default function TakeExam() {
   }, [examId, finish, ownsTab]);
 
   useEffect(() => {
+    if (!packet || !navigator.onLine) return;
+    // Prepare the PDF library in the background before the timer ends.
+    // This doesn't block answering, saving, or the exam timer.
+    void import("../utils/encryptedOfflinePdf.mjs")
+      .then(({ preloadEncryptedPdfRenderer }) => preloadEncryptedPdfRenderer())
+      .catch(() => {});
+  }, [packet]);
+
+  useEffect(() => {
     if (!packet) return undefined;
     const tick = () => {
       const remaining = Math.max(
