@@ -24,7 +24,7 @@ byId('recover').addEventListener('click',async()=>{
     if(!pdf||!pem)throw Error('Select both the encrypted PDF and your private recovery key.');
     if(pdf.size>15000000)throw Error('PDF exceeds the 15 MB recovery limit.');
     const txt=new TextDecoder('latin1').decode(await pdf.arrayBuffer());
-    const pieces=[...txt.matchAll(/^%CBTREC:([a-zA-Z0-9+/=]+)\\r?$/gm)].map((match)=>match[1]);
+    const pieces=[...txt.matchAll(/^%CBTREC:([a-zA-Z0-9+/=]+)\r?$/gm)].map((match)=>match[1]);
     if(!pieces.length)throw Error('This PDF does not include a CBT recovery envelope.');
     const envelope=JSON.parse(new TextDecoder().decode(b64(pieces.join(''))));
     if(envelope.version!==1)throw Error('Unsupported CBT encrypted backup format.');
