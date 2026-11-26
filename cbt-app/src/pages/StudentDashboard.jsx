@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
+import { makeOfflineSubmissionReceipt, offlineReceiptFilename } from "../utils/offlineSubmissionReceipt.mjs";
 import { collection, onSnapshot, query, where } from "firebase/firestore";
 import { db } from "/firebase";
 import StatusBanner from "../components/StatusBanner";
@@ -122,6 +123,24 @@ export default function StudentDashboard() {
   );
   const pending = Object.values(deviceExams).filter((packet) => packet.pending);
 
+  function downloadOfflineReceipt(packet) {
+    try {
+      const receipt = makeOfflineSubmissionReceipt(packet, user.uid);
+      const blob = new Blob([JSON.stringify(receipt, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = offlineReceiptFilename(receipt);
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 10000);
+      setBanner({ tone: "success", message: "Backup answer file downloaded. Give it privately to the invigilator. Keep the file and this device until submission is verified." });
+    } catch (error) {
+      setBanner({ tone: "error", message: error.message || "Could not export the saved answers." });
+    }
+  }
+
   function selectExam(id) {
     setSelectedId(id);
     setPin("");
@@ -161,16 +180,23 @@ export default function StudentDashboard() {
           </h3>
           <p className="mt-2 text-sm text-slate-600">
             These exams are closed. Keep this device's app data until your
-            supervisor confirms the upload.
+            supervisor confirms the upload. If Firebase is unavailable, download an
+            emergency answer file for your invigilator. This is NOT a graded
+            result or proof that the server received the submission.
           </p>
           {pending.map((packet) => (
-            <p
-              key={packet.session.examId}
-              className="mt-2 text-sm text-slate-600"
-            >
-              {packet.session.examTitle || packet.session.examId}
-              {packet.syncError ? `: ${packet.syncError}` : ""}
-            </p>
+            <div key={packet.session.examId} className="mt-3 rounded-xl border border-amber-200 bg-white p-3">
+              <p className="text-sm font-semibold text-slate-800">
+                {packet.session.examTitle || packet.session.examId}
+              </p>
+              <p className="mt-1 text-xs text-amber-900">
+                {packet.syncError || "Server upload has not been confirmed."}
+              </p>
+              <button type="button" onClick={() => downloadOfflineReceipt(packet)}
+                className="mt-3 rounded-xl bg-blue-900 px-4 py-3 text-sm font-bold text-white">
+                Download saved answers (emergency backup)
+              </button>
+            </div>
           ))}
           <button
             onClick={() =>
