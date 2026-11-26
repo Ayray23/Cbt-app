@@ -219,7 +219,9 @@ export default function TakeExam() {
 
   useEffect(() => {
     if (!packet) return undefined;
-    // Exam-day load-shedding: local answers still save immediately, but the\n    // server gets fewer background progress requests. Final submission is not throttled.\n    const heartbeat = window.setInterval(() => void persistProgress(), 30000);
+    // Exam-day load-shedding: local answers still save immediately, but the
+    // server gets fewer background progress requests. Final submission is not throttled.
+    const heartbeat = window.setInterval(() => void persistProgress(), 30000);
     const reconnect = () => void persistProgress();
     window.addEventListener("online", reconnect);
     return () => {
