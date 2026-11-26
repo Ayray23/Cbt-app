@@ -66,6 +66,12 @@ function getPdfKit() {
   return pdfLibraryPromise;
 }
 
+// Load the PDF renderer while an exam is running and the connection may
+// still be available. It remains in memory if Firebase later goes offline.
+export async function preloadEncryptedPdfRenderer() {
+  try { await getPdfKit(); return true; } catch { return false; }
+}
+
 function pdfBlob(Doc, receipt, password) {
   return new Promise((resolve, reject) => {
     const doc = new Doc({
