@@ -4,6 +4,13 @@ import { callApi } from "./api";
 import { deviceExamStore } from "./examStore";
 
 const syncing = new Map();
+const progressInFlight = new Set();
+const progressRetryAfter = new Map();
+const pendingRetryAfter = new Map();
+// Only background traffic backs off. A final exam submission always attempts
+// the server immediately, and all local answers are retained on failure.
+const PROGRESS_ERROR_BACKOFF_MS = 120000;
+const PENDING_ERROR_BACKOFF_MS = 120000;
 export function deviceId() {
   let value = window.localStorage.getItem("cbt_device_id");
   if (!value) {
@@ -107,18 +114,35 @@ export async function saveExamProgress(examId, answers, metadata = {}) {
   const packet = saveLocalExamDraft(examId, answers, metadata);
   if (packet?.closed) return { closed: true };
   if (!window.navigator.onLine) return { localOnly: true };
-  const result = await callApi("exam.progress", {
-    examId,
-    answers,
-    deviceId: deviceId(),
-    revision: packet.revision,
-    deviceEpoch: packet.session.deviceEpoch || 0,
-    tabSwitchCount: metadata.tabSwitchCount || 0,
-    integrityLog: metadata.integrityLog || [],
-  });
-  if (result.expiresAtMs)
-    deviceExamStore().deadline(currentUid(), examId, result.expiresAtMs);
-  return result;
+  const key = `${currentUid()}:${examId}`;
+  if (progressInFlight.has(key) || Date.now() < (progressRetryAfter.get(key) || 0))
+    return { localOnly: true };
+  progressInFlight.add(key);
+  try {
+    const result = await callApi("exam.progress", {
+      examId,
+      answers,
+      deviceId: deviceId(),
+      revision: packet.revision,
+      deviceEpoch: packet.session.deviceEpoch || 0,
+      tabSwitchCount: metadata.tabSwitchCount || 0,
+      integrityLog: metadata.integrityLog || [],
+    });
+    progressRetryAfter.delete(key);
+    if (result.expiresAtMs)
+      deviceExamStore().deadline(currentUid(), examId, result.expiresAtMs);
+    return result;
+  } catch (error) {
+    if (!error.status || error.status >= 500 || error.status === 429) {
+      progressRetryAfter.set(key, Date.now() + PROGRESS_ERROR_BACKOFF_MS);
+      // Background autosave failure must never close the exam or discard
+      // device-saved answers. Final submit is a separate, prioritized request.
+      return { localOnly: true };
+    }
+    throw error;
+  } finally {
+    progressInFlight.delete(key);
+  }
 }
 
 function importLegacyQueue(uid) {
@@ -146,6 +170,8 @@ export function flushPendingSubmissions() {
   const uid = auth.currentUser?.uid;
   if (!uid || !window.navigator.onLine) return Promise.resolve({ synced: 0 });
   if (syncing.has(uid)) return syncing.get(uid);
+  if (Date.now() < (pendingRetryAfter.get(uid) || 0))
+    return Promise.resolve({ synced: 0, delayed: true });
   const task = (async () => {
     await recoverDevicePackets(uid);
     importLegacyQueue(uid);
@@ -200,12 +226,18 @@ export function flushPendingSubmissions() {
             ),
           );
         synced++;
+        pendingRetryAfter.delete(uid);
       } catch (error) {
         deviceExamStore().syncError(
           uid,
           payload.examId,
           error.message || "Waiting to reconnect.",
         );
+        if (!error.status || error.status >= 500 || error.status === 429) {
+          // A quota outage must not make 500 clients retry every 30 seconds.
+          pendingRetryAfter.set(uid, Date.now() + PENDING_ERROR_BACKOFF_MS);
+          break;
+        }
       }
     }
     return { synced };
