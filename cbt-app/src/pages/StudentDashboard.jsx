@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { makeOfflineSubmissionReceipt, offlineReceiptFilename } from "../utils/offlineSubmissionReceipt.mjs";
+import { downloadEncryptedOfflinePdf } from "../utils/encryptedOfflinePdf.mjs";
+import { deviceExamStore } from "../services/examStore";
 import { collection, onSnapshot, query, where } from "firebase/firestore";
 import { db } from "/firebase";
 import StatusBanner from "../components/StatusBanner";
@@ -123,21 +124,13 @@ export default function StudentDashboard() {
   );
   const pending = Object.values(deviceExams).filter((packet) => packet.pending);
 
-  function downloadOfflineReceipt(packet) {
+  async function downloadOfflineReceipt(packet) {
     try {
-      const receipt = makeOfflineSubmissionReceipt(packet, user.uid);
-      const blob = new Blob([JSON.stringify(receipt, null, 2)], { type: "application/json" });
-      const url = URL.createObjectURL(blob);
-      const anchor = document.createElement("a");
-      anchor.href = url;
-      anchor.download = offlineReceiptFilename(receipt);
-      document.body.appendChild(anchor);
-      anchor.click();
-      anchor.remove();
-      window.setTimeout(() => URL.revokeObjectURL(url), 10000);
-      setBanner({ tone: "success", message: "Backup answer file downloaded. Give it privately to the invigilator. Keep the file and this device until submission is verified." });
+      const filename = await downloadEncryptedOfflinePdf(packet, user.uid);
+      deviceExamStore().markEncryptedBackup(user.uid, packet.session.examId, filename);
+      setBanner({ tone: "success", message: "Password-protected PDF downloaded. Keep this file private and hand it to your invigilator. Only the school administrator's separate recovery key can unlock it." });
     } catch (error) {
-      setBanner({ tone: "error", message: error.message || "Could not export the saved answers." });
+      setBanner({ tone: "error", message: `Could not download an encrypted PDF: ${error.message}. Your submitted answers remain saved on this device. Do not clear the browser's data.` });
     }
   }
 
@@ -180,9 +173,10 @@ export default function StudentDashboard() {
           </h3>
           <p className="mt-2 text-sm text-slate-600">
             These exams are closed. Keep this device's app data until your
-            supervisor confirms the upload. If Firebase is unavailable, download an
-            emergency answer file for your invigilator. This is NOT a graded
-            result or proof that the server received the submission.
+            supervisor confirms the upload. If Firebase is unavailable, the system automatically tries to download
+            a password-protected PDF to this computer. Only the administrator
+            holds the recovery key. Keep this device and PDF until staff verify
+            the upload. This is NOT yet a graded result.
           </p>
           {pending.map((packet) => (
             <div key={packet.session.examId} className="mt-3 rounded-xl border border-amber-200 bg-white p-3">
@@ -190,11 +184,13 @@ export default function StudentDashboard() {
                 {packet.session.examTitle || packet.session.examId}
               </p>
               <p className="mt-1 text-xs text-amber-900">
-                {packet.syncError || "Server upload has not been confirmed."}
+                {packet.encryptedPdfBackupAtMs
+                  ? "Encrypted PDF backup downloaded. Keep the PDF and this device."
+                  : packet.syncError || "Server upload has not been confirmed. Download a protected backup."}
               </p>
               <button type="button" onClick={() => downloadOfflineReceipt(packet)}
                 className="mt-3 rounded-xl bg-blue-900 px-4 py-3 text-sm font-bold text-white">
-                Download saved answers (emergency backup)
+                Download encrypted PDF backup
               </button>
             </div>
           ))}

@@ -278,6 +278,22 @@ export async function submitExamSession(examId, answers, metadata = {}) {
       );
     }
   }
+  // Only an unsuccessful submission needs an emergency local PDF. Never delay
+  // the authoritative server submission to render a document. Keep the
+  // recoverable raw packet on disk even if PDF generation/download fails.
+  const pendingPacket = deviceExamStore().read(uid, examId);
+  if (pendingPacket?.pending && !pendingPacket.encryptedPdfBackupAtMs) {
+    try {
+      const { downloadEncryptedOfflinePdf } = await import("../utils/encryptedOfflinePdf.mjs");
+      const filename = await downloadEncryptedOfflinePdf(pendingPacket, uid);
+      deviceExamStore().markEncryptedBackup(uid, examId, filename);
+    } catch (error) {
+      deviceExamStore().syncError(
+        uid, examId,
+        `Server upload pending. Encrypted PDF backup could not be downloaded automatically: ${error.message}. Use the backup button in the student portal.`,
+      );
+    }
+  }
   const pendingSync = Boolean(deviceExamStore().read(uid, examId)?.pending);
   return { pendingSync, submitted: !pendingSync, receipt };
 }

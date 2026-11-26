@@ -101,6 +101,10 @@ export default function TakeExam() {
       window.clearTimeout(answerSaveTimerRef.current);
       setConfirmation(null);
       setSubmitting(true);
+      // Exit fullscreen as soon as the exam is locked. Browser download
+      // prompts for protected emergency PDFs are often blocked in fullscreen.
+      if (document.fullscreenElement)
+        void document.exitFullscreen().catch(() => {});
       try {
         const receipt = await submitExamSession(examId, answersRef.current, {
           submissionReason: reason,
@@ -158,6 +162,15 @@ export default function TakeExam() {
       cancelled = true;
     };
   }, [examId, finish, ownsTab]);
+
+  useEffect(() => {
+    if (!packet || !navigator.onLine) return;
+    // Prepare the PDF library in the background before the timer ends.
+    // This doesn't block answering, saving, or the exam timer.
+    void import("../utils/encryptedOfflinePdf.mjs")
+      .then(({ preloadEncryptedPdfRenderer }) => preloadEncryptedPdfRenderer())
+      .catch(() => {});
+  }, [packet]);
 
   useEffect(() => {
     if (!packet) return undefined;

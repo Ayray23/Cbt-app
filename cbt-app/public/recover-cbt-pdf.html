@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>CBT emergency PDF recovery - school administrator</title>
+<style>body{font:16px system-ui,-apple-system,sans-serif;max-width:700px;margin:35px auto;padding:18px;line-height:1.55;color:#172b4d}main{border:1px solid #cbd5e1;border-radius:16px;padding:24px}label{display:block;margin:20px 0;font-weight:600}input{display:block;width:100%;margin-top:10px}button{padding:13px 20px;background:#102e65;color:white;border:0;border-radius:8px;cursor:pointer}#status{white-space:pre-wrap;overflow-wrap:anywhere}aside{border-left:4px solid #c2410c;padding:10px 16px;background:#fff7ed}code{font-size:.9em}</style></head>
+<body><main><h1>CBT emergency PDF recovery</h1>
+<p>This is a <strong>local-only administrator recovery tool</strong>. Select the password-encrypted student PDF and the school's private recovery key. Processing happens in this browser; the files are not uploaded.</p>
+<aside>Never put the private key on a student computer or share it with students. A recovered JSON record is evidence requiring verification, <strong>not an automatically trusted grade</strong>.</aside>
+<label>Student's encrypted PDF <input type="file" id="pdf" accept=".pdf,application/pdf"></label>
+<label>Administrator's private recovery key (.pem) <input type="file" id="private" accept=".pem,.txt"></label>
+<button id="recover" type="button">Unlock and export answer record</button>
+<p id="status" role="status"></p>
+<div id="success" hidden><p><strong>PDF open password:</strong> <code id="password"></code></p>
+<button id="save" type="button">Download recovered answer JSON</button>
+<p>When Firebase recovers, submit/reconcile this JSON through the administrator's authorized recovery workflow. Do not alter or release a grade without verification.</p></div></main>
+<script>
+const byId=(id)=>document.getElementById(id);
+let recovered=null;
+function b64(s){return Uint8Array.from(atob(s), c=>c.charCodeAt(0));}
+function keyData(pem){return b64(pem.replace(/-----[^-]+-----/g,'').replace(/\s+/g,''));}
+byId('recover').addEventListener('click',async()=>{
+  byId('success').hidden=true;byId('status').textContent='Reading and decrypting locally...';
+  try{
+    const pdf=byId('pdf').files[0], pem=byId('private').files[0];
+    if(!pdf||!pem)throw Error('Select both the encrypted PDF and your private recovery key.');
+    if(pdf.size>15000000)throw Error('PDF exceeds the 15 MB recovery limit.');
+    const txt=new TextDecoder('latin1').decode(await pdf.arrayBuffer());
+    const pieces=[...txt.matchAll(/^%CBTREC:([a-zA-Z0-9+/=]+)\r?$/gm)].map((match)=>match[1]);
+    if(!pieces.length)throw Error('This PDF does not include a CBT recovery envelope.');
+    const envelope=JSON.parse(new TextDecoder().decode(b64(pieces.join(''))));
+    if(envelope.version!==1)throw Error('Unsupported CBT encrypted backup format.');
+    const privateKey=await crypto.subtle.importKey('pkcs8',keyData(await pem.text()),{name:'RSA-OAEP',hash:'SHA-256'},false,['decrypt']);
+    const secret=JSON.parse(new TextDecoder().decode(await crypto.subtle.decrypt({name:'RSA-OAEP'},privateKey,b64(envelope.wrapped))));
+    const aesKey=await crypto.subtle.importKey('raw',b64(secret.dataKey),'AES-GCM',false,['decrypt']);
+    recovered=JSON.parse(new TextDecoder().decode(await crypto.subtle.decrypt({name:'AES-GCM',iv:b64(envelope.iv)},aesKey,b64(envelope.data))));
+    if(recovered.format!=='cbt-offline-submission-v1'||!recovered.packets?.[0]?.pending?.answers)throw Error('Recovered file format is invalid.');
+    byId('password').textContent=secret.password;
+    byId('success').hidden=false;
+    byId('status').textContent='Recovered '+recovered.answerCount+' submitted answer(s) for '+recovered.examTitle+'. Store the data securely.';
+  }catch(e){recovered=null;byId('status').textContent='Cannot recover: '+e.message;}
+});
+byId('save').addEventListener('click',()=>{
+  if(!recovered)return;
+  const safe=(s)=>String(s).replace(/[^a-zA-Z0-9_-]/g,'-').slice(0,48);
+  const blob=new Blob([JSON.stringify(recovered,null,2)],{type:'application/json'});
+  const url=URL.createObjectURL(blob),a=document.createElement('a');
+  a.href=url;a.download='cbt-recovered-'+safe(recovered.examId)+'-'+safe(recovered.studentUid)+'.json';
+  document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),15000);
+});
+</script></body></html>

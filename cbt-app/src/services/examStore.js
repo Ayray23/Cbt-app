@@ -109,6 +109,11 @@ export function createExamStore(storage, notify = () => {}) {
       if (current?.pending)
         write(uid, examId, { ...current, syncError: message });
     },
+    markEncryptedBackup(uid, examId, filename) {
+      const current = read(uid, examId);
+      if (current?.pending)
+        write(uid, examId, { ...current, encryptedPdfBackupFilename: filename, encryptedPdfBackupAtMs: Date.now() });
+    },
   };
 }
 
