@@ -42,12 +42,25 @@ function getPdfKit() {
   if (window.PDFDocument) return Promise.resolve(window.PDFDocument);
   if (!pdfLibraryPromise) pdfLibraryPromise = new Promise((resolve, reject) => {
     const script = document.createElement("script");
+    let finished = false;
+    const done = (error, value) => {
+      if (finished) return;
+      finished = true;
+      window.clearTimeout(timer);
+      if (error) reject(error);
+      else resolve(value);
+    };
+    // A disconnected school computer must never hang indefinitely waiting
+    // for the optional PDF renderer; its local answers remain protected.
+    const timer = window.setTimeout(() => done(new Error(
+      "PDF library is unavailable. Keep this device and retry the backup later.",
+    )), 12000);
     script.src = PDFKIT_URL;
     script.async = true;
     script.onload = () => window.PDFDocument
-      ? resolve(window.PDFDocument)
-      : reject(new Error("PDF renderer did not initialize."));
-    script.onerror = () => reject(new Error("PDF renderer could not load. Keep this device's saved answers."));
+      ? done(null, window.PDFDocument)
+      : done(new Error("PDF renderer did not initialize."));
+    script.onerror = () => done(new Error("PDF renderer could not load. Keep this device's saved answers."));
     document.head.appendChild(script);
   }).catch((error) => { pdfLibraryPromise = null; throw error; });
   return pdfLibraryPromise;
