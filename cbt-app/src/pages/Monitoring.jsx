@@ -164,6 +164,8 @@ export default function Monitoring() {
   const [cached, setCached] = useState(false);
   const finalizingRef = useRef(false);
   const finalizeOffsetRef = useRef(0);
+  const finalizationNextAllowedRef = useRef(0);
+  const finalizationReviewHoldRef = useRef(new Map());
 
   useEffect(() => {
     const clock = window.setInterval(() => setNow(Date.now()), 15000);
@@ -231,7 +233,8 @@ export default function Monitoring() {
   // Finalize overdue online attempts from saved server answers even when the
   // student's browser has closed. Never finalize LAN or legacy attempts.
   useEffect(() => {
-    if (cached || finalizingRef.current || !window.navigator.onLine) return;
+    if (cached || finalizingRef.current || !window.navigator.onLine ||
+      Date.now() < finalizationNextAllowedRef.current) return;
     const candidates = orderedSessions.filter((session) =>
       session.status === "started" &&
       session.schemaVersion === 2 &&
@@ -239,7 +242,8 @@ export default function Monitoring() {
       Number.isFinite(session.expiresAtMs) &&
       // Give the student's immediate upload 30 seconds to complete
       // before fallback finalization freezes server-saved answers.
-      session.expiresAtMs + 30000 <= now,
+      session.expiresAtMs + 30000 <= now &&
+      (finalizationReviewHoldRef.current.get(session.id) || 0) <= now,
     );
     if (!candidates.length) return;
     // Rotate through active pages so a damaged attempt cannot starve other
@@ -248,17 +252,23 @@ export default function Monitoring() {
     const overdue = [...candidates.slice(offset), ...candidates.slice(0, offset)].slice(0, 5);
     finalizeOffsetRef.current += overdue.length;
     finalizingRef.current = true;
+    // Expiry finalization should not turn a failing Firestore project into a
+    // flood of duplicate writes and retries. Maximum one batch per minute.
+    finalizationNextAllowedRef.current = Date.now() + 60000;
     void callApi("sessions.autoFinalizeExpired", { sessionIds: overdue.map((s) => s.id) })
       .then((response) => {
         const errors = (response.results || []).filter((item) => item.status === "needs-review");
+        for (const item of errors) finalizationReviewHoldRef.current.set(item.id, Date.now() + 10 * 60000);
         if (errors.length) setError(
           `${errors.length} expired attempt(s) could not be automatically finalized and need administrator review. Other saved answers were submitted.`,
         );
         else setError("");
       })
-      .catch((error) => setError(
-        `Automatic finalization failed. Saved answers remain protected. ${error.message}`,
-      ))
+      .catch((error) => {
+        // A quota/network incident needs cooldown rather than repeated calls.
+        finalizationNextAllowedRef.current = Date.now() + 5 * 60000;
+        setError(`Automatic finalization is temporarily paused after a server error. Saved answers remain protected. ${error.message}`);
+      })
       .finally(() => { finalizingRef.current = false; });
   }, [orderedSessions, now, cached]);
 
