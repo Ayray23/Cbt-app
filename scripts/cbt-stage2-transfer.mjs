@@ -40,7 +40,6 @@ async function exportFirebase() {
     throw new Error("Firebase Admin server credentials and expected Firebase project ID are required. Do not put them in a browser or GitHub.");
   const { backend } = await import("../cbt-app/server/firebase-admin.mjs");
   const { db } = backend();
-  const { FieldPath } = await import("firebase-admin/firestore");
   const snap = {};
   // This is deliberately an operator-triggered export, not a scheduled
   // process. It reads Firestore and may consume quota: run only after the
@@ -49,7 +48,7 @@ async function exportFirebase() {
     const docs = [];
     let last;
     for (;;) {
-      let query = db.collection(name).orderBy(FieldPath.documentId()).limit(200);
+      let query = db.collection(name).orderBy("__name__").limit(200);
       if (last) query = query.startAfter(last);
       const page = await query.get();
       docs.push(...page.docs.map((doc) => ({ id: doc.id, data: doc.data() })));
