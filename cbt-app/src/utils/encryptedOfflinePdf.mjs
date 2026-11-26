@@ -125,10 +125,21 @@ export async function buildEncryptedOfflinePdf(packet, uid) {
     { name: "RSA-OAEP" }, publicKey,
     new TextEncoder().encode(JSON.stringify({ password, dataKey: base64(dataKey) })),
   ));
-  // A PDF comment AFTER %%EOF does not change its cross-reference offsets or
-  // encrypted page content. It contains ciphertext only, not answers/password.
-  const envelope = `\n%CBT-ENCRYPTED-RECOVERY-V1:${base64(wrapped)}:${base64(iv)}:${base64(ciphertext)}\n`;
-  const output = new Blob([pdf, envelope], { type: "application/pdf" });
+  // Keep %%EOF as the last PDF marker. Insert short comment lines immediately
+  // before startxref: cross-reference offsets still point to the original
+  // objects, while the administrator can recover the encrypted envelope.
+  const envelope = base64(new TextEncoder().encode(JSON.stringify({
+    version: 1, wrapped: base64(wrapped), iv: base64(iv), data: base64(ciphertext),
+  })));
+  const comments = envelope.match(/.{1,90}/g).map((part) => `%CBTREC:${part}`).join("\n");
+  const bytes = new Uint8Array(await pdf.arrayBuffer());
+  const tail = new TextDecoder("latin1").decode(bytes.slice(-2048));
+  const offset = tail.lastIndexOf("startxref");
+  if (offset < 0) throw new Error("The encrypted PDF has no cross-reference footer.");
+  const insertionAt = bytes.length - Math.min(bytes.length, 2048) + offset;
+  const output = new Blob([
+    bytes.slice(0, insertionAt), `\n${comments}\n`, bytes.slice(insertionAt),
+  ], { type: "application/pdf" });
   return { blob: output, filename: offlineReceiptFilename(receipt).replace(/\.json$/, ".pdf") };
 }
 
