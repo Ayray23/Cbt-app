@@ -31,7 +31,7 @@ export function toShadowRow(collection, record) {
     case "users":
       return {
         firebase_uid: id,
-        role: String(d.role || "student"),
+        role: String(d.role || ""),
         display_name: stringOrNull(d.displayName),
         active: !d.loginDisabled,
         source_document,
@@ -116,6 +116,14 @@ export function validateShadowSnapshot(snapshot) {
     for (const row of rows.get(collection))
       if (!examIds.has(row.exam_id))
         throw new Error(`Missing parent exam ${row.exam_id} for ${collection}`);
+  for (const collection of ["examAssignments", "examSessions", "examResults"]) {
+    const seen = new Set();
+    for (const row of rows.get(collection)) {
+      const key = `${row.exam_id}::${row.student_uid}`;
+      if (seen.has(key)) throw new Error(`Duplicate exam/student pair in ${collection}: ${key}`);
+      seen.add(key);
+    }
+  }
   const active = rows.get("examSessions").filter((row) => row.status === "started");
   if (active.length)
     throw new Error(`${active.length} started exam session(s) still exist. Do not export/import live exam sessions; complete and reconcile them first.`);
@@ -145,6 +153,7 @@ export function stage2Sql(snapshot) {
     "-- Only run against the dedicated School-CBT Supabase database.",
     "begin;",
     "set local statement_timeout = '120s';",
+    "set local standard_conforming_strings = on;",
   ];
   for (const [collection, table, primaryKey] of COLLECTIONS) {
     for (const row of rows.get(collection)) {
