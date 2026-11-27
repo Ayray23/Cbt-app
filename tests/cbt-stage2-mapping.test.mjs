@@ -11,6 +11,10 @@ function snapshot() {
     examAssignments: [{ id: "exam-1_user-1", data: { examId: "exam-1", studentUid: "user-1" } }],
     examSessions: [{ id: "exam-1_user-1", data: { examId: "exam-1", studentUid: "user-1", status: "submitted", startedAtMs: 20, expiresAtMs: 3600020 } }],
     examResults: [{ id: "exam-1_user-1", data: { examId: "exam-1", studentUid: "user-1", finalScore: 1, maxMarks: 1, released: false } }],
+    examPins: [{ id: "exam-1_user-1", data: { examId: "exam-1", studentUid: "user-1", digest: "redacted-hash", pinTag: "masked-tag" } }],
+    examSessionProofs: [{ id: "exam-1_user-1", data: { studentUid: "user-1", paperVersion: "v1" } }],
+    auditLogs: [{ id: "event-1", data: { action: "exams.assign", actorUid: "admin-1", target: "exam-1", createdAtMs: 1000 } }],
+    school: [{ id: "settings", data: { academicSession: "2026/2027", classes: ["SS1"] } }],
   };
 }
 test("stage2 maps all seven Firebase collections using original IDs and answers", () => {
@@ -44,7 +48,7 @@ test("stage2 rejects missing exams and duplicate students before any SQL writes"
 });
 test("stage2 snapshots may contain no records but cannot be missing a required collection", () => {
   const empty = Object.fromEntries(COLLECTIONS.map(([name]) => [name, []]));
-  assert.equal(validateShadowSnapshot(empty).size, 7);
+  assert.equal(validateShadowSnapshot(empty).size, COLLECTIONS.length);
   delete empty.examPapers;
   assert.throws(() => validateShadowSnapshot(empty), /Missing snapshot collection/);
 });
@@ -56,4 +60,14 @@ test("stage2 values cannot inject SQL statements and use a single transaction", 
   assert.match(sql, /\bbegin;/);
   assert.match(sql, /\bcommit;/);
   assert.match(sql, /standard_conforming_strings = on/);
+});
+
+test("stage2 preserves secret PIN digest, proof version and school settings without exposing public access", () => {
+  const rows = validateShadowSnapshot(snapshot());
+  assert.equal(rows.get("examPins")[0].pin_digest, "redacted-hash");
+  assert.equal(rows.get("examSessionProofs")[0].exam_id, "exam-1");
+  assert.equal(rows.get("school")[0].firebase_id, "settings");
+  const invalid = snapshot();
+  invalid.examSessionProofs[0].data.paperVersion = "unknown";
+  assert.throws(() => stage2Sql(invalid), /unknown paper version/);
 });
