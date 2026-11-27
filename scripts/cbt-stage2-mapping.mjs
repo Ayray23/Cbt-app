@@ -8,6 +8,10 @@ export const COLLECTIONS = Object.freeze([
   ["examAssignments", "exam_assignments", "firebase_id"],
   ["examSessions", "exam_sessions", "firebase_id"],
   ["examResults", "exam_results", "firebase_id"],
+  ["examPins", "exam_pins", "firebase_id"],
+  ["examSessionProofs", "exam_session_proofs", "firebase_id"],
+  ["auditLogs", "audit_logs", "firebase_id"],
+  ["school", "school_settings", "firebase_id"],
 ]);
 
 const finiteNumber = (value) =>
@@ -93,6 +97,42 @@ export function toShadowRow(collection, record) {
         requires_review: d.requiresReview === true,
         source_document,
       };
+    case "examPins":
+      return {
+        firebase_id: id,
+        exam_id: ensureId(d.examId, `${collection}/${id}.examId`),
+        student_uid: ensureId(d.studentUid, `${collection}/${id}.studentUid`),
+        pin_digest: stringOrNull(d.digest),
+        pin_tag: stringOrNull(d.pinTag),
+        attempts: finiteNumber(d.attempts) || 0,
+        locked_until_ms: finiteNumber(d.lockedUntilMs) || 0,
+        source_document,
+      };
+    case "examSessionProofs": {
+      // Firestore's proof records contain studentUid and paperVersion but
+      // no examId. The document ID was generated as `${examId}_${studentUid}`.
+      const student_uid = ensureId(d.studentUid, `${collection}/${id}.studentUid`);
+      const suffix = `_${student_uid}`;
+      if (!id.endsWith(suffix)) throw new Error(`Invalid session proof ID ${id}`);
+      return {
+        firebase_id: id,
+        exam_id: ensureId(id.slice(0, -suffix.length), `${collection}/${id}.examId`),
+        student_uid,
+        paper_version: stringOrNull(d.paperVersion),
+        source_document,
+      };
+    }
+    case "auditLogs":
+      return {
+        firebase_id: id,
+        actor_uid: stringOrNull(d.actorUid),
+        action: stringOrNull(d.action),
+        target: stringOrNull(d.target),
+        created_at_ms: finiteNumber(d.createdAtMs),
+        source_document,
+      };
+    case "school":
+      return { firebase_id: id, source_document };
     default:
       throw new Error(`Unsupported collection: ${collection}`);
   }
@@ -112,17 +152,31 @@ export function validateShadowSnapshot(snapshot) {
     }));
   }
   const examIds = new Set(rows.get("exams").map((row) => row.firebase_id));
-  for (const collection of ["questions", "examPapers", "examAssignments", "examSessions", "examResults"])
+  for (const collection of ["questions", "examPapers", "examAssignments", "examSessions", "examResults", "examPins", "examSessionProofs"])
     for (const row of rows.get(collection))
       if (!examIds.has(row.exam_id))
         throw new Error(`Missing parent exam ${row.exam_id} for ${collection}`);
-  for (const collection of ["examAssignments", "examSessions", "examResults"]) {
+  for (const collection of ["examAssignments", "examSessions", "examResults", "examPins", "examSessionProofs"]) {
     const seen = new Set();
     for (const row of rows.get(collection)) {
       const key = `${row.exam_id}::${row.student_uid}`;
       if (seen.has(key)) throw new Error(`Duplicate exam/student pair in ${collection}: ${key}`);
       seen.add(key);
     }
+  }
+  const sessionsById = new Map(rows.get("examSessions").map((row) => [row.firebase_id, row]));
+  const paperVersions = new Set(rows.get("examPapers").map((row) => row.firebase_version));
+  for (const proof of rows.get("examSessionProofs")) {
+    const session = sessionsById.get(proof.firebase_id);
+    if (!session || proof.exam_id !== session.exam_id || proof.student_uid !== session.student_uid)
+      throw new Error(`Session proof mismatch for ${proof.firebase_id}`);
+    if (!proof.paper_version || !paperVersions.has(proof.paper_version))
+      throw new Error(`Session proof references unknown paper version ${proof.paper_version}`);
+  }
+  const assignmentsById = new Set(rows.get("examAssignments").map((row) => row.firebase_id));
+  for (const pin of rows.get("examPins")) {
+    if (!assignmentsById.has(pin.firebase_id))
+      throw new Error(`PIN has no assignment: ${pin.firebase_id}`);
   }
   const active = rows.get("examSessions").filter((row) => row.status === "started");
   if (active.length)
